@@ -34,7 +34,7 @@ A Dockerized 3Commas-style "Smart Trade" management system. It separates your tr
 
 ## Architecture
 
-- **Backend (Port 8000)**: Serves as a secure proxy to Binance and handles Smart Trade logic using OCO orders.
+- **Backend (Port 8001)**: Serves as a secure proxy to Binance and handles Smart Trade logic using OCO orders.
 - **Frontend (Port 5173)**: React dashboard for visualization and trade execution.
 
 ## License

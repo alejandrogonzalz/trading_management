@@ -8,6 +8,6 @@ RUN npm install
 COPY . .
 
 # Environment variable for the backend API
-ENV VITE_API_URL=http://localhost:8000
+ENV VITE_API_URL=http://localhost:8001
 
 CMD ["npm", "run", "dev", "--", "--host"]

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import TradingChart from './components/TradingChart';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8001';
 
 function App() {
   const [balances, setBalances] = useState([]);
