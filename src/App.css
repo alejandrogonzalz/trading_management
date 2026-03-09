@@ -1,0 +1,92 @@
+.dashboard {
+  display: grid;
+  grid-template-rows: 64px 48px 1fr;
+  grid-template-columns: 1fr 300px;
+  height: 100vh;
+  width: 100%;
+}
+
+.header {
+  grid-column: 1 / span 2;
+  background-color: #1e293b;
+  border-bottom: 1px solid #334155;
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  gap: 20px;
+}
+
+.stats-bar {
+  grid-column: 1 / span 2;
+  background-color: #0f172a;
+  border-bottom: 1px solid #334155;
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  gap: 30px;
+  font-size: 0.85rem;
+}
+
+.chart-container {
+  grid-column: 1;
+  background-color: #0f172a;
+  padding: 20px;
+  overflow: hidden;
+}
+
+.sidebar {
+  grid-column: 2;
+  background-color: #1e293b;
+  border-left: 1px solid #334155;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.logo {
+  font-weight: 700;
+  font-size: 1.25rem;
+  color: #38bdf8;
+}
+
+.price-stat {
+  display: flex;
+  flex-direction: column;
+}
+
+.stat-label {
+  color: #94a3b8;
+  font-size: 0.75rem;
+}
+
+.stat-value {
+  font-weight: 500;
+}
+
+.indicator-card {
+  background-color: #334155;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.indicator-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-size: 0.9rem;
+}
+
+.signal-buy {
+  color: #22c55e;
+  font-weight: 700;
+}
+
+.signal-sell {
+  color: #ef4444;
+  font-weight: 700;
+}
+
+.signal-hold {
+  color: #94a3b8;
+}
