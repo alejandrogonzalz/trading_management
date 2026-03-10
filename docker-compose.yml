@@ -1,4 +1,20 @@
 services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: trading_management-ollama
+    volumes:
+      - ./volumes/ollama_models:/root/.ollama
+    networks:
+      - trading-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
   backend:
     build: ./backend
     ports:
@@ -7,6 +23,13 @@ services:
       - .env
     volumes:
       - ./backend:/app
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434 # Point backend to Ollama service
+      - PYTHONPATH=/app # NEW: Add /app to Python path for correct imports
+    depends_on:
+      - ollama # Backend now depends on Ollama
+    networks:
+      - trading-network # Connect backend to the new network
 
   frontend:
     build: ./frontend
@@ -19,3 +42,9 @@ services:
       - /app/node_modules
     depends_on:
       - backend
+    networks:
+      - trading-network # Connect frontend to the new network
+
+networks:
+  trading-network:
+    driver: bridge

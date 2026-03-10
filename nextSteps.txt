@@ -1,0 +1,337 @@
+1. Restructure Backend (Minimal but Necessary)
+
+Keep FastAPI but split logic into modules.
+
+Create this structure:
+
+backend/
+    main.py
+    config.py
+    binance_service.py
+    market_service.py
+    indicator_service.py
+    scoring_service.py
+    scanner_service.py
+    llm_service.py
+    models.py
+
+Your current trading endpoints move into binance_service.py.
+
+main.py should only register routes.
+
+2. Move Binance Client Initialization
+
+Create binance_service.py.
+
+Responsibilities:
+
+initialize Binance client
+
+sync timestamp
+
+expose trading methods
+
+Example functions:
+
+get_symbols()
+get_balances()
+get_open_orders()
+create_smart_trade()
+cancel_order()
+market_close_position()
+
+Reuse your existing code.
+
+3. Market Data Service
+
+Create market_service.py.
+
+Purpose: fetch candle data.
+
+Functions:
+
+get_candles(symbol, interval, limit=200)
+get_multi_timeframe_candles(symbol)
+
+Supported intervals:
+
+5m
+15m
+1h
+4h
+1d
+
+Return standardized candle format:
+
+time
+open
+high
+low
+close
+volume
+4. Indicator Engine (TA-Lib)
+
+Create indicator_service.py.
+
+Use TA-Lib to compute indicators.
+
+Compute the following technical indicators per timeframe.
+
+Momentum indicators
+RSI(14)
+Stochastic %K %D
+MACD
+Trend indicators
+EMA20
+EMA50
+EMA200
+ADX
+Volatility indicators
+ATR
+Bollinger Bands
+Volume indicators
+Volume moving average
+OBV
+Additional signals
+VWAP
+Price change %
+Volume spike detection
+
+Return structured output:
+
+{
+ symbol
+ timeframe
+ price
+ rsi
+ macd
+ ema20
+ ema50
+ ema200
+ adx
+ atr
+ bb_upper
+ bb_lower
+ volume
+ volume_spike
+ obv
+}
+5. Deterministic Scoring Engine
+
+Create scoring_service.py.
+
+Convert indicator values into a 0-10 score.
+
+Example scoring rules:
+
+RSI < 35 → +2
+RSI > 70 → -2
+
+EMA20 > EMA50 > EMA200 → +2
+EMA20 < EMA50 < EMA200 → -2
+
+MACD bullish cross → +1
+MACD bearish cross → -1
+
+ADX > 25 → +1
+
+Volume spike → +1
+
+Price near Bollinger lower band → +1
+Price near upper band → -1
+
+Normalize result to:
+
+0 – 10
+
+Return:
+
+score
+trend_direction
+momentum_strength
+6. Heatmap Calculation
+
+Create a trend alignment heatmap.
+
+Example:
+
+timeframe	signal
+5m	bullish
+15m	bullish
+1h	bullish
+4h	neutral
+1d	bullish
+
+Display in UI as:
+
+🟢 bullish
+🔴 bearish
+🟡 neutral
+
+But store as structured data.
+
+7. Scanner Service
+
+Create scanner_service.py.
+
+Input:
+
+pairs[]
+timeframes[]
+
+Process:
+
+for each pair
+    fetch candles
+    compute indicators
+    compute score
+
+Return rows:
+
+pair
+price
+rsi
+macd
+trend
+adx
+volume
+volume_spike
+atr
+bb_position
+score
+heatmap
+8. Scanner API Endpoints
+
+Add to main.py.
+
+Run scan
+POST /scanner/run
+
+Input:
+
+pairs[]
+
+Return table rows.
+
+Get latest scan
+GET /scanner/table
+
+Returns stored scan results.
+
+9. LLM Ranking Service
+
+Create llm_service.py.
+
+Use Ollama.
+
+Call local endpoint:
+
+http://localhost:11434/api/generate
+
+Model:
+
+qwen2.5:14b
+
+Prompt:
+
+You are a crypto trading assistant.
+
+Rank the best trading setups from this dataset.
+
+Return JSON:
+
+pair
+rank
+bias
+confidence
+reason
+
+Input data = scanner table.
+
+Store output:
+
+ai_rank
+ai_bias
+ai_confidence
+ai_reason
+10. AI Row Analysis
+
+Endpoint:
+
+POST /scanner/analyze/{pair}
+
+Send full multi-timeframe indicator data.
+
+LLM returns:
+
+bias
+confidence
+trade_setup
+risk_level
+reasoning
+11. Final Scanner Table Columns
+
+Your UI table should include:
+
+Pair	Price	Heatmap	RSI	MACD	ADX	Volume	ATR	BB Pos	Score	AI Rank	AI Bias
+
+Explanation:
+
+Heatmap → multi-timeframe trend
+RSI → momentum
+MACD → trend reversal
+ADX → trend strength
+Volume → liquidity
+ATR → volatility
+BB Pos → mean reversion signal
+Score → deterministic score
+AI Rank → AI opportunity ranking
+AI Bias → AI interpretation
+12. Execution Integration
+
+If user clicks Open Smart Trade:
+
+Frontend calls your existing endpoint:
+
+POST /trades/smart-trade
+
+This already works in your backend.
+
+13. Scheduler (Optional but Recommended)
+
+Run scanner automatically:
+
+every 5 minutes
+
+Only recompute indicators when candle closes.
+
+Final Architecture
+Frontend Scanner UI
+        │
+FastAPI backend
+        │
+Market data service
+        │
+Indicator engine (TA-Lib)
+        │
+Scoring engine
+        │
+Scanner table
+        │
+LLM ranking (Ollama)
+        │
+Trade execution
+        │
+Binance
+
+✅ After this system is implemented, your scanner will:
+
+scan 20+ pairs
+
+compute multi-timeframe indicators
+
+generate quant scores
+
+use AI to rank opportunities
+
+allow Smart Trade execution

@@ -1,42 +1,35 @@
-# Trading Management (Smart Trade)
+# Trading Management System (V2)
 
-A Dockerized 3Commas-style "Smart Trade" management system. It separates your trades into **USDC** pairs to avoid interference with other bots and provides an interface for placing entries with automated Take Profit (Limit) and Stop Loss (Stop Limit) orders.
+Advanced crypto trading scanner and management system with GPU-accelerated AI ranking.
 
-## Features
+## New Features (Turbo-Scan)
 
-- **USDC Focus**: Only monitors and trades USDC pairs.
-- **Smart Trade Interface**: Enter trades with pre-defined TP/SL targets.
-- **Real-time Dashboard**: Monitor balances and open orders.
-- **Dockerized**: Start both backend and frontend with one command.
+- **Multithreaded Scanner**: Fetches and computes data for 20+ pairs across 7 timeframes (5m to 1M) in ~3 seconds using nested `ThreadPoolExecutor`.
+- **Opportunity Ranking**: Automatically discovers the "Top 20" most interesting USDC pairs based on a weighted multi-factor score:
+  - 30% Volume (>1M USDC)
+  - 25% Volatility (ATR)
+  - 20% Momentum (RSI)
+  - 15% Trend Strength (ADX)
+  - 10% Recent Move
+- **GPU AI Ranking**: Integrates with local Ollama (NVIDIA GPU) to rank setups and provide technical reasoning.
+- **Enhanced Heatmap**: 3-EMA (20/50/200) trend stack with Price Confirmation and ADX Strength filters.
+- **Interactive UI**: Fully sortable and filterable quant table with detailed hover tooltips for every indicator.
 
 ## Tech Stack
 
-- **Frontend**: React, TypeScript, Tailwind CSS, Lightweight Charts.
-- **Backend**: Python (FastAPI), `python-binance`.
-- **Infrastucture**: Docker Compose.
+- **Backend**: FastAPI, TA-Lib (C-Library), Pydantic V2, APScheduler.
+- **Frontend**: React (Vite), TailwindCSS, Lucide-React.
+- **AI**: Ollama (Qwen 2.5 7B) with NVIDIA GPU Passthrough.
+- **Infrastructure**: Docker Compose with GPU reservation.
 
-## Getting Started
+## Installation
 
-1. **Configure Environment**:
-   Ensure you have a `.env` file in the root of this directory with:
-   ```env
-   BINANCE_API_KEY=your_key
-   BINANCE_API_SECRET=your_secret
-   ```
-
-2. **Run with Docker Compose**:
+1. Ensure [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) is installed.
+2. Configure `.env` in `backend/` with `BINANCE_API_KEY` and `BINANCE_API_SECRET`.
+3. Launch:
    ```bash
-   docker-compose up --build
+   docker-compose up -d --build
    ```
 
-3. **Access the UI**:
-   Open [http://localhost:5173](http://localhost:5173) in your browser.
-
-## Architecture
-
-- **Backend (Port 8001)**: Serves as a secure proxy to Binance and handles Smart Trade logic using OCO orders.
-- **Frontend (Port 5173)**: React dashboard for visualization and trade execution.
-
-## License
-
-MIT
+## Development History
+Successfully restructured from a monolithic backend to a service-oriented architecture (Market, Indicator, Scoring, Scanner, and LLM services).

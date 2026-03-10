@@ -1,0 +1,253 @@
+Quant Scanner Table Definition
+Column	What it Represents	How It Is Computed	Expected Value Range	Interpretation
+Price	Current market price	Last candle close	positive float	Current asset value
+Heatmap	Multi-EMA trend alignment	Compare EMA20, EMA50, EMA200	BULLISH / BEARISH / NEUTRAL	Shows overall trend direction
+Structure	Market structure pattern	Compare recent highs/lows	BULLISH / BEARISH / RANGE / BREAKOUT	Detects trend or consolidation
+RSI	Momentum strength	RSI(14)	0 – 100	Overbought or oversold conditions
+MACD	Momentum shift	MACD histogram	negative → positive	Detects trend momentum changes
+ADX	Trend strength	ADX(14)	0 – 100	Measures trend intensity
+Volume Ratio	Relative trading activity	volume ÷ average(volume 20)	>0	Detects unusual volume
+ATR Ratio	Volatility expansion	ATR ÷ avg(ATR 20)	>0	Detects volatility increases
+BB Position	Position inside Bollinger Bands	(price − lower) ÷ (upper − lower)	0 – 1	Indicates overbought/oversold zones
+Score	Quant confluence signal	weighted indicator scoring	0 – 10	Overall trading signal strength
+AI Rank	AI-evaluated opportunity rank	LLM analyzes rows	integer ranking	Best opportunities ranked
+Detailed Meaning of Each Column
+Price
+Attribute	Description
+Value	Latest closing price
+Source	OHLCV candle data
+Purpose	Reference price for all indicators
+
+Example:
+
+BTCUSDC = 42,350.25
+Heatmap (Trend Alignment)
+Attribute	Description
+Indicators used	EMA20, EMA50, EMA200
+Logic	Compare moving averages
+Purpose	Determine trend direction
+Condition	Result
+EMA20 > EMA50 > EMA200	BULLISH
+EMA20 < EMA50 < EMA200	BEARISH
+Anything else	NEUTRAL
+
+Example output:
+
+BULLISH
+
+Meaning:
+
+short term trend > mid term > long term
+Structure (Market Structure)
+Attribute	Description
+Type	custom logic
+Purpose	Detect price pattern
+
+Uses recent highs and lows:
+
+recent_high = max(high last N candles)
+recent_low = min(low last N candles)
+
+Example states:
+
+Structure	Meaning
+BULLISH	Higher highs forming
+BEARISH	Lower lows forming
+RANGE	Sideways consolidation
+BREAKOUT	Price breaking resistance
+
+Example:
+
+BREAKOUT
+RSI (Relative Strength Index)
+Attribute	Description
+Indicator	RSI(14)
+Range	0 – 100
+Purpose	Measure momentum
+RSI Value	Meaning
+<30	Oversold
+30-40	Weak
+40-60	Neutral
+60-70	Strong
+
+70 | Overbought |
+
+Example:
+
+RSI = 38
+
+Meaning:
+
+slightly oversold
+MACD
+Attribute	Description
+Indicator	MACD
+Components	MACD line, Signal line, Histogram
+Purpose	Detect momentum changes
+
+You usually store:
+
+MACD histogram
+Histogram Value	Meaning
+positive	bullish momentum
+negative	bearish momentum
+
+Example:
+
+MACD histogram = 0.45
+
+Meaning:
+
+bullish momentum increasing
+ADX (Trend Strength)
+Attribute	Description
+Indicator	ADX(14)
+Range	0 – 100
+Purpose	Measure trend strength
+ADX	Trend Strength
+<20	weak
+20-25	forming
+25-40	strong
+
+40 | very strong |
+
+Example:
+
+ADX = 31
+
+Meaning:
+
+strong trend
+Volume Ratio
+Attribute	Description
+Type	custom
+Purpose	detect unusual volume
+
+Formula:
+
+volume_ratio = current_volume / avg_volume_20
+Ratio	Meaning
+1.0	normal
+
+1.5 | spike |
+2.0 | strong spike |
+
+Example:
+
+Volume Ratio = 1.9
+
+Meaning:
+
+high trading activity
+ATR Ratio (Volatility)
+Attribute	Description
+Indicator	ATR
+Purpose	detect volatility expansion
+
+Formula:
+
+ATR_ratio = ATR_current / avg_ATR_20
+ATR Ratio	Meaning
+<1	low volatility
+1-1.3	normal
+
+1.3 | volatility expansion |
+1.8 | strong move possible |
+
+Example:
+
+ATR Ratio = 1.45
+
+Meaning:
+
+volatility increasing
+Bollinger Band Position
+Attribute	Description
+Indicator	Bollinger Bands
+Range	0 – 1
+Purpose	measure price position in band
+
+Formula:
+
+bb_pos = (price - lower) / (upper - lower)
+Position	Meaning
+0	touching lower band
+0.5	middle
+1	touching upper band
+
+Trading interpretation:
+
+Range	Signal
+<0.2	oversold
+
+0.8 | overbought |
+
+Example:
+
+BB Position = 0.18
+
+Meaning:
+
+price near lower band
+Confluence Score
+Attribute	Description
+Type	weighted signal scoring
+Range	0 – 10
+Purpose	quantify trade opportunity
+
+Example scoring model:
+
+Signal	Points
+Bullish EMA alignment	+2
+RSI oversold	+2
+MACD bullish	+1
+ADX strong	+1
+Volume spike	+1
+ATR expansion	+1
+BB oversold	+1
+
+Example result:
+
+Score = 8
+
+Meaning:
+
+high signal confluence
+AI Rank
+
+The AI evaluates rows and ranks opportunities.
+
+This can be done locally using Ollama.
+
+Example model:
+
+Qwen2.5 14B
+
+Input to the model:
+
+indicator table
+scores
+trend data
+
+Output example:
+
+Pair	AI Rank
+SOLUSDC	1
+BTCUSDC	2
+ETHUSDC	3
+
+Meaning:
+
+ranked trade opportunities
+Final Example Row
+Pair	Price	Heatmap	Structure	RSI	MACD	ADX	VolRatio	ATRRatio	BBPos	Score	AI Rank
+SOLUSDC	128.4	BULLISH	BREAKOUT	34	0.72	29	2.1	1.6	0.22	9	1
+
+Interpretation:
+
+strong trend
+volume spike
+volatility expansion
+oversold bounce
+
+High probability setup.

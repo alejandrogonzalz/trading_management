@@ -3,7 +3,8 @@ FROM node:20-slim
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm install
+RUN rm -rf node_modules package-lock.json # Aggressively clear old node_modules and lock file
+RUN npm install # Use npm install for robustness
 
 COPY . .
 

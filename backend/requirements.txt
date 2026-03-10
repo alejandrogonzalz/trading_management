@@ -4,4 +4,8 @@ python-binance
 python-dotenv
 pydantic
 pydantic-settings
-cors
+ollama
+TA-Lib
+APScheduler
+pandas
+numpy
