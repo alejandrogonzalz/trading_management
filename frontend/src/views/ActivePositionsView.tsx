@@ -14,8 +14,8 @@ const ActivePositionsView = ({ openOrders, handleCancelOrder, usdcBalance }) => 
     );
 
     return (
-        <div className="h-full flex flex-col bg-slate-900 overflow-hidden p-6">
-            <header className="flex justify-between items-center mb-8">
+        <div className="h-full flex flex-col bg-slate-900 overflow-hidden">
+            <header className="flex flex-col lg:flex-row justify-between items-start lg:items-center px-6 py-6 gap-6">
                 <div>
                     <h1 className="text-3xl font-black text-white flex items-center gap-3 tracking-tighter">
                         <LayoutDashboard size={32} className="text-indigo-500" /> 
@@ -25,26 +25,26 @@ const ActivePositionsView = ({ openOrders, handleCancelOrder, usdcBalance }) => 
                 </div>
 
                 <div className="flex gap-4">
-                    <div className="bg-slate-950 px-6 py-3 rounded-2xl border border-slate-800 flex flex-col items-end">
-                        <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Available Cash</span>
-                        <p className="font-mono text-xl font-black text-white">${parseFloat(usdcBalance).toLocaleString()}</p>
+                    <div className="bg-slate-950 px-6 py-3 rounded-2xl border border-slate-800 flex flex-col items-end shadow-lg">
+                        <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1 opacity-60">Available Cash</span>
+                        <p className="font-mono text-xl font-black text-white tracking-tighter">${parseFloat(usdcBalance).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
                     </div>
-                    <div className="bg-indigo-600/10 px-6 py-3 rounded-2xl border border-indigo-500/20 flex flex-col items-end">
-                        <span className="text-[9px] font-black text-indigo-400 uppercase tracking-widest mb-1">Locked in Orders</span>
-                        <p className="font-mono text-xl font-black text-indigo-100">${totalCommitted.toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
+                    <div className="bg-indigo-600/5 px-6 py-3 rounded-2xl border border-indigo-500/20 flex flex-col items-end shadow-lg">
+                        <span className="text-[9px] font-black text-indigo-400 uppercase tracking-widest mb-1 opacity-70">Locked in Orders</span>
+                        <p className="font-mono text-xl font-black text-indigo-100 tracking-tighter">${totalCommitted.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
                     </div>
                 </div>
             </header>
 
-            <div className="flex-1 bg-slate-950 rounded-3xl border border-slate-800 shadow-2xl overflow-hidden flex flex-col">
+            <div className="flex-1 min-h-0 bg-slate-950 rounded-3xl border border-slate-800 shadow-2xl overflow-hidden mx-6 mb-6 flex flex-col">
                 <div className="bg-slate-900/30 px-6 py-4 border-b border-slate-800 flex justify-between items-center">
                     <div className="flex items-center gap-2">
                         <Activity size={16} className="text-indigo-400" />
-                        <span className="text-xs text-slate-400 font-black uppercase tracking-widest">{usdcOrders.length} Pending Smart Orders</span>
+                        <span className="text-[10px] text-slate-400 font-black uppercase tracking-[0.15em]">{usdcOrders.length} Pending Smart Orders</span>
                     </div>
                 </div>
 
-                <div className="flex-1 overflow-auto">
+                <div className="flex-1 overflow-auto scrollbar-thin scrollbar-thumb-slate-800">
                     <table className="w-full text-left border-collapse">
                         <thead className="sticky top-0 bg-slate-900 z-10">
                             <tr className="text-slate-500 text-[10px] uppercase font-black tracking-widest border-b border-slate-800">
