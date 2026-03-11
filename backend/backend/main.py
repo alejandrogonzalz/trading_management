@@ -16,6 +16,10 @@ from . import indicator_service
 from . import scoring_service
 from . import scanner_service
 from . import llm_service
+from . import database
+from . import trade_tracker
+from . import audit_service
+from .audit_middleware import EndpointAuditMiddleware
 
 # Configure logging for APScheduler
 logging.basicConfig(level=logging.INFO)
@@ -45,9 +49,26 @@ async def scheduled_scan_job():
     except Exception as e:
         print(f"Error during scheduled scan: {e}")
 
+async def scheduled_reconcile_job():
+    """Background job to detect auto-closed trades."""
+    print("Checking for auto-closed trades...")
+    try:
+        await asyncio.to_thread(binance_service.reconcile_trades)
+    except Exception as e:
+        print(f"Error during reconciliation: {e}")
+
 # --- FastAPI Lifespan Events ---
 @app.on_event("startup")
 async def startup_event():
+    # 1. Sync Binance Time
+    try:
+        binance_service.sync_binance_time()
+    except: pass
+    
+    # 2. Database connectivity check
+    database.ping_db()
+    
+    # 3. Start Scheduler
     scheduler.start()
     scheduler.add_job(
         scheduled_scan_job, 
@@ -55,7 +76,14 @@ async def startup_event():
         id='scheduled_scanner',
         replace_existing=True
     )
-    print(f"Scheduler started. Scan job runs every {settings.SCANNER_INTERVAL_MINUTES} minutes.")
+    # Reconcile every 30 seconds
+    scheduler.add_job(
+        scheduled_reconcile_job,
+        IntervalTrigger(seconds=30),
+        id='scheduled_reconciler',
+        replace_existing=True
+    )
+    print(f"Scheduler started. Reconciler runs every 30 seconds.")
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -63,6 +91,18 @@ async def shutdown_event():
     print("Scheduler shut down.")
 
 # --- API Endpoints ---
+@app.get("/audit/logs")
+def get_audit_logs(limit: int = 50):
+    # MongoDB documents need _id converted to string for JSON serialization
+    logs = audit_service.get_recent_logs(limit)
+    for log in logs:
+        log["_id"] = str(log["_id"])
+    return logs
+
+@app.get("/audit/ping-db")
+def ping_db():
+    return {"connected": database.ping_db()}
+
 @app.get("/symbols")
 def get_symbols():
     return binance_service.get_symbols()
@@ -82,20 +122,30 @@ def create_smart_trade(req: SmartTradeRequest):
         quantity=req.quantity,
         buy_price=req.buy_price,
         take_profit_price=req.take_profit_price,
-        stop_loss_price=req.stop_loss_price
+        stop_loss_price=req.stop_loss_price,
+        side=req.side,
+        mode=req.mode
     )
 
 @app.get("/trades/history")
 def get_trade_history(symbol: Optional[str] = None):
     return binance_service.get_trade_history(symbol=symbol)
 
+@app.get("/trades/smart-history")
+def get_smart_history():
+    return binance_service.get_smart_history()
+
 @app.delete("/trades/order")
 def cancel_single_order(req: CancelOrderRequest):
     return binance_service.cancel_order(symbol=req.symbol, order_id=req.orderId)
 
 @app.post("/trades/market-close")
-def market_close_position(req: MarketCloseRequest):
-    return binance_service.market_close_position(symbol=req.symbol)
+def market_close(req: MarketCloseRequest):
+    return binance_service.market_close_position(
+        symbol=req.symbol,
+        quantity=req.quantity,
+        order_list_id=req.orderListId
+    )
 
 @app.get("/market/candles/{symbol}/{interval}")
 def get_market_candles(symbol: str, interval: str):

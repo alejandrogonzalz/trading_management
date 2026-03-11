@@ -1,4 +1,15 @@
 services:
+  mongodb:
+    image: mongo:latest
+    container_name: trading_management-db
+    ports:
+      - "27017:27017"
+    volumes:
+      - ./volumes/mongodb_data:/data/db
+    networks:
+      - trading-network
+    restart: unless-stopped
+
   ollama:
     image: ollama/ollama:latest
     container_name: trading_management-ollama
@@ -20,16 +31,18 @@ services:
     ports:
       - "8001:8001"
     env_file:
-      - .env
+      - ./backend/.env
     volumes:
       - ./backend:/app
     environment:
-      - OLLAMA_BASE_URL=http://ollama:11434 # Point backend to Ollama service
-      - PYTHONPATH=/app # NEW: Add /app to Python path for correct imports
+      - OLLAMA_BASE_URL=http://ollama:11434 
+      - MONGO_URL=mongodb://mongodb:27017
+      - PYTHONPATH=/app 
     depends_on:
-      - ollama # Backend now depends on Ollama
+      - ollama
+      - mongodb
     networks:
-      - trading-network # Connect backend to the new network
+      - trading-network
 
   frontend:
     build: ./frontend
@@ -43,7 +56,7 @@ services:
     depends_on:
       - backend
     networks:
-      - trading-network # Connect frontend to the new network
+      - trading-network
 
 networks:
   trading-network:

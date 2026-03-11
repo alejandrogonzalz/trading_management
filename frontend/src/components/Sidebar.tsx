@@ -1,11 +1,12 @@
 import { NavLink } from 'react-router-dom';
-import { BarChart3, Briefcase, Settings, LifeBuoy, ChevronsLeft, ChevronsRight, ScanSearch } from 'lucide-react';
+import { BarChart3, Briefcase, Settings, LifeBuoy, ChevronsLeft, ChevronsRight, ScanSearch, Zap, Activity } from 'lucide-react';
 
 const Sidebar = ({ isSidebarOpen, setIsSidebarOpen }) => {
     const navItems = [
-        { icon: <BarChart3 size={20} />, label: 'Smart Trades', path: '/' },
-        { icon: <ScanSearch size={20} />, label: 'Scanner', path: '/scanner' },
-        { icon: <Briefcase size={20} />, label: 'Active Positions', path: '/positions' },
+        { icon: <Zap size={20} />, label: 'Smart Terminal', path: '/' },
+        { icon: <BarChart3 size={20} />, label: 'Scanner', path: '/scanner' },
+        { icon: <Briefcase size={20} />, label: 'Smart Trades', path: '/trades' },
+        { icon: <Activity size={20} />, label: 'Active Orders', path: '/orders' },
         { icon: <Settings size={20} />, label: 'Settings', path: '/settings' },
     ];
 

@@ -259,12 +259,12 @@ const ScannerView = ({ symbols, onAutoTrade }) => {
                         <ScanSearch size={32} className="text-blue-500" /> QUANT SCANNER
                     </h1>
                     <div className="flex items-center gap-2 mt-1 group relative cursor-help">
-                        <p className="text-slate-500 text-xs font-bold uppercase tracking-widest">Top 20 Opportunity Markets (USDC)</p>
+                        <p className="text-slate-500 text-xs font-bold uppercase tracking-widest">Top 20 Opportunity Markets (USDC/USDT)</p>
                         <Info size={12} className="text-slate-600" />
                         <div className="absolute top-full left-0 mt-2 w-64 bg-slate-800 p-3 rounded-lg border border-slate-700 shadow-2xl z-50 invisible group-hover:visible text-[10px] text-slate-300 leading-relaxed font-medium">
                             <span className="text-blue-400 font-bold block mb-1 uppercase">Selection Logic:</span>
                             Ranked using a multi-factor Opportunity Score:<br/>
-                            • 30% 24h Volume (&gt;1M USDC)<br/>
+                            • 30% 24h Volume (&gt;1M Quote Value)<br/>
                             • 25% Volatility (ATR)<br/>
                             • 20% Momentum (RSI)<br/>
                             • 15% Trend Strength (ADX)<br/>
@@ -301,7 +301,7 @@ const ScannerView = ({ symbols, onAutoTrade }) => {
                     <table className="w-full text-left border-collapse">
                         <thead className="sticky top-0 bg-slate-900 z-20">
                             <tr className="bg-slate-900 text-slate-500 border-b border-slate-800">
-                                <ColumnHeader label="Pair" tooltip="Asset symbol compared against USDC. Top 20 are selected based on Volume, Volatility, and Momentum." sortKey="pair" currentSort={sortConfig} onSort={handleSort} />
+                                <ColumnHeader label="Pair" tooltip="Asset symbol compared against USDC or USDT. Top 20 are selected based on Volume, Volatility, and Momentum." sortKey="pair" currentSort={sortConfig} onSort={handleSort} />
                                 <ColumnHeader label="Price" tooltip="Latest closing price from the Binance exchange." sortKey="price" currentSort={sortConfig} onSort={handleSort} />
                                 <ColumnHeader label="Heatmap" tooltip="Trend Alignment: Bullish if Price > EMA20 > EMA50 > EMA200. Strong if ADX > 25." sortKey="heatmap" currentSort={sortConfig} onSort={handleSort} />
                                 <ColumnHeader label="Structure" tooltip="Detects HH/HL patterns. BREAKOUT triggers if price exceeds the 20-period maximum high." sortKey="structure" currentSort={sortConfig} onSort={handleSort} />

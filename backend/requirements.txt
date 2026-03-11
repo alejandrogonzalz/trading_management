@@ -9,3 +9,5 @@ TA-Lib
 APScheduler
 pandas
 numpy
+motor
+pymongo

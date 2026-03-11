@@ -38,19 +38,25 @@ def compute_metrics_for_symbol(c: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         return None
 
 def get_top_opportunity_pairs(limit: int = 20) -> List[str]:
-    """Ranks USDC markets in parallel."""
-    print("Fetching market-wide tickers...")
-    tickers = binance_service.get_24hr_tickers()
+    """Ranks USDC and USDT markets in parallel."""
+    print("Fetching market-wide tickers and exchange info...")
+    tickers = binance_service.binance_client.get_ticker()
+    exchange_info = binance_service.binance_client.get_exchange_info()
+    
+    # Map status for quick lookup
+    status_map = {s['symbol']: s['status'] for s in exchange_info['symbols']}
     
     candidates = []
     for t in tickers:
         symbol = t['symbol']
         volume = float(t['quoteVolume'])
-        if symbol.endswith('USDC') and volume > 1_000_000:
+        status = status_map.get(symbol, 'BREAK')
+        
+        if (symbol.endswith('USDC') or symbol.endswith('USDT')) and volume > 1_000_000 and status == 'TRADING':
             candidates.append({"symbol": symbol, "volume_24h": volume})
 
     if not candidates:
-        return ["BTCUSDC", "ETHUSDC", "SOLUSDC"]
+        return ["BTCUSDC", "ETHUSDC", "SOLUSDC", "BTCUSDT", "ETHUSDT", "SOLUSDT"]
 
     print(f"Analyzing {len(candidates)} candidates in parallel...")
     
