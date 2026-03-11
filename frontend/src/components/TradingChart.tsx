@@ -53,7 +53,18 @@ const TradingChart = ({ symbol, interval, plannedTp, plannedSl, openOrders }) =>
     });
     chartRef.current = chart;
 
-    candlestickSeriesRef.current = chart.addCandlestickSeries({ upColor: '#4ade80', downColor: '#f87171', borderVisible: false });
+    candlestickSeriesRef.current = chart.addCandlestickSeries({ 
+        upColor: '#4ade80', 
+        downColor: '#f87171', 
+        borderVisible: false,
+        // These will be overridden dynamically by the fetch effect
+        priceFormat: {
+            type: 'price',
+            precision: 2,
+            minMove: 0.01,
+        },
+    });
+    
     volumeSeriesRef.current = chart.addHistogramSeries({ color: '#3b82f6', priceFormat: { type: 'volume' }, priceScaleId: '' });
     volumeSeriesRef.current.priceScale().applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
     ema20SeriesRef.current = chart.addLineSeries({ color: '#3b82f6', lineWidth: 2, crosshairMarkerVisible: false });
@@ -75,19 +86,17 @@ const TradingChart = ({ symbol, interval, plannedTp, plannedSl, openOrders }) =>
     if (!candlestickSeriesRef.current) return;
     const series = candlestickSeriesRef.current;
     
-    // Clear previous lines by removing them one by one
     priceLinesRef.current.forEach(line => series.removePriceLine(line));
     priceLinesRef.current = [];
 
-    // Draw planned lines
     drawLine(series, plannedTp, '#4ade80', 'TP');
     drawLine(series, plannedSl, '#f87171', 'SL');
     
-    // Draw actual open orders
     openOrders.forEach(order => {
-        if(order.type === "LIMIT") { // Only draw limit orders
+        // Draw both limit and OCO legs
+        if(order.type === "LIMIT" || order.type === "LIMIT_MAKER" || order.type === "STOP_LOSS_LIMIT") {
             const title = `${order.side} ${order.origQty}`;
-            drawLine(series, parseFloat(order.price), order.side === 'BUY' ? '#a3e635' : '#fb923c', title);
+            drawLine(series, parseFloat(order.price || order.stopPrice), order.side === 'BUY' ? '#a3e635' : '#fb923c', title);
         }
     });
 
@@ -101,13 +110,39 @@ const TradingChart = ({ symbol, interval, plannedTp, plannedSl, openOrders }) =>
         const response = await fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=200`);
         const data = await response.json();
         
+        if (!data || data.length === 0) return;
+
         const candleData = data.map(d => ({ time: d[0] / 1000, open: parseFloat(d[1]), high: parseFloat(d[2]), low: parseFloat(d[3]), close: parseFloat(d[4]) }));
         const volData = data.map(d => ({ time: d[0] / 1000, value: parseFloat(d[5]), color: parseFloat(d[4]) >= parseFloat(d[1]) ? '#4ade8055' : '#f8717155' }));
+
+        // --- DYNAMIC PRECISION LOGIC ---
+        // We look at the first candle to determine how many decimals the price has
+        const samplePrice = candleData[0].close;
+        let precision = 2;
+        let minMove = 0.01;
+
+        if (samplePrice < 0.001) {
+            precision = 8;
+            minMove = 0.00000001;
+        } else if (samplePrice < 0.1) {
+            precision = 6;
+            minMove = 0.000001;
+        } else if (samplePrice < 1) {
+            precision = 4;
+            minMove = 0.0001;
+        }
+
+        candlestickSeriesRef.current.applyOptions({
+            priceFormat: {
+                type: 'price',
+                precision: precision,
+                minMove: minMove,
+            },
+        });
 
         candlestickSeriesRef.current.setData(candleData);
         volumeSeriesRef.current.setData(volData);
         
-        // Calculate and set EMAs
         if (candleData.length > 50) {
             ema20SeriesRef.current.setData(calculateEMA(candleData, 20));
             ema50SeriesRef.current.setData(calculateEMA(candleData, 50));

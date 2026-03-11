@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect } from 'react';
-import { LayoutDashboard, ShieldAlert, XCircle, ExternalLink, Activity, TrendingUp, TrendingDown, Target, Shield, Zap, AlertTriangle, History as HistoryIcon, ArrowUpRight, ArrowDownRight, Wallet } from 'lucide-react';
+import { LayoutDashboard, ShieldAlert, XCircle, ExternalLink, Activity, TrendingUp, TrendingDown, Target, Shield, Zap, AlertTriangle, History as HistoryIcon, ArrowUpRight, ArrowDownRight, Wallet, Target as TargetIcon } from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8001';
 
@@ -12,77 +12,124 @@ const SmartTradeCard = ({ trade, onCancel, currentPrice }) => {
     const tradeSide = trade.smart_meta?.side || trade.side;
     const pnl = currentPrice > 0 ? ((currentPrice - entryPrice) / entryPrice * 100 * (tradeSide === 'BUY' ? 1 : -1)) : 0;
     
-    const getProgress = () => {
-        if (!currentPrice || !entryPrice || !tpPrice || !slPrice) return 50;
+    const getPos = (price) => {
+        if (!price || !tpPrice || !slPrice) return 50;
         const totalRange = tpPrice - slPrice;
-        const currentPos = currentPrice - slPrice;
+        if (totalRange === 0) return 50;
+        const currentPos = price - slPrice;
         return Math.min(Math.max((currentPos / totalRange) * 100, 0), 100);
     };
 
-    const progress = getProgress();
+    const entryMarkerPos = getPos(entryPrice);
+    const currentMarkerPos = getPos(currentPrice);
+
+    // Format for high precision
+    const fmt = (val) => Number(val).toLocaleString(undefined, { minimumFractionDigits: val < 1 ? 6 : 2, maximumFractionDigits: val < 1 ? 8 : 2 });
 
     return (
-        <div className="bg-slate-950 rounded-3xl border border-slate-800 shadow-2xl overflow-hidden hover:border-blue-500/30 transition-all group">
-            <div className="p-6">
-                <div className="flex justify-between items-start mb-6">
-                    <div className="flex items-center gap-3">
-                        <div className="p-3 bg-blue-600/10 rounded-2xl">
-                            <Activity size={20} className="text-blue-400" />
+        <div className="bg-slate-950 rounded-2xl border border-slate-800 shadow-2xl overflow-hidden hover:border-blue-500/30 transition-all group w-full mb-4">
+            <div className="flex flex-col xl:flex-row">
+                {/* LEFT SECTION: INFO */}
+                <div className="p-5 flex flex-col justify-center border-b xl:border-b-0 xl:border-r border-slate-800 min-w-[220px] bg-slate-900/20">
+                    <div className="flex items-center gap-3 mb-2">
+                        <div className="p-2 bg-blue-600/10 rounded-lg">
+                            <Activity size={18} className="text-blue-400" />
                         </div>
-                        <div>
-                            <h3 className="text-xl font-black text-white tracking-tighter uppercase">{trade.symbol}</h3>
-                            <div className="flex items-center gap-2">
-                                <span className={`text-[10px] font-black px-2 py-0.5 rounded ${tradeSide === 'BUY' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
-                                    {tradeSide === 'BUY' ? 'LONG' : 'SHORT'}
-                                </span>
-                                <span className="text-[10px] text-slate-500 font-bold font-mono">{trade.clientOrderId}</span>
-                            </div>
+                        <h3 className="text-lg font-black text-white tracking-tighter uppercase">{trade.symbol}</h3>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <span className={`text-[9px] font-black px-2 py-0.5 rounded ${tradeSide === 'BUY' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
+                            {tradeSide === 'BUY' ? 'LONG' : 'SHORT'}
+                        </span>
+                        <span className="text-[9px] text-slate-600 font-bold font-mono">{trade.clientOrderId}</span>
+                    </div>
+                </div>
+
+                {/* MIDDLE SECTION: THE ACCURATE BAR */}
+                <div className="flex-1 p-6 flex flex-col justify-center space-y-8">
+                    <div className="relative pt-2">
+                        {/* Background Track */}
+                        <div className="h-1.5 w-full bg-slate-900 rounded-full overflow-hidden border border-slate-800/50 relative">
+                            <div 
+                                className={`absolute h-full transition-all duration-1000 ${pnl >= 0 ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]' : 'bg-rose-500 shadow-[0_0_10px_rgba(244,63,94,0.5)]'}`}
+                                style={{ 
+                                    left: `${Math.min(entryMarkerPos, currentMarkerPos)}%`, 
+                                    width: `${Math.abs(currentMarkerPos - entryMarkerPos)}%` 
+                                }}
+                            ></div>
+                        </div>
+                        
+                        {/* Legend Markers */}
+                        <div className="absolute top-[-12px] w-full text-[8px] font-black uppercase tracking-tighter text-slate-600">
+                            <span className="absolute left-0 text-rose-500">Stop Loss</span>
+                            <span className="absolute" style={{ left: `${entryMarkerPos}%`, transform: 'translateX(-50%)' }}>Entry</span>
+                            <span className="absolute right-0 text-emerald-500">Take Profit</span>
+                        </div>
+
+                        {/* Current Price Indicator */}
+                        <div 
+                            className="absolute top-[-2px] transition-all duration-1000 flex flex-col items-center z-10"
+                            style={{ left: `${currentMarkerPos}%`, transform: 'translateX(-50%)' }}
+                        >
+                            <div className="w-2.5 h-2.5 bg-white rounded-full border-2 border-slate-950 shadow-xl mb-1"></div>
+                            <span className="text-[10px] font-black text-white bg-slate-800 px-2 py-0.5 rounded border border-slate-700 shadow-2xl whitespace-nowrap">
+                                ${fmt(currentPrice)}
+                            </span>
                         </div>
                     </div>
-                    <div className="text-right">
+
+                    {/* Target Data Grid (Replaces overlapping numbers) */}
+                    <div className="grid grid-cols-3 gap-4 text-center">
+                        <div className="flex flex-col">
+                            <span className="text-[8px] font-black text-rose-500/50 uppercase">SL Level</span>
+                            <span className="text-[11px] font-mono font-bold text-slate-400">${fmt(slPrice)}</span>
+                        </div>
+                        <div className="flex flex-col">
+                            <span className="text-[8px] font-black text-slate-500 uppercase">Avg Entry</span>
+                            <span className="text-[11px] font-mono font-bold text-slate-200">${fmt(entryPrice)}</span>
+                        </div>
+                        <div className="flex flex-col">
+                            <span className="text-[8px] font-black text-emerald-500/50 uppercase">TP Target</span>
+                            <span className="text-[11px] font-mono font-bold text-slate-400">${fmt(tpPrice)}</span>
+                        </div>
+                    </div>
+                </div>
+
+                {/* RIGHT SECTION: P&L + BUTTONS */}
+                <div className="p-5 flex flex-col xl:flex-row items-center gap-6 border-t xl:border-t-0 xl:border-l border-slate-800 bg-slate-900/10 min-w-[300px]">
+                    <div className="text-right flex-1 w-full xl:w-auto">
                         <p className={`text-2xl font-black font-mono tracking-tighter ${pnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                             {pnl >= 0 ? '+' : ''}{pnl.toFixed(2)}%
                         </p>
-                        <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest">Unrealized P&L</p>
+                        <div className="flex items-center justify-end gap-2">
+                            <span className="text-[10px] text-slate-500 font-black uppercase">Profit:</span>
+                            <span className={`text-[10px] font-mono font-bold ${pnl >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                ${((Math.abs(currentPrice - entryPrice) * trade.origQty) * (pnl >= 0 ? 1 : -1)).toFixed(2)}
+                            </span>
+                        </div>
                     </div>
-                </div>
 
-                <div className="space-y-6">
-                    <div className="relative pt-6 pb-2">
-                        <div className="h-1.5 w-full bg-slate-900 rounded-full overflow-hidden border border-slate-800/50">
-                            <div 
-                                className={`h-full transition-all duration-1000 ${pnl >= 0 ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]' : 'bg-rose-500 shadow-[0_0_10px_rgba(244,63,94,0.5)]'}`}
-                                style={{ width: `${progress}%` }}
-                            ></div>
-                        </div>
-                        <div className="absolute top-0 w-full flex justify-between">
-                            <div className="flex flex-col items-center"><span className="text-[9px] font-black text-rose-500">SL</span><span className="text-[10px] font-mono text-slate-500">${slPrice.toLocaleString()}</span></div>
-                            <div className="flex flex-col items-center absolute" style={{ left: '50%', transform: 'translateX(-50%)' }}><span className="text-[9px] font-black text-slate-500 uppercase">Entry</span><span className="text-[10px] font-mono text-slate-400">${entryPrice.toLocaleString()}</span></div>
-                            <div className="flex flex-col items-center"><span className="text-[9px] font-black text-emerald-500">TP</span><span className="text-[10px] font-mono text-slate-500">${tpPrice.toLocaleString()}</span></div>
-                        </div>
-                        <div className="absolute top-4 transition-all duration-1000 flex flex-col items-center" style={{ left: `${progress}%`, transform: 'translateX(-50%)' }}>
-                            <div className="w-3 h-3 bg-white rounded-full border-2 border-slate-950 shadow-lg mb-1 z-10"></div>
-                            <span className="text-[10px] font-black text-white bg-slate-800 px-2 py-0.5 rounded border border-slate-700 shadow-xl">${currentPrice.toLocaleString()}</span>
-                        </div>
+                    <div className="flex gap-2 w-full xl:w-auto">
+                        <button className="p-3 bg-slate-800 hover:bg-slate-700 text-blue-400 rounded-xl transition-all" title="Break-Even">
+                            <Zap size={16} />
+                        </button>
+                        <button 
+                            onClick={async () => { setIsClosing(true); await onCancel(trade.orderId, trade.symbol, trade); setIsClosing(false); }}
+                            disabled={isClosing}
+                            className={`flex-1 xl:flex-none px-6 py-2.5 rounded-xl font-black uppercase tracking-widest text-[10px] transition-all flex items-center justify-center gap-2 ${isClosing ? 'bg-slate-800 text-slate-500' : 'bg-rose-600/10 hover:bg-rose-600 text-rose-500 hover:text-white border border-rose-500/20 hover:border-rose-600'}`}
+                        >
+                            {isClosing ? <div className="w-3 h-3 border-2 border-slate-600 border-t-rose-400 rounded-full animate-spin"></div> : <XCircle size={14} />}
+                            Panic Sell
+                        </button>
                     </div>
                 </div>
-            </div>
-            <div className="p-4 bg-slate-900/30 border-t border-slate-800 flex gap-2">
-                <button className="flex-1 bg-slate-800 hover:bg-slate-700 text-white text-[10px] font-black py-2.5 rounded-xl uppercase tracking-widest flex items-center justify-center gap-2"><Zap size={14} className="text-blue-400" />Break-Even</button>
-                <button 
-                    onClick={async () => { setIsClosing(true); await onCancel(trade.orderId, trade.symbol, trade); setIsClosing(false); }}
-                    disabled={isClosing}
-                    className={`flex-1 ${isClosing ? 'bg-slate-800 text-slate-500' : 'bg-rose-600/10 hover:bg-rose-600 text-rose-500 hover:text-white'} text-[10px] font-black py-2.5 rounded-xl transition-all uppercase tracking-widest border border-rose-500/20 hover:border-rose-600 flex items-center justify-center gap-2`}
-                >
-                    {isClosing ? <div className="w-3 h-3 border-2 border-slate-600 border-t-rose-400 rounded-full animate-spin"></div> : <XCircle size={14} />}
-                    Panic Sell
-                </button>
             </div>
         </div>
     );
 };
 
 const SmartHistoryTable = ({ history }) => {
+    const fmt = (val) => Number(val).toLocaleString(undefined, { minimumFractionDigits: val < 1 ? 6 : 2, maximumFractionDigits: val < 1 ? 8 : 2 });
     return (
         <div className="bg-slate-950 rounded-3xl border border-slate-800 shadow-2xl overflow-hidden">
             <table className="w-full text-left border-collapse">
@@ -101,12 +148,9 @@ const SmartHistoryTable = ({ history }) => {
                 <tbody className="font-mono text-sm text-slate-300">
                     {history.length > 0 ? history.map(h => {
                         const grossPnl = ((h.exit_price - h.entry_price) / h.entry_price * 100 * (h.side === 'BUY' ? 1 : -1));
-                        
-                        // Estimate fees in dollar value
                         const entryFeeValue = h.fee_asset === h.symbol.replace('USDT','').replace('USDC','') ? (h.entry_fees * h.entry_price) : h.entry_fees;
-                        const exitFeeValue = h.exit_fees; // Usually USDT for sells
+                        const exitFeeValue = h.exit_fees;
                         const totalFees = (entryFeeValue || 0) + (exitFeeValue || 0);
-                        
                         const invested = h.quantity * h.entry_price;
                         const grossProfit = invested * (grossPnl / 100);
                         const netProfit = grossProfit - totalFees;
@@ -120,8 +164,8 @@ const SmartHistoryTable = ({ history }) => {
                                         {h.side === 'BUY' ? 'LONG' : 'SHORT'}
                                     </span>
                                 </td>
-                                <td className="p-6 text-center">${Number(h.entry_price || 0).toLocaleString()}</td>
-                                <td className="p-6 text-center">${Number(h.exit_price || 0).toLocaleString()}</td>
+                                <td className="p-6 text-center">${fmt(h.entry_price)}</td>
+                                <td className="p-6 text-center">${fmt(h.exit_price)}</td>
                                 <td className="p-6 text-center text-slate-500">-${totalFees.toFixed(4)}</td>
                                 <td className="p-6 text-center">
                                     <div className={`font-black ${grossPnl >= 0 ? 'text-emerald-500/60' : 'text-rose-500/60'}`}>
@@ -198,12 +242,13 @@ const ActivePositionsView = ({ openOrders, handleCancelOrder, quoteBalance }) =>
 
     const onCancelClick = async (orderId: any, symbol: string, trade?: any) => {
         if (orderId.toString().startsWith('POS_') || trade?.smart_meta) {
-            if (window.confirm(`Do you want to Market Sell the ${trade?.origQty || trade?.smart_meta?.quantity || ''} ${symbol} associated with this Smart Trade?`)) {
+            const qty = trade?.origQty || trade?.smart_meta?.quantity || 0;
+            if (window.confirm(`Do you want to Market Sell the ${qty} ${symbol} associated with this Smart Trade?`)) {
                 try {
                     const res = await fetch(`${API_BASE}/trades/market-close`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ symbol, quantity: trade?.origQty || trade?.smart_meta?.quantity, orderListId: trade?.smart_meta?.orderListId })
+                        body: JSON.stringify({ symbol, quantity: qty, orderListId: trade?.smart_meta?.orderListId, clientOrderId: trade?.clientOrderId })
                     });
                     if (res.ok) console.log('Smart Position Closed!');
                 } catch (e) { console.error('Error during market close:', e); }
@@ -234,10 +279,10 @@ const ActivePositionsView = ({ openOrders, handleCancelOrder, quoteBalance }) =>
                 <div className="h-px w-full bg-slate-800"></div>
             </header>
 
-            <div className="px-6 py-6">
+            <div className="px-6 py-6 max-w-[1400px]">
                 {activeTab === 'active' ? (
                     smartTrades.length > 0 ? (
-                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                        <div className="flex flex-col gap-4">
                             {smartTrades.map(trade => (
                                 <SmartTradeCard key={trade.orderId} trade={trade} onCancel={onCancelClick} currentPrice={prices[trade.symbol] || 0} />
                             ))}

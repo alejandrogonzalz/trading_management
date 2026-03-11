@@ -5,15 +5,19 @@ import { Route, Routes, HashRouter as BrowserRouter, useNavigate } from 'react-r
 import ScannerView from './views/ScannerView';
 import ActivePositionsView from './views/ActivePositionsView';
 import ActiveOrdersView from './views/ActiveOrdersView';
-import { ScanSearch, ListFilter, History, LayoutDashboard } from 'lucide-react';
+import { ScanSearch, ListFilter, History, LayoutDashboard, ArrowUp, ArrowDown, Zap } from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8001';
 
-const SmartTerminalView = ({ symbol, currentPrice, handleSmartTrade, handleMarketClose, tpPrice, setTpPrice, slPrice, setSlPrice, tpEnabled, setTpEnabled, slEnabled, setSlEnabled, assetBalance, tradingMode, isTrading }) => {
+const SmartTerminalView = ({ 
+  symbol, currentPrice, handleSmartTrade, handleMarketClose, 
+  tpPrice, setTpPrice, slPrice, setSlPrice, 
+  tpEnabled, setTpEnabled, slEnabled, setSlEnabled, 
+  assetBalance, tradingMode, isTrading,
+  tpPercent, setTpPercent, slPercent, setSlPercent
+}) => {
   const [quantity, setQuantity] = useState(0.001);
   const [usdcAmount, setUsdcAmount] = useState(0);
-  const [tpPercent, setTpPercent] = useState(2);
-  const [slPercent, setSlPercent] = useState(-1);
   const [side, setSide] = useState('BUY'); // 'BUY' (Long) or 'SELL' (Short)
 
   // Force 'BUY' if in SPOT mode
@@ -43,43 +47,34 @@ const SmartTerminalView = ({ symbol, currentPrice, handleSmartTrade, handleMarke
     }
   }, [currentPrice]);
 
-  useEffect(() => {
-    if (currentPrice > 0 && tpPrice === 0) {
-      setTpPrice(Number((currentPrice * (1 + tpPercent / 100)).toFixed(2)));
+  // Re-sync prices if currentPrice changes or if Percent is typed manually
+  const handleTpPercentChange = (val: number) => {
+    const fixedVal = Number(val.toFixed(4));
+    setTpPercent(fixedVal);
+    if (currentPrice > 0) {
+      setTpPrice(Number((currentPrice * (1 + fixedVal / 100)).toFixed(8)));
     }
-  }, [tpPercent, currentPrice]);
+  };
 
-  useEffect(() => {
-    if (currentPrice > 0 && slPrice === 0) {
-      setSlPrice(Number((currentPrice * (1 + slPercent / 100)).toFixed(2)));
+  const handleSlPercentChange = (val: number) => {
+    const fixedVal = Number(val.toFixed(4));
+    setSlPercent(fixedVal);
+    if (currentPrice > 0) {
+      setSlPrice(Number((currentPrice * (1 + fixedVal / 100)).toFixed(8)));
     }
-  }, [slPercent, currentPrice]);
+  };
 
   const handleTpPriceChange = (val: number) => {
     setTpPrice(val);
     if (currentPrice > 0) {
-      setTpPercent(Number(((val - currentPrice) / currentPrice * 100).toFixed(2)));
-    }
-  };
-
-  const handleTpPercentChange = (val: number) => {
-    setTpPercent(val);
-    if (currentPrice > 0) {
-      setTpPrice(Number((currentPrice * (1 + val / 100)).toFixed(2)));
+      setTpPercent(Number(((val - currentPrice) / currentPrice * 100).toFixed(4)));
     }
   };
 
   const handleSlPriceChange = (val: number) => {
     setSlPrice(val);
     if (currentPrice > 0) {
-      setSlPercent(Number(((val - currentPrice) / currentPrice * 100).toFixed(2)));
-    }
-  };
-
-  const handleSlPercentChange = (val: number) => {
-    setSlPercent(val);
-    if (currentPrice > 0) {
-      setSlPrice(Number((currentPrice * (1 + val / 100)).toFixed(2)));
+      setSlPercent(Number(((val - currentPrice) / currentPrice * 100).toFixed(4)));
     }
   };
   
@@ -150,12 +145,15 @@ const SmartTerminalView = ({ symbol, currentPrice, handleSmartTrade, handleMarke
                 <label className="text-[10px] text-emerald-400 font-black uppercase tracking-widest">Take Profit</label>
               </div>
               {tpEnabled && (
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1 bg-slate-950 rounded-lg border border-emerald-500/20 px-1">
+                  <button onClick={() => handleTpPercentChange(tpPercent - 0.1)} className="p-1 text-slate-600 hover:text-emerald-400"><ArrowDown size={12} /></button>
                   <input 
-                    type="number" value={tpPercent} onChange={e => handleTpPercentChange(Number(e.target.value))}
-                    className="w-14 bg-slate-900/50 border border-emerald-500/20 rounded px-2 py-0.5 text-emerald-400 font-black text-xs outline-none text-right"
+                    type="number" step="0.1" value={tpPercent} 
+                    onChange={e => handleTpPercentChange(parseFloat(e.target.value))}
+                    className="w-14 bg-transparent text-emerald-400 font-black text-xs outline-none text-right"
                   />
-                  <span className="text-[10px] text-emerald-500 font-black">%</span>
+                  <span className="text-[10px] text-emerald-500 font-black pr-1">%</span>
+                  <button onClick={() => handleTpPercentChange(tpPercent + 0.1)} className="p-1 text-slate-600 hover:text-emerald-400"><ArrowUp size={12} /></button>
                 </div>
               )}
             </div>
@@ -172,12 +170,15 @@ const SmartTerminalView = ({ symbol, currentPrice, handleSmartTrade, handleMarke
                 <label className="text-[10px] text-rose-400 font-black uppercase tracking-widest">Stop Loss</label>
               </div>
               {slEnabled && (
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1 bg-slate-950 rounded-lg border border-rose-500/20 px-1">
+                  <button onClick={() => handleSlPercentChange(slPercent - 0.1)} className="p-1 text-slate-600 hover:text-rose-400"><ArrowDown size={12} /></button>
                   <input 
-                    type="number" value={slPercent} onChange={e => handleSlPercentChange(Number(e.target.value))}
-                    className="w-14 bg-slate-900/50 border border-rose-500/20 rounded px-2 py-0.5 text-rose-400 font-black text-xs outline-none text-right"
+                    type="number" step="0.1" value={slPercent} 
+                    onChange={e => handleSlPercentChange(parseFloat(e.target.value))}
+                    className="w-14 bg-transparent text-rose-400 font-black text-xs outline-none text-right"
                   />
-                  <span className="text-[10px] text-rose-500 font-black">%</span>
+                  <span className="text-[10px] text-rose-500 font-black pr-1">%</span>
+                  <button onClick={() => handleSlPercentChange(slPercent + 0.1)} className="p-1 text-slate-600 hover:text-rose-400"><ArrowUp size={12} /></button>
                 </div>
               )}
             </div>
@@ -292,7 +293,7 @@ const BottomPanel = ({ openOrders, tradeHistory, symbol, filterOrdersBySymbol, s
                         <ListFilter size={14} /> Symbol
                     </button>
                     <button onClick={() => setActiveTab('global')} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'global' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-white'}`}>
-                        <LayoutDashboard size={14} /> All USDC
+                        <LayoutDashboard size={14} /> All Orders
                     </button>
                     <button onClick={() => setActiveTab('history')} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'history' ? 'bg-slate-800 text-white' : 'text-slate-500 hover:text-white'}`}>
                         <History size={14} /> History
@@ -331,6 +332,8 @@ function App() {
   
   const [tpPrice, setTpPrice] = useState(0);
   const [slPrice, setSlPrice] = useState(0);
+  const [tpPercent, setTpPercent] = useState(2);
+  const [slPercent, setSlPercent] = useState(-1);
   const [tpEnabled, setTpEnabled] = useState(true);
   const [slEnabled, setSlEnabled] = useState(true);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -524,7 +527,10 @@ function App() {
                       </div>
                       <div className="flex flex-col">
                         <span className={`text-3xl font-mono font-black tracking-tighter transition-colors duration-500 leading-none ${priceChangeColor}`}>
-                          ${currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                          ${currentPrice.toLocaleString(undefined, { 
+                            minimumFractionDigits: currentPrice < 1 ? 6 : 2, 
+                            maximumFractionDigits: currentPrice < 1 ? 8 : 2 
+                          })}
                         </span>
                         {price24hAgo > 0 && (
                           <span className="text-[10px] text-slate-500 font-black uppercase tracking-widest mt-1 opacity-60">
@@ -606,7 +612,7 @@ function App() {
                          </div>
                      </div>
                      <div className="xl:col-span-1 min-h-[500px]">
-                         <SmartTerminalView symbol={symbol} currentPrice={currentPrice} handleSmartTrade={handleSmartTrade} handleMarketClose={handleMarketClose} tpPrice={tpPrice} setTpPrice={setTpPrice} slPrice={slPrice} setSlPrice={setSlPrice} tpEnabled={tpEnabled} setTpEnabled={setTpEnabled} slEnabled={slEnabled} setSlEnabled={setSlEnabled} assetBalance={assetBalance} tradingMode={tradingMode} isTrading={isTrading} />
+                         <SmartTerminalView symbol={symbol} currentPrice={currentPrice} handleSmartTrade={handleSmartTrade} handleMarketClose={handleMarketClose} tpPrice={tpPrice} setTpPrice={setTpPrice} slPrice={slPrice} setSlPrice={setSlPrice} tpEnabled={tpEnabled} setTpEnabled={setTpEnabled} slEnabled={slEnabled} setSlEnabled={setSlEnabled} assetBalance={assetBalance} tradingMode={tradingMode} isTrading={isTrading} tpPercent={tpPercent} setTpPercent={setTpPercent} slPercent={slPercent} setSlPercent={setSlPercent} />
                      </div>
                  </div>
              } />
