@@ -1,47 +1,35 @@
-# Application Workflows
+# Application Workflows & Architecture
 
-This document describes the high-level automated and manual processes that power the Trading Workstation.
+This guide describes the end-to-end workflows that power the Trading Workstation.
 
-## 1. The "Smart Trade" Lifecycle (Spot) ✅ VERIFIED
+## 1. The Smart Trade Lifecycle (Set-and-Forget) ✅
 
-This is the primary manual trading flow designed for set-and-forget execution.
+Designed to ensure your capital is protected even if your computer is offline.
 
-1.  **Entry Execution**: 
-    *   User clicks "Execute" in the Smart Terminal.
-    *   Backend executes a `MARKET` or `LIMIT` order on Binance.
-    *   **Validated**: Correct average fill price is captured even for split market fills.
-2.  **Protection Setup**:
-    *   Backend calculates OCO quantity by subtracting commissions (**Fee-Aware Clipping**).
-    *   Places an `OCO` (One-Cancels-the-Other) order on Binance.
-    *   **Validated**: Handles "Above/Below Type" mandatory parameters for latest Binance API.
-3.  **Local Persistence**:
-    *   The trade ID, Entry Price, and OCO List ID are saved to **MongoDB**.
-4.  **Monitoring**:
-    *   The UI displays a **Smart Card** with a visual progress bar.
-    *   **Validated**: Multiple trades for the same coin are isolated and shown as separate cards.
-5.  **Closing**:
-    *   **Panic Sell**: Cancels the OCO and executes a Market Sell of the *exact* trade quantity.
-    *   **Verified**: Does not affect other trades of the same asset.
+1.  **Entry Phase**: System executes a `MARKET` order. It immediately parses the `fills` array from the response to calculate the exact **Weighted Average Entry Price** and **Entry Commissions**.
+2.  **Calculation Phase**: System uses **Floor Rounding** to format the quantity. It applies **Fee-Aware Clipping** (subtracting commissions from the total) to ensure the subsequent Sell order doesn't exceed the wallet balance.
+3.  **Protection Phase**: System places an **OCO (One-Cancels-the-Other)** order. If the market doesn't support OCO for that coin, it falls back to a single **Limit Sell** or **Stop Loss**.
+4.  **Database Phase**: The Master ID, Binance Order IDs, and Strategy Targets are saved to **MongoDB**.
+5.  **Monitoring**: The UI draws a **Visual Card** with a P&L progress bar. P&L is calculated using the real-time price against the recorded average entry price.
 
-## 2. Autonomous Trade Reconciliation (The "Truth-Seeker") ✅ VERIFIED
+## 2. Quantum Scanner & AI Ranking 🤖
 
-Runs every 30 seconds to ensure MongoDB matches Binance exchange reality.
+1.  **Discovery**: Backend fetches 24hr stats for all 300+ USDT/USDC pairs. It filters for symbols where `status == 'TRADING'` and `24h_volume > $1M`.
+2.  **Scoring**: Top 20 candidates are analyzed across 7 timeframes. A **Quant Score (0-10)** is assigned based on RSI, ADX, and EMAs.
+3.  **AI Filtering (Ranking)**: The user clicks "AI Rank." The current scanner table is sent to the local **Qwen 2.5 14B** model. The AI identifies the top 3 setups with the highest technical confluence.
+4.  **Expert Deep Analysis**: Clicking the "Activity" icon on a row triggers a **Deep Dive**. The system rescans all timeframes for that specific coin and asks the AI to generate a precise trade setup (Entry, TP, SL).
 
-*   **Logic**:
-    1.  Fetch all `ACTIVE` trades from MongoDB.
-    2.  Check Binance for the specific **Order IDs** (not just balance guesses).
-    3.  If IDs are missing, check Order History.
-    4.  **FILL Detection**: If ID is `FILLED`, the system captures the `exit_price` and `fees` and moves the trade to **History**.
-    5.  **MANUAL Detection**: If ID is `CANCELLED`, the trade stays active but moves to `MANUAL_CONTROL` mode.
+## 3. Autonomous Reconciliation (The Reconciler) 🛡️
 
-## 3. The "Turbo-Scan" AI Pipeline ✅ VERIFIED
+A background task running every 30 seconds to keep MongoDB in sync with Binance reality.
 
-1.  **Market Filtering**: Fetches 24hr statistics and selects top 20 opportunity pairs.
-2.  **TRADING Guard**: Automatically skips any coin in `BREAK` or `HALT` status to prevent API errors.
-3.  **Multithreaded Scan**: Fetches 140+ technical data points across 7 timeframes.
-4.  **AI Analysis**: Local LLM (Qwen 2.5 14B) ranks setups and generates Suggested Entry/TP/SL.
+*   **Order ID Verification**: It queries Binance for every specific Order ID stored in a trade's `orders` array.
+*   **Fill Detection**: If a TP or SL ID is missing from "Open Orders," it checks the **Binance Trade History**.
+*   **Auto-Closure**: If a `FILLED` status is found, it captures the **Exit Price** and **Exit Fees**, marks the trade as `CLOSED` in MongoDB, and the card moves to the "Closed Trades" tab.
+*   **Manual Control Detection**: If orders are `CANCELLED` (e.g., via the Binance app), it switches the trade to `MANUAL_CONTROL` mode in our UI.
 
-## 4. API Audit Logging ✅ VERIFIED
+## 4. System Auditing & Data Persistence 🗄️
 
-*   **Logic**: Every interaction with the Binance API is "Black-Boxed" in MongoDB.
-*   **Purpose**: Debugging notional errors, precision filters, and exchange-side market closures.
+*   **Request Auditing**: Every single POST/DELETE/GET interaction with the Binance API is "Black-Boxed" in MongoDB with its raw payload and raw response.
+*   **Database**: All trades, rankings, and audit logs are stored in **MongoDB**. This ensures your trade history survives computer restarts and backend updates.
+*   **Safety Guards**: The system proactively uses `recvWindow=60000` and automatic clock synchronization to prevent timestamp-related API rejections.

@@ -1,74 +1,82 @@
-# Trading Management Workstation - Backend API Reference
+# Trading Management Workstation - Full API Reference
 
-This document outlines the available FastAPI endpoints used by the React frontend to manage trading, scanning, and auditing.
+This document provides a comprehensive technical reference for all FastAPI endpoints.
 
 > **Status Key:**
-> ✅ **TESTED**: Verified via Integration Tests (`test_integration_smart_trade.py`, `test_reconciler_fill.py`).
-> 🛡️ **STABLE**: Robustly handles errors, dust, and Binance filter requirements.
+> ✅ **TESTED**: Verified via Integration Tests.
+> 🛡️ **STABLE**: Production-ready with error handling.
+> 🤖 **AI-DRIVEN**: Interfaces with local LLM.
 
 ## 1. Trade Management (`/trades`)
 
 ### **GET /trades/open** ✅ 🛡️
-Fetches all currently active trades, including "Virtual Positions" (coins held in wallet) and pending OCO orders.
-*   **Returns**: `List[Order]` (enriched with `smart_meta` from MongoDB).
-*   **Tested Path**: Successfully groups multiple OCO legs into a single master trade ID.
+Returns all active setups.
+*   **Logic**: Aggregates Binance open orders + local MongoDB metadata + "Virtual Positions" (wallet holdings).
+*   **Response**: `List[Order]` enriched with `smart_meta`.
 
 ### **POST /trades/smart-trade** ✅ 🛡️
-Executes a new "Smart Trade" (Market/Limit Entry + OCO Protectors).
-*   **Request Body**: `SmartTradeRequest`
-    *   `symbol` (str): e.g., "BTCUSDT"
-    *   `quantity` (float)
-    *   `take_profit_price` (float)
-    *   `stop_loss_price` (float)
-    *   `side` (str): "BUY" (Long) or "SELL" (Short)
-    *   `mode` (str): "SPOT" or "LEAD"
-*   **Response**: `{ "entry": Order, "status": str }`
-*   **Tested Path**: Market Buy -> Capture average fill price -> Calculate precise OCO qty (fee adjusted) -> Place OCO protectors.
+The primary entry execution engine.
+*   **Body**: `SmartTradeRequest(symbol, quantity, tp, sl, side, mode)`
+*   **Workflow**: Market Buy -> Capture Fill Price -> Calculate Fee-Adjusted Qty -> Place OCO Protectors -> Save to MongoDB.
 
 ### **GET /trades/smart-history** ✅ 🛡️
-Returns a list of all Smart Trades that have been closed, including calculated P&L and fees.
-*   **Returns**: `List[TradeMetadata]` (sorted by most recent).
-*   **Tested Path**: Verified extraction of exact `exit_price` and `exit_fees` from Binance filled orders.
+The P&L engine.
+*   **Returns**: All closed trades from MongoDB with entry/exit prices, timestamps, and fees.
 
 ### **POST /trades/market-close** ✅ 🛡️
-Surgically closes a specific Smart Trade by cancelling its protection legs and executing an immediate Market Sell of its specific quantity.
-*   **Request Body**: `MarketCloseRequest`
-    *   `symbol` (str)
-    *   `quantity` (Optional[float])
-    *   `orderListId` (Optional[int])
-    *   `clientOrderId` (Optional[str])
-*   **Response**: `Order` (The Market Sell confirmation).
-*   **Tested Path**: Isolated closure verified (Closing trade A does not affect trade B).
+Surgical "Panic Sell."
+*   **Body**: `MarketCloseRequest(symbol, quantity, orderListId)`
+*   **Workflow**: Cancel specific OCO -> Wait 1.5s -> Market Sell specific Qty -> Mark CLOSED in DB.
 
 ### **DELETE /trades/order** ✅
-Cancels a single specific order on Binance.
-*   **Request Body**: `CancelOrderRequest`
-    *   `symbol` (str)
-    *   `orderId` (int)
+Cancels any single order on Binance.
 
 ---
 
-## 2. Market Data & Scanner
+## 2. Quantum Scanner (`/scanner`)
 
 ### **GET /scanner/table** ✅
-Returns the results of the last full market scan.
-*   **Returns**: `{ "timestamp": str, "results": List[ScanRow] }`
+Fetches the results of the last automated or manual scan.
 
-### **POST /scanner/run** ✅
-Triggers a fresh scan of the top opportunity pairs. 
-*   **Logic**: Proactively filters out symbols not in `TRADING` status (Hides coins in maintenance/BREAK).
-*   **Parameters**: `RunScannerRequest` (Optional list of pairs).
-
-### **GET /symbols** ✅
-Returns a list of all USDT/USDC pairs currently in `TRADING` status.
+### **POST /scanner/run** ✅ 🛡️
+Triggers the multithreaded scanning engine.
+*   **Body**: `RunScannerRequest(pairs, timeframe)`
+*   **Logic**: Proactively filters for `status == 'TRADING'`. Scans across multiple timeframes.
 
 ---
 
-## 3. Account & Auditing
+## 3. AI & Analysis (`/llm`)
 
-### **GET /account/balances** ✅
-Returns the current wallet balances from Binance.
-*   **Protection**: Automatically filters out "Dust" (very small balances).
+### **POST /llm/rank** 🤖
+Triggers the Qwen 2.5 14B model to analyze the current scanner table.
+*   **Returns**: Sorted list of top 3 high-probability setups with AI Bias and Reasoning.
+
+### **GET /llm/analyze_row/{symbol}** 🤖
+Performs a "Deep Analysis" on a single coin.
+*   **Logic**: Fresh 7-timeframe rescan -> LLM context generation -> Target price (Entry/TP/SL) generation.
+
+---
+
+## 4. Market Data & Indicators (`/market`, `/indicators`, `/score`)
+
+### **GET /market/multi-timeframe-candles/{symbol}** ✅
+Fetches OHLCV data for 5m, 15m, 1h, 4h, 1d, 1w, 1M timeframes in parallel.
+
+### **GET /indicators/{symbol}/{interval}** ✅
+Calculates RSI, ADX, MACD, Bollinger Bands, and EMA Ribbon values.
+
+### **GET /score/{symbol}/{interval}** ✅
+Returns a 0-10 Quant Confluence score based on technical alignment.
+
+---
+
+## 5. Account & System (`/account`, `/audit`)
+
+### **GET /account/balances** ✅ 🛡️
+Returns live wallet balances. Automatically filters out exchange dust.
 
 ### **GET /audit/logs** ✅
-Retrieves the permanent record of every API interaction with Binance from MongoDB.
+Returns the "Black Box" log of all Binance API interactions from MongoDB.
+
+### **GET /audit/ping-db** ✅
+Verifies MongoDB connectivity.
