@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { ScanSearch, TrendingUp, TrendingDown, Scale, Zap, Activity, Layers, Target, Info, ArrowUp, ArrowDown, Filter, X, ShieldCheck, Target as TargetIcon, AlertCircle } from 'lucide-react';
+import { ScanSearch, TrendingUp, TrendingDown, Scale, Zap, Activity, Layers, Info, ArrowUp, ArrowDown, Filter, X, ShieldCheck, Target as TargetIcon, AlertCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8001';
@@ -133,7 +133,7 @@ const ColumnHeader = ({ label, tooltip, sortKey, currentSort, onSort }) => {
     );
 };
 
-const ScannerView = ({ symbols, onAutoTrade }) => {
+const ScannerView = ({ symbols, onAutoTrade, onSelectSymbol }) => {
     const [scannerResults, setScannerResults] = useState([]);
     const [scanning, setScanning] = useState(false);
     const [rankingLLM, setRankingLLM] = useState(false);
@@ -145,6 +145,11 @@ const ScannerView = ({ symbols, onAutoTrade }) => {
     const [sortConfig, setSortConfig] = useState({ key: 'score', direction: 'desc' });
     const [filterText, setFilterText] = useState('');
     const navigate = useNavigate();
+
+    const handlePairClick = (pair) => {
+        onSelectSymbol(pair);
+        navigate('/');
+    };
 
     const timeframes = ['5m', '15m', '1h', '4h', '1d', '1w', '1M'];
 
@@ -253,15 +258,15 @@ const ScannerView = ({ symbols, onAutoTrade }) => {
     return (
         <div className="h-full flex flex-col bg-slate-900 overflow-hidden">
             <AnalysisModal data={analysisResult} onClose={() => setAnalysisResult(null)} onQuickTrade={handleQuickTrade} />
-            <header className="flex flex-col lg:flex-row justify-between items-start lg:items-center px-6 py-6 gap-6">
+            <header className="flex flex-col lg:flex-row justify-between items-start lg:items-center px-6 py-6 gap-6 shrink-0">
                 <div>
-                    <h1 className="text-3xl font-black text-white flex items-center gap-3 tracking-tighter">
+                    <h1 className="text-3xl font-black text-white flex items-center gap-3 tracking-tighter uppercase">
                         <ScanSearch size={32} className="text-blue-500" /> QUANT SCANNER
                     </h1>
                     <div className="flex items-center gap-2 mt-1 group relative cursor-help">
                         <p className="text-slate-500 text-xs font-bold uppercase tracking-widest">Top 20 Opportunity Markets (USDC/USDT)</p>
                         <Info size={12} className="text-slate-600" />
-                        <div className="absolute top-full left-0 mt-2 w-64 bg-slate-800 p-3 rounded-lg border border-slate-700 shadow-2xl z-50 invisible group-hover:visible text-[10px] text-slate-300 leading-relaxed font-medium">
+                        <div className="absolute top-full left-0 mt-2 w-64 bg-slate-800 p-3 rounded-lg border border-slate-700 shadow-2xl z-[100] invisible group-hover:visible text-[10px] text-slate-300 leading-relaxed font-medium">
                             <span className="text-blue-400 font-bold block mb-1 uppercase">Selection Logic:</span>
                             Ranked using a multi-factor Opportunity Score:<br/>
                             • 30% 24h Volume (&gt;1M Quote Value)<br/>
@@ -286,19 +291,21 @@ const ScannerView = ({ symbols, onAutoTrade }) => {
                             <Zap size={16} className={scanning ? 'animate-spin' : ''} /> {scanning ? 'SCANNING...' : `SCAN ON ${selectedTF}`}
                         </button>
                         <button onClick={handleRankLLM} disabled={rankingLLM || scannerResults.length === 0} className="flex items-center gap-2 bg-purple-600 hover:bg-purple-500 text-white font-black py-2.5 px-6 rounded-xl transition-all disabled:opacity-50 shadow-lg shadow-purple-900/20 text-xs uppercase tracking-wider">
-                            <Target size={16} className={rankingLLM ? 'animate-pulse' : ''} /> {rankingLLM ? 'RANKING...' : 'AI RANK'}
+                            <TargetIcon size={16} className={rankingLLM ? 'animate-pulse' : ''} /> {rankingLLM ? 'RANKING...' : 'AI RANK'}
                         </button>
                     </div>
                 </div>
             </header>
-            {error && (<div className="mb-6 p-4 bg-rose-500/10 border border-rose-500/30 rounded-2xl flex items-center gap-3 mx-6"><div className="w-2 h-2 bg-rose-500 rounded-full animate-ping"></div><p className="text-rose-400 text-xs font-bold uppercase tracking-wider">Error: {error}</p></div>)}
-            <div className="flex-1 min-h-0 bg-slate-950 rounded-3xl border border-slate-800 shadow-2xl overflow-hidden mx-6 mb-6">
-                <div className="bg-slate-900/30 px-6 py-3 border-b border-slate-800 flex justify-between items-center">
+            
+            {error && (<div className="mb-6 p-4 bg-rose-500/10 border border-rose-500/30 rounded-2xl flex items-center gap-3 mx-6 shrink-0"><div className="w-2 h-2 bg-rose-500 rounded-full animate-ping"></div><p className="text-rose-400 text-xs font-bold uppercase tracking-wider">Error: {error}</p></div>)}
+            
+            <div className="flex-1 min-h-0 bg-slate-950 rounded-3xl border border-slate-800 shadow-2xl overflow-hidden mx-6 mb-6 flex flex-col">
+                <div className="bg-slate-900/30 px-6 py-3 border-b border-slate-800 flex justify-between items-center shrink-0">
                     <div className="flex items-center gap-2"><Activity size={14} className="text-blue-400" /><span className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.1em]">Displaying <span className="text-blue-400">{lastScanTF}</span> analysis • Sorted by <span className="text-blue-400">{sortConfig.key}</span></span></div>
                     <span className="text-[9px] text-slate-600 font-bold uppercase tracking-widest">{processedResults.length} / {scannerResults.length} Pairs</span>
                 </div>
-                <div className="h-full overflow-auto">
-                    <table className="w-full text-left border-collapse">
+                <div className="flex-1 overflow-auto scrollbar-thin scrollbar-thumb-slate-800">
+                    <table className="w-full text-left border-collapse min-w-[1200px]">
                         <thead className="sticky top-0 bg-slate-900 z-20">
                             <tr className="bg-slate-900 text-slate-500 border-b border-slate-800">
                                 <ColumnHeader label="Pair" tooltip="Asset symbol compared against USDC or USDT. Top 20 are selected based on Volume, Volatility, and Momentum." sortKey="pair" currentSort={sortConfig} onSort={handleSort} />
@@ -319,7 +326,14 @@ const ScannerView = ({ symbols, onAutoTrade }) => {
                         <tbody className="font-mono text-[13px]">
                             {processedResults.map((r, index) => (
                                 <tr key={r.pair || index} className="border-b border-slate-800/30 hover:bg-blue-500/5 transition-all group">
-                                    <td className="py-4 px-4"><div className="font-black text-white group-hover:text-blue-400 transition-colors">{r.pair}</div></td>
+                                    <td className="py-4 px-4">
+                                        <button 
+                                            onClick={() => handlePairClick(r.pair)}
+                                            className="font-black text-white group-hover:text-blue-400 transition-colors hover:underline text-left outline-none"
+                                        >
+                                            {r.pair}
+                                        </button>
+                                    </td>
                                     <td className="py-4 px-4 text-slate-300">${r.price?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}</td>
                                     <td className="py-4 px-4"><div className="flex flex-col gap-1.5"><span className={`text-[10px] font-black tracking-widest ${getStatusColor(r.heatmap)}`}>{r.heatmap}</span>{r.heatmap_multi && <HeatmapCell heatmap={r.heatmap_multi} />}</div></td>
                                     <td className="py-4 px-4"><span className={`px-2 py-1 rounded text-[10px] font-black border ${r.structure === 'BREAKOUT' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 animate-pulse' : 'bg-slate-800 border-slate-700 text-slate-300'}`}>{r.structure}</span></td>

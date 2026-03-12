@@ -102,7 +102,7 @@ def reconcile_trades():
             if missing_legs:
                 print(f"🔍 Reconciler: Detected missing order for {tid}. Checking history...")
                 found_fill = False
-                exit_price, exit_fees = 0, 0
+                exit_price, exit_fees, actual_close_time = 0, 0, None
                 
                 for leg in strategy_legs:
                     try:
@@ -110,6 +110,7 @@ def reconcile_trades():
                         if order_info.get('status') == 'FILLED':
                             found_fill = True
                             exec_qty = float(order_info['executedQty'])
+                            actual_close_time = order_info.get('updateTime', 0) / 1000.0 # Convert ms to seconds
                             if exec_qty > 0:
                                 exit_price = float(order_info['cummulativeQuoteQty']) / exec_qty
                                 trades = binance_client.get_my_trades(symbol=meta['symbol'], limit=10)
@@ -118,7 +119,7 @@ def reconcile_trades():
                     except: continue
                 
                 if found_fill:
-                    _mark_trade_closed(meta['symbol'], None, tid, meta['quantity'], exit_price, exit_fees)
+                    _mark_trade_closed(meta['symbol'], None, tid, meta['quantity'], exit_price, exit_fees, actual_close_time)
                 else:
                     from .database import trades_collection
                     trades_collection.update_one({"_id": tid}, {"$set": {"status": "MANUAL_CONTROL"}})
@@ -225,29 +226,45 @@ def market_close_position(symbol: str, quantity: Optional[float] = None, order_l
             return {"status": "ARCHIVED"}
         formatted_qty_str = format_quantity(symbol, sell_qty)
         sell_order = binance_client.create_order(symbol=symbol, side=SIDE_SELL, type=ORDER_TYPE_MARKET, quantity=formatted_qty_str, recvWindow=60000)
-        exit_price, total_exit_fees = 0, 0
+        exit_price, total_exit_fees, actual_close_time = 0, 0, None
         fills = sell_order.get('fills', [])
+        actual_close_time = sell_order.get('transactTime', 0) / 1000.0 # Use transactTime for market orders
+        
         if fills:
             total_qty = sum(float(f['qty']) for f in fills)
             total_cost = sum(float(f['qty']) * float(f['price']) for f in fills)
             total_exit_fees = sum(float(f['commission']) for f in fills)
             exit_price = total_cost / total_qty
         else: exit_price = float(price_info['price'])
-        _mark_trade_closed(symbol, order_list_id, client_order_id, float(formatted_qty_str), exit_price, total_exit_fees)
+        
+        _mark_trade_closed(symbol, order_list_id, client_order_id, float(formatted_qty_str), exit_price, total_exit_fees, actual_close_time)
         return sell_order
     except Exception as e: raise HTTPException(status_code=400, detail=str(e))
 
-def _mark_trade_closed(symbol: str, order_list_id: Optional[int] = None, client_order_id: Optional[str] = None, quantity: float = 0, exit_price: float = 0, exit_fees: float = 0):
+def _mark_trade_closed(symbol: str, order_list_id: Optional[int] = None, client_order_id: Optional[str] = None, quantity: float = 0, exit_price: float = 0, exit_fees: float = 0, close_time: Optional[float] = None):
     all_trades = trade_tracker._load_trades()
+    final_close_time = close_time if close_time else time.time()
+    
     for tid, tmeta in all_trades.items():
         if tmeta['symbol'] == symbol and tmeta.get('status') != 'CLOSED':
             match = False
             if order_list_id and tmeta.get('orderListId') == order_list_id: match = True
             elif client_order_id and tid == client_order_id: match = True
             elif not order_list_id and not client_order_id and abs(tmeta.get('quantity', 0) - quantity) < (quantity * 0.1): match = True
+            
             if match:
                 from .database import trades_collection
-                trades_collection.update_one({"_id": tid}, {"$set": {"status": "CLOSED", "exit_price": exit_price, "exit_fees": exit_fees, "close_time": time.time()}})
+                trades_collection.update_one(
+                    {"_id": tid}, 
+                    {"$set": {
+                        "status": "CLOSED", 
+                        "exit_price": exit_price, 
+                        "exit_fees": exit_fees, 
+                        "close_time": final_close_time
+                    }}
+                )
+                print(f"✅ Trade {tid} archived successfully with close_time {final_close_time}")
+                break # Only close one match per call
 
 def format_quantity(symbol: str, quantity: float) -> str:
     try:

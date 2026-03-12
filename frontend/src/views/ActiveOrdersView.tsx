@@ -1,7 +1,9 @@
 import { useMemo } from 'react';
 import { Activity, XCircle, ShieldAlert } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
-const ActiveOrdersView = ({ openOrders, handleCancelOrder, quoteBalance }) => {
+const ActiveOrdersView = ({ openOrders, handleCancelOrder, quoteBalance, onSelectSymbol }) => {
+    const navigate = useNavigate();
     const relevantOrders = useMemo(() => 
         openOrders.filter(o => 
             !o.clientOrderId?.startsWith('SMART_') && 
@@ -46,7 +48,14 @@ const ActiveOrdersView = ({ openOrders, handleCancelOrder, quoteBalance }) => {
                         <tbody className="font-mono text-sm">
                             {relevantOrders.length > 0 ? relevantOrders.map(o => (
                                 <tr key={o.orderId} className="border-b border-slate-800/30 hover:bg-slate-800/10 transition-all">
-                                    <td className="p-6 font-black text-white">{o.symbol}</td>
+                                    <td className="p-6">
+                                        <button 
+                                            onClick={() => { onSelectSymbol(o.symbol); navigate('/'); }}
+                                            className="font-black text-white hover:text-blue-400 transition-colors hover:underline text-left outline-none"
+                                        >
+                                            {o.symbol}
+                                        </button>
+                                    </td>
                                     <td className="p-6 text-center">
                                         <span className={`px-3 py-1 rounded-lg font-black text-[10px] ${o.side === 'BUY' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
                                             {o.side}

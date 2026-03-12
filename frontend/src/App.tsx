@@ -5,9 +5,112 @@ import { Route, Routes, HashRouter as BrowserRouter, useNavigate } from 'react-r
 import ScannerView from './views/ScannerView';
 import ActivePositionsView from './views/ActivePositionsView';
 import ActiveOrdersView from './views/ActiveOrdersView';
-import { ScanSearch, ListFilter, History, LayoutDashboard, ArrowUp, ArrowDown, Zap } from 'lucide-react';
+import { ScanSearch, ListFilter, History, LayoutDashboard, ArrowUp, ArrowDown, Zap, Wallet } from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8001';
+
+const WalletBalances = ({ balances, quoteAsset, globalPrices }) => {
+  const quoteBalance = balances.find(b => b.asset === quoteAsset);
+  const otherBalances = useMemo(() => {
+    return balances
+      .filter(b => b.asset !== quoteAsset && (parseFloat(b.free) > 0 || parseFloat(b.locked) > 0))
+      .map(b => {
+        const priceObj = globalPrices.find(p => p.symbol === `${b.asset}${quoteAsset}`);
+        const price = priceObj ? parseFloat(priceObj.price) : 0;
+        const total = parseFloat(b.free) + parseFloat(b.locked);
+        return { ...b, price, value: total * price };
+      })
+      .sort((a, b) => b.value - a.value);
+  }, [balances, globalPrices, quoteAsset]);
+
+  const totalPortfolioValue = useMemo(() => {
+    const quoteAmt = quoteBalance ? parseFloat(quoteBalance.free) + parseFloat(quoteBalance.locked) : 0;
+    const othersValue = otherBalances.reduce((sum, b) => sum + b.value, 0);
+    return quoteAmt + othersValue;
+  }, [quoteBalance, otherBalances]);
+
+  return (
+    <div className="relative group">
+      <div className="bg-blue-600/5 px-6 py-2 rounded-xl border border-blue-500/20 flex flex-col items-end justify-center shadow-lg transition-all group-hover:border-blue-500/50 group-hover:bg-blue-600/10 cursor-help min-w-[160px] h-[52px]">
+        <span className="text-[8px] font-black text-blue-400 uppercase tracking-[0.2em] mb-0.5 flex items-center gap-1">
+          <Wallet size={10} /> Wallet Value
+        </span>
+        <p className="font-mono text-lg font-black text-blue-100 tracking-tighter">
+          ${totalPortfolioValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        </p>
+      </div>
+
+      {/* MEGA DROP DOWN */}
+      <div className="absolute top-full right-0 mt-4 w-[480px] bg-slate-900/98 backdrop-blur-2xl border border-slate-700/50 rounded-3xl shadow-[0_30px_100px_rgba(0,0,0,0.9)] overflow-hidden opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-[2000] transform origin-top-right group-hover:translate-y-0 translate-y-4 scale-95 group-hover:scale-100">
+        <div className="p-6 border-b border-slate-800 bg-slate-950/50 flex justify-between items-center">
+          <h4 className="text-xs font-black text-white uppercase tracking-[0.2em] flex items-center gap-3">
+            <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+            Portfolio Breakdown
+          </h4>
+          <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest bg-slate-800 px-3 py-1 rounded-full border border-slate-700">Spot Wallet</span>
+        </div>
+        
+        <div className="p-2">
+          <div className="max-h-[400px] overflow-y-auto pr-2 custom-scrollbar relative">
+            <table className="w-full text-left border-collapse">
+              <thead className="sticky top-0 z-20">
+                <tr className="text-[10px] font-black text-slate-500 uppercase tracking-widest bg-slate-900">
+                  <th className="px-4 py-3 border-b border-slate-800">Asset</th>
+                  <th className="px-4 py-3 text-right border-b border-slate-800">Balance</th>
+                  <th className="px-4 py-3 text-right text-blue-400/70 border-b border-slate-800">Price</th>
+                  <th className="px-4 py-3 text-right text-emerald-400 border-b border-slate-800">Value ({quoteAsset})</th>
+                </tr>
+              </thead>
+              <tbody className="font-mono">
+                {/* Quote Asset Row First */}
+                <tr className="bg-blue-500/10 transition-colors border-b border-slate-800/50">
+                  <td className="px-4 py-4 text-sm text-white font-black">{quoteAsset}</td>
+                  <td className="px-4 py-4 text-right text-sm text-slate-300">{(parseFloat(quoteBalance?.free || '0') + parseFloat(quoteBalance?.locked || '0')).toLocaleString()}</td>
+                  <td className="px-4 py-4 text-right text-sm text-slate-600">1.00</td>
+                  <td className="px-4 py-4 text-right text-sm text-emerald-400 font-black">${parseFloat(quoteBalance?.free || '0').toLocaleString()}</td>
+                </tr>
+                
+                {otherBalances.map(b => (
+                  <tr key={b.asset} className="hover:bg-slate-800/50 transition-colors border-b border-slate-800/30 last:border-0">
+                    <td className="px-4 py-4 text-sm text-white font-black">{b.asset}</td>
+                    <td className="px-4 py-4 text-right text-sm text-slate-400">{parseFloat(b.free).toFixed(4)}</td>
+                    <td className="px-4 py-4 text-right text-sm text-slate-500">${b.price < 1 ? b.price.toFixed(6) : b.price.toFixed(2)}</td>
+                    <td className="px-4 py-4 text-right text-sm text-white font-black">${b.value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          
+          {otherBalances.length === 0 && (
+            <div className="py-12 text-center">
+              <Zap size={32} className="mx-auto text-slate-800 mb-2" />
+              <p className="text-[10px] text-slate-600 font-bold uppercase tracking-widest">No other assets detected</p>
+            </div>
+          )}
+        </div>
+        
+        <div className="bg-slate-950/80 p-4 border-t border-slate-800 flex justify-between items-center">
+           <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Live rates from Binance</span>
+           <div className="flex gap-4">
+              <div className="flex flex-col items-end">
+                <span className="text-[8px] font-black text-slate-500 uppercase tracking-tighter">Total {quoteAsset}</span>
+                <span className="text-xs font-black text-slate-300">
+                  ${(parseFloat(quoteBalance?.free || '0') + parseFloat(quoteBalance?.locked || '0')).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              </div>
+              <div className="flex flex-col items-end">
+                <span className="text-[8px] font-black text-slate-500 uppercase tracking-tighter">In Assets</span>
+                <span className="text-xs font-black text-blue-400">
+                  ${otherBalances.reduce((s, b) => s + b.value, 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              </div>
+           </div>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const SmartTerminalView = ({ 
   symbol, currentPrice, handleSmartTrade, handleMarketClose, 
@@ -324,6 +427,12 @@ function App() {
   const [tradingMode, setTradingMode] = useState('SPOT'); // 'SPOT' or 'LEAD'
   const [symbolSearch, setSymbolSearch] = useState('BTCUSDT');
   const [interval, setIntervalTime] = useState('1h');
+  const [showChartTargets, setShowChartTargets] = useState(true);
+  const [emaSettings, setEmaSettings] = useState([
+    { id: 1, period: 20, color: '#3b82f6', enabled: true },
+    { id: 2, period: 50, color: '#f97316', enabled: true }
+  ]);
+  const [globalPrices, setGlobalPrices] = useState<any[]>([]);
   const [currentPrice, setCurrentPrice] = useState(0);
   const [price24hAgo, setPrice24hAgo] = useState(0);
   const [filterOrdersBySymbol, setFilterOrdersBySymbol] = useState(true);
@@ -364,6 +473,18 @@ function App() {
   }, [balances, symbol]);
 
   const quoteAsset = useMemo(() => symbol.endsWith('USDT') ? 'USDT' : 'USDC', [symbol]);
+
+  useEffect(() => {
+    const fetchGlobalPrices = async () => {
+      try {
+        const res = await fetch('https://api.binance.com/api/v3/ticker/price');
+        if (res.ok) setGlobalPrices(await res.json());
+      } catch (e) {}
+    };
+    fetchGlobalPrices();
+    const interval = setInterval(fetchGlobalPrices, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   const fetchPrivateData = async () => {
     try {
@@ -489,8 +610,31 @@ function App() {
   const onAutoTrade = (setup) => {
     setSymbol(setup.pair);
     setSymbolSearch(setup.pair);
-    if (setup.tp) { setTpPrice(setup.tp); setTpEnabled(true); }
-    if (setup.sl) { setSlPrice(setup.sl); setSlEnabled(true); }
+    
+    const entry = setup.entry || currentPrice;
+    
+    if (setup.tp) { 
+      setTpPrice(setup.tp); 
+      setTpEnabled(true);
+      if (entry > 0) {
+        const percent = (setup.tp - entry) / entry * 100;
+        setTpPercent(parseFloat(percent.toFixed(4)));
+      }
+    }
+    
+    if (setup.sl) { 
+      setSlPrice(setup.sl); 
+      setSlEnabled(true);
+      if (entry > 0) {
+        const percent = (setup.sl - entry) / entry * 100;
+        setSlPercent(parseFloat(percent.toFixed(4)));
+      }
+    }
+  }
+
+  const handleSelectSymbol = (s) => {
+    setSymbol(s);
+    setSymbolSearch(s);
   }
 
   return (
@@ -571,14 +715,18 @@ function App() {
                   </div>
 
                   <div className="flex gap-2">
-                    <div className="bg-slate-950 px-4 py-2 rounded-xl border border-slate-800 flex flex-col items-end justify-center min-w-[120px]">
-                        <span className="text-slate-500 text-[8px] font-black uppercase tracking-widest mb-0.5 opacity-70">{symbol.replace(quoteAsset, '')}</span>
+                    {/* BOX 1: BASE ASSET */}
+                    <div className="bg-slate-950 px-5 py-2 rounded-xl border border-slate-800 flex flex-col items-end justify-center min-w-[130px] h-[52px]">
+                        <span className="text-slate-500 text-[8px] font-black uppercase tracking-[0.2em] mb-0.5 opacity-70">{symbol.replace(quoteAsset, '')} Balance</span>
                         <p className="font-mono text-sm font-black text-white tracking-tighter">{parseFloat(assetBalance.toString()).toLocaleString(undefined, { minimumFractionDigits: 4 })}</p>
                     </div>
-                    <div className="bg-blue-600/5 px-5 py-2 rounded-xl border border-blue-500/20 flex flex-col items-end justify-center min-w-[140px]">
-                        <span className="text-blue-400 text-[8px] font-black uppercase tracking-widest mb-0.5 opacity-70">{quoteAsset} Balance</span>
-                        <p className="font-mono text-lg font-black text-blue-100 tracking-tighter">${parseFloat(quoteBalance).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                    {/* BOX 2: QUOTE ASSET */}
+                    <div className="bg-slate-950 px-5 py-2 rounded-xl border border-slate-800 flex flex-col items-end justify-center min-w-[130px] h-[52px]">
+                        <span className="text-slate-500 text-[8px] font-black uppercase tracking-[0.2em] mb-0.5 opacity-70">{quoteAsset} Balance</span>
+                        <p className="font-mono text-sm font-black text-white tracking-tighter">${parseFloat(quoteBalance).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
                     </div>
+                    {/* BOX 3: WALLET VALUE (MEGA TOOLTIP) */}
+                    <WalletBalances balances={balances} quoteAsset={quoteAsset} globalPrices={globalPrices} />
                   </div>
               </div>
           </header>
@@ -586,9 +734,9 @@ function App() {
           <div className="flex-1 min-h-0">
            <Routes>
              <Route path="/" element={
-                 <div className="h-full grid grid-cols-1 xl:grid-cols-4 gap-4 p-4 overflow-y-auto xl:overflow-hidden bg-slate-900">
-                     <div className="xl:col-span-3 flex flex-col gap-4 min-h-[600px]">
-                         <div className="flex justify-between items-center">
+                 <div className="h-full grid grid-cols-1 xl:grid-cols-4 gap-4 p-4 xl:overflow-hidden bg-slate-900 overflow-y-auto">
+                     <div className="xl:col-span-3 flex flex-col gap-4 h-full">
+                         <div className="flex justify-between items-center shrink-0">
                            <div className="flex gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800/50">
                                {timeframes.map(tf => (
                                <button
@@ -601,24 +749,42 @@ function App() {
                                    {tf.label}
                                </button>
                                ))}
+                               <div className="w-px h-4 bg-slate-800 mx-2 self-center"></div>
+                               <button
+                                   onClick={() => setShowChartTargets(!showChartTargets)}
+                                   className={`px-4 py-1 rounded-md text-[10px] font-black uppercase tracking-wider transition-all ${
+                                   showChartTargets ? 'text-blue-400 bg-blue-400/10' : 'text-slate-500 hover:text-slate-400'
+                                   }`}
+                               >
+                                   {showChartTargets ? 'Targets: ON' : 'Targets: OFF'}
+                               </button>
                            </div>
                            <div className="text-[10px] font-black text-slate-600 uppercase tracking-widest px-2">{symbol} • LIVE MARKET DATA</div>
                          </div>
-                         <div className="flex-1 min-h-[400px] bg-slate-950 rounded-2xl border border-slate-800 shadow-2xl overflow-hidden relative">
-                             <TradingChart symbol={symbol} interval={interval} plannedTp={tpEnabled ? tpPrice : 0} plannedSl={slEnabled ? slPrice : 0} openOrders={openOrders.filter(o => o.symbol === symbol)} />
+                         <div className="flex-1 min-h-[300px] bg-slate-950 rounded-2xl border border-slate-800 shadow-2xl overflow-hidden relative">
+                             <TradingChart 
+                               symbol={symbol} 
+                               interval={interval} 
+                               plannedTp={tpEnabled ? tpPrice : 0} 
+                               plannedSl={slEnabled ? slPrice : 0} 
+                               openOrders={openOrders.filter(o => o.symbol === symbol)} 
+                               showTargets={showChartTargets} 
+                               emaSettings={emaSettings}
+                               onEmaUpdate={setEmaSettings}
+                             />
                          </div>
-                         <div className="xl:h-1/3 min-h-[250px]">
+                         <div className="h-1/3 min-h-[200px] shrink-0">
                            <BottomPanel openOrders={openOrders} tradeHistory={tradeHistory} symbol={symbol} filterOrdersBySymbol={filterOrdersBySymbol} setFilterOrdersBySymbol={setFilterOrdersBySymbol} handleCancelOrder={handleCancelOrder} />
                          </div>
                      </div>
-                     <div className="xl:col-span-1 min-h-[500px]">
+                     <div className="xl:col-span-1 h-full min-h-[400px]">
                          <SmartTerminalView symbol={symbol} currentPrice={currentPrice} handleSmartTrade={handleSmartTrade} handleMarketClose={handleMarketClose} tpPrice={tpPrice} setTpPrice={setTpPrice} slPrice={slPrice} setSlPrice={setSlPrice} tpEnabled={tpEnabled} setTpEnabled={setTpEnabled} slEnabled={slEnabled} setSlEnabled={setSlEnabled} assetBalance={assetBalance} tradingMode={tradingMode} isTrading={isTrading} tpPercent={tpPercent} setTpPercent={setTpPercent} slPercent={slPercent} setSlPercent={setSlPercent} />
                      </div>
                  </div>
              } />
-             <Route path="/scanner" element={<div className="h-full overflow-hidden bg-slate-900"><ScannerView symbols={symbols} onAutoTrade={onAutoTrade} /></div>} />
-             <Route path="/trades" element={<ActivePositionsView openOrders={openOrders} handleCancelOrder={handleCancelOrder} quoteBalance={quoteBalance} />} />
-             <Route path="/orders" element={<ActiveOrdersView openOrders={openOrders} handleCancelOrder={handleCancelOrder} quoteBalance={quoteBalance} />} />
+             <Route path="/scanner" element={<div className="h-full overflow-hidden bg-slate-900"><ScannerView symbols={symbols} onAutoTrade={onAutoTrade} onSelectSymbol={handleSelectSymbol} /></div>} />
+             <Route path="/trades" element={<ActivePositionsView openOrders={openOrders} handleCancelOrder={handleCancelOrder} quoteBalance={quoteBalance} onSelectSymbol={handleSelectSymbol} balances={balances} globalPrices={globalPrices} />} />
+             <Route path="/orders" element={<ActiveOrdersView openOrders={openOrders} handleCancelOrder={handleCancelOrder} quoteBalance={quoteBalance} onSelectSymbol={handleSelectSymbol} />} />
            </Routes>
           </div>        </main>
       </div>
