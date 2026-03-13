@@ -1,6 +1,5 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from typing import Optional, List, Dict, Any
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 import logging
@@ -8,18 +7,12 @@ import asyncio
 
 # Local imports
 from app.core.config import settings
-from app.models import SmartTradeRequest, CancelOrderRequest, MarketCloseRequest, RunScannerRequest
-from app.services import binance_service
-from app.services import market_service
-from app.utils import market_utils as market_service_utils
-from app.services import indicator_service
-from app.services import scoring_service
-from app.services import scanner_service
-from app.services import llm_service
 from app.db import database
-from app.services import trade_tracker
-from app.services import audit_service
+from app.services import binance_service
+from app.services import scanner_service
+from app.utils import market_utils as market_service_utils
 from app.core.middleware import EndpointAuditMiddleware
+from app.routes import spot, market, lead
 
 # Configure logging for APScheduler
 logging.basicConfig(level=logging.INFO)
@@ -27,6 +20,9 @@ logging.getLogger('apscheduler').setLevel(logging.INFO)
 
 app = FastAPI(title="Trading Management API")
 scheduler = AsyncIOScheduler()
+
+# Setup Audit Middleware
+app.add_middleware(EndpointAuditMiddleware)
 
 # Setup CORS
 app.add_middleware(
@@ -36,6 +32,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include Routers
+app.include_router(spot.router)
+app.include_router(market.router)
+app.include_router(lead.router, prefix="/lead")
 
 # --- Scheduler Jobs ---
 async def scheduled_scan_job():
@@ -89,116 +90,6 @@ async def startup_event():
 async def shutdown_event():
     scheduler.shutdown()
     print("Scheduler shut down.")
-
-# --- API Endpoints ---
-@app.get("/audit/logs")
-def get_audit_logs(limit: int = 50):
-    # MongoDB documents need _id converted to string for JSON serialization
-    logs = audit_service.get_recent_logs(limit)
-    for log in logs:
-        log["_id"] = str(log["_id"])
-    return logs
-
-@app.get("/audit/ping-db")
-def ping_db():
-    return {"connected": database.ping_db()}
-
-@app.get("/symbols")
-def get_symbols():
-    return binance_service.get_symbols()
-
-@app.get("/account/balances")
-def get_balances():
-    return binance_service.get_balances()
-
-@app.get("/trades/open")
-def get_open_orders():
-    return binance_service.get_open_orders()
-
-@app.post("/trades/smart-trade")
-def create_smart_trade(req: SmartTradeRequest):
-    return binance_service.create_smart_trade(
-        symbol=req.symbol,
-        quantity=req.quantity,
-        buy_price=req.buy_price,
-        take_profit_price=req.take_profit_price,
-        stop_loss_price=req.stop_loss_price,
-        side=req.side,
-        mode=req.mode
-    )
-
-@app.get("/trades/history")
-def get_trade_history(symbol: Optional[str] = None):
-    return binance_service.get_trade_history(symbol=symbol)
-
-@app.get("/trades/smart-history")
-def get_smart_history():
-    return binance_service.get_smart_history()
-
-@app.delete("/trades/order")
-def cancel_single_order(req: CancelOrderRequest):
-    return binance_service.cancel_order(symbol=req.symbol, order_id=req.orderId)
-
-@app.post("/trades/market-close")
-def market_close(req: MarketCloseRequest):
-    return binance_service.market_close_position(
-        symbol=req.symbol,
-        quantity=req.quantity,
-        order_list_id=req.orderListId
-    )
-
-@app.get("/market/candles/{symbol}/{interval}")
-def get_market_candles(symbol: str, interval: str):
-    return market_service.get_candles(symbol, interval)
-
-@app.get("/market/multi-timeframe-candles/{symbol}")
-def get_market_multi_timeframe(symbol: str):
-    return market_service.get_multi_timeframe_candles(symbol)
-
-@app.get("/indicators/{symbol}/{interval}")
-def get_indicators(symbol: str, interval: str):
-    candle_data = market_service.get_candles(symbol, interval)
-    return indicator_service.calculate_indicators(candle_data)
-
-@app.get("/score/{symbol}/{interval}")
-def get_score(symbol: str, interval: str):
-    candle_data = market_service.get_candles(symbol, interval)
-    indicators = indicator_service.calculate_indicators(candle_data)
-    return scoring_service.calculate_score(indicators)
-
-@app.post("/scanner/run")
-async def run_scanner_api(req: RunScannerRequest):
-    pairs = req.pairs
-    base_tf = req.timeframe or "1h"
-    if not pairs:
-        pairs = await asyncio.to_thread(market_service_utils.get_top_opportunity_pairs, 20)
-    results = await asyncio.to_thread(scanner_service.run_scan, pairs, base_tf)
-    return results
-
-@app.get("/scanner/table")
-def get_scanner_table():
-    return scanner_service.get_latest_scan()
-
-@app.post("/llm/rank")
-async def rank_llm_setups():
-    latest_scan = scanner_service.get_latest_scan()
-    scanner_table = latest_scan.get("results", [])
-    if not scanner_table:
-        raise HTTPException(status_code=400, detail="No scan results available to rank. Run scanner first.")
-    return await llm_service.rank_setups(scanner_table)
-
-@app.get("/llm/analyze_row/{symbol}")
-async def analyze_llm_row(symbol: str):
-    # Perform a fresh, targeted scan for this specific pair across all TFs
-    print(f"Performing fresh multi-TF scan for {symbol} deep analysis...")
-    multi_timeframe_candles = await asyncio.to_thread(market_service.get_multi_timeframe_candles, symbol)
-    
-    multi_timeframe_indicators = {}
-    for interval, candles in multi_timeframe_candles.items():
-        if candles:
-            multi_timeframe_indicators[interval] = indicator_service.calculate_indicators(candles)
-    
-    return await llm_service.analyze_row({"symbol": symbol, "indicators": multi_timeframe_indicators})
 
 if __name__ == "__main__":
     import uvicorn
