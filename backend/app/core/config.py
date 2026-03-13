@@ -2,8 +2,14 @@ import os
 from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
+    # Spot Credentials
     BINANCE_API_KEY: str = os.getenv("BINANCE_API_KEY", "").strip().strip("'").strip('"')
     BINANCE_API_SECRET: str = os.getenv("BINANCE_API_SECRET", "").strip().strip("'").strip('"')
+    
+    # Lead Trading / Futures Credentials
+    LEAD_API_KEY: str = os.getenv("LEAD_API_KEY", "").strip().strip("'").strip('"')
+    LEAD_API_SECRET: str = os.getenv("LEAD_API_SECRET", "").strip().strip("'").strip('"')
+    
     OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434")
     LLM_MODEL: str = os.getenv("LLM_MODEL", "qwen2.5:14b")
     SCANNER_INTERVAL_MINUTES: int = 5
@@ -18,4 +24,9 @@ settings = Settings()
 if not settings.BINANCE_API_KEY:
     print("WARNING: BINANCE_API_KEY is empty!")
 else:
-    print(f"API Key loaded: {settings.BINANCE_API_KEY[:4]}...{settings.BINANCE_API_KEY[-4:]}")
+    print(f"Spot API Key loaded: {settings.BINANCE_API_KEY[:4]}...{settings.BINANCE_API_KEY[-4:]}")
+
+if not settings.LEAD_API_KEY:
+    print("INFO: LEAD_API_KEY not configured. Lead Trading features will be restricted.")
+else:
+    print(f"Lead API Key loaded: {settings.LEAD_API_KEY[:4]}...{settings.LEAD_API_KEY[-4:]}")
