@@ -60,20 +60,23 @@ class FuturesService:
         return trades
 
     def get_lead_status(self):
-        """Returns the user's status in the Lead Trading ecosystem."""
-        self._ensure_client()
+        """Returns the user's status. Silently handles missing keys."""
+        if not self.copy_client:
+            return {"status": "RESTRICTED", "message": "API Keys Not Configured"}
         try:
             return self.copy_client.get_futures_lead_trader_status()
         except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Binance Error: {str(e)}")
+            return {"status": "ERROR", "message": str(e)}
 
     def get_tradable_symbols(self):
-        """Returns symbols whitelisted for Lead Trading."""
-        self._ensure_client()
+        """Returns whitelisted symbols. Returns empty list if keys missing."""
+        if not self.copy_client:
+            return []
         try:
             return self.copy_client.get_futures_lead_trading_symbol_whitelist()
         except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Binance Error: {str(e)}")
+            print(f"Lead Whitelist Fetch Error: {e}")
+            return []
 
     def set_leverage(self, symbol: str, leverage: int):
         """Sets leverage for a specific symbol."""

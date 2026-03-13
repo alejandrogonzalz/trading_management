@@ -60,15 +60,15 @@ In this environment (Win32/PowerShell), the `&&` operator often fails.
 - [x] Support for Leverage, Lead Orders, and Position Monitoring.
 
 #### 2. Frontend: Global State & Navigation
-- [ ] **Dynamic Environment Switching**: Toggle between "Spot" and "Lead" modes in the header.
-- [ ] **Context-Aware Search**: Automatically filter the symbol search bar based on the active mode (Spot symbols vs. Lead Whitelist).
+- [x] **Dynamic Environment Switching**: Toggle between "Spot" and "Lead" modes in the header.
+- [x] **Context-Aware Search**: Automatically filter the symbol search bar based on the active mode (Spot symbols vs. Lead Whitelist).
 - [ ] **Unified Mode Sync**: Ensure that clicking a symbol in the scanner automatically respects the current trading mode.
 
 #### 3. Frontend: Smart Terminal & Deep Analysis
-- [ ] **Leverage Management**: Add a high-precision slider (1x - 50x) to the terminal for Futures setups.
-- [ ] **Short/Long Support**: Fully implement the dual-side logic for Lead Positions.
+- [x] **Leverage Management**: Add a high-precision slider (1x - 50x) to the terminal for Futures setups.
+- [x] **Short/Long Support**: Fully implement the dual-side logic for Lead Positions.
 - [ ] **Deep Analysis "Setup Futures"**: Add a dedicated button in the AI Analysis popup to generate leverage-optimized setups.
-- [ ] **Pre-Trade Risk**: Display estimated Liquidation Price and Margin Required before clicking "Execute."
+- [x] **Pre-Trade Risk**: Display estimated Liquidation Price and Margin Required before clicking "Execute."
 
 #### 4. Frontend: Monitoring & Wallet
 - [ ] **Lead Positions Table**: New view dedicated to live Futures tracking (Size, Entry, Mark Price, Liq Price, ROE%).

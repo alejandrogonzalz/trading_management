@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { ArrowUp, ArrowDown } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { ArrowUp, ArrowDown, ShieldAlert, Zap, TrendingUp, TrendingDown } from 'lucide-react';
 
 const SmartTerminalView = ({ 
   symbol, currentPrice, handleSmartTrade, handleMarketClose, 
@@ -11,17 +11,38 @@ const SmartTerminalView = ({
   const [quantity, setQuantity] = useState(0.001);
   const [usdcAmount, setUsdcAmount] = useState(0);
   const [side, setSide] = useState('BUY'); // 'BUY' (Long) or 'SELL' (Short)
+  const [leverage, setLeverage] = useState(10);
 
   // Force 'BUY' if in SPOT mode
   useEffect(() => {
-    if (tradingMode === 'SPOT') setSide('BUY');
+    if (tradingMode === 'SPOT') {
+        setSide('BUY');
+        setLeverage(1);
+    } else {
+        setLeverage(10);
+    }
   }, [tradingMode]);
+
+  // Unified Cost Calculation (Leverage-Aware)
+  const calculateQuantity = (spend: number, lev: number, price: number) => {
+    if (price <= 0) return 0;
+    // Total Value = Spend * Leverage
+    // Quantity = Total Value / Price
+    return (spend * lev) / price;
+  };
+
+  const calculateSpend = (qty: number, lev: number, price: number) => {
+    if (lev <= 0 || price <= 0) return 0;
+    // Total Value = qty * price
+    // Spend (Margin) = Total Value / Leverage
+    return (qty * price) / lev;
+  };
 
   // Sync USDC when quantity changes
   const handleQuantityChange = (val: number) => {
     setQuantity(val);
     if (currentPrice > 0) {
-      setUsdcAmount(Number((val * currentPrice).toFixed(2)));
+      setUsdcAmount(Number(calculateSpend(val, leverage, currentPrice).toFixed(2)));
     }
   };
 
@@ -29,22 +50,28 @@ const SmartTerminalView = ({
   const handleUsdcChange = (val: number) => {
     setUsdcAmount(val);
     if (currentPrice > 0) {
-      setQuantity(Number((val / currentPrice).toFixed(6)));
+      setQuantity(Number(calculateQuantity(val, leverage, currentPrice).toFixed(6)));
     }
   };
 
+  // Re-sync on currentPrice or leverage change
   useEffect(() => {
-    if (currentPrice > 0 && usdcAmount === 0) {
-      setUsdcAmount(Number((quantity * currentPrice).toFixed(2)));
+    if (currentPrice > 0) {
+        if (usdcAmount > 0) {
+            setQuantity(Number(calculateQuantity(usdcAmount, leverage, currentPrice).toFixed(6)));
+        } else {
+            setUsdcAmount(Number(calculateSpend(quantity, leverage, currentPrice).toFixed(2)));
+        }
     }
-  }, [currentPrice]);
+  }, [currentPrice, leverage]);
 
-  // Re-sync prices if currentPrice changes or if Percent is typed manually
+  // Price/Percent Sync Logic
   const handleTpPercentChange = (val: number) => {
     const fixedVal = Number(val.toFixed(4));
     setTpPercent(fixedVal);
     if (currentPrice > 0) {
-      setTpPrice(Number((currentPrice * (1 + fixedVal / 100)).toFixed(8)));
+      const multiplier = side === 'BUY' ? (1 + fixedVal / 100) : (1 - fixedVal / 100);
+      setTpPrice(Number((currentPrice * multiplier).toFixed(8)));
     }
   };
 
@@ -52,21 +79,24 @@ const SmartTerminalView = ({
     const fixedVal = Number(val.toFixed(4));
     setSlPercent(fixedVal);
     if (currentPrice > 0) {
-      setSlPrice(Number((currentPrice * (1 + fixedVal / 100)).toFixed(8)));
+      const multiplier = side === 'BUY' ? (1 + fixedVal / 100) : (1 - fixedVal / 100);
+      setSlPrice(Number((currentPrice * multiplier).toFixed(8)));
     }
   };
 
   const handleTpPriceChange = (val: number) => {
     setTpPrice(val);
     if (currentPrice > 0) {
-      setTpPercent(Number(((val - currentPrice) / currentPrice * 100).toFixed(4)));
+      const diff = side === 'BUY' ? (val - currentPrice) : (currentPrice - val);
+      setTpPercent(Number((diff / currentPrice * 100).toFixed(4)));
     }
   };
 
   const handleSlPriceChange = (val: number) => {
     setSlPrice(val);
     if (currentPrice > 0) {
-      setSlPercent(Number(((val - currentPrice) / currentPrice * 100).toFixed(4)));
+      const diff = side === 'BUY' ? (val - currentPrice) : (currentPrice - val);
+      setSlPercent(Number((diff / currentPrice * 100).toFixed(4)));
     }
   };
   
@@ -76,9 +106,21 @@ const SmartTerminalView = ({
       tpPrice: tpEnabled ? tpPrice : 0,
       slPrice: slEnabled ? slPrice : 0,
       side,
-      mode: tradingMode
+      mode: tradingMode,
+      leverage: tradingMode === 'LEAD' ? leverage : 1
     });
   }
+
+  // Estimated Liquidation Price (Simple approximation for isolated margin)
+  const liqPrice = useMemo(() => {
+    if (tradingMode !== 'LEAD' || currentPrice <= 0 || leverage <= 1) return 0;
+    const maintenanceMargin = 0.005; // 0.5% approximation
+    if (side === 'BUY') {
+        return currentPrice * (1 - (1 / leverage) + maintenanceMargin);
+    } else {
+        return currentPrice * (1 + (1 / leverage) - maintenanceMargin);
+    }
+  }, [currentPrice, leverage, side, tradingMode]);
 
   const quoteAsset = symbol.endsWith('USDT') ? 'USDT' : 'USDC';
   const modeColor = tradingMode === 'LEAD' ? 'orange' : 'blue';
@@ -99,35 +141,77 @@ const SmartTerminalView = ({
           <div className="flex bg-slate-900 p-1 rounded-xl border border-slate-800">
             <button 
               onClick={() => setSide('BUY')}
-              className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${side === 'BUY' ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-900/40' : 'text-slate-500 hover:text-slate-300'}`}
+              className={`flex-1 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${side === 'BUY' ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-900/40' : 'text-slate-500 hover:text-slate-300'}`}
             >
-              Long Position
+              <TrendingUp size={14} /> Long
             </button>
             <button 
               onClick={() => setSide('SELL')}
-              className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${side === 'SELL' ? 'bg-rose-600 text-white shadow-lg shadow-rose-900/40' : 'text-slate-500 hover:text-slate-300'}`}
+              className={`flex-1 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${side === 'SELL' ? 'bg-rose-600 text-white shadow-lg shadow-rose-900/40' : 'text-slate-500 hover:text-slate-300'}`}
             >
-              Short Position
+              <TrendingDown size={14} /> Short
             </button>
           </div>
         )}
 
+        {/* Leverage Slider (Only for Lead Trading) */}
+        {tradingMode === 'LEAD' && (
+            <div className="space-y-3 bg-slate-900/50 p-4 rounded-2xl border border-slate-800">
+                <div className="flex justify-between items-center">
+                    <label className="text-[10px] text-slate-500 font-black uppercase tracking-widest">Initial Leverage</label>
+                    <span className="text-sm font-mono font-black text-orange-400">{leverage}x</span>
+                </div>
+                <input 
+                    type="range" min="1" max="50" step="1" value={leverage}
+                    onChange={(e) => setLeverage(parseInt(e.target.value))}
+                    className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-orange-500"
+                />
+                <div className="flex justify-between text-[8px] font-black text-slate-600 uppercase tracking-tighter">
+                    <span>1x</span>
+                    <span>10x</span>
+                    <span>25x</span>
+                    <span>50x</span>
+                </div>
+            </div>
+        )}
+
         <div className="grid grid-cols-1 gap-4">
           <div className="space-y-2">
-            <label className="text-[10px] text-slate-500 font-black uppercase tracking-widest ml-1">Spend ({quoteAsset})</label>
+            <label className="text-[10px] text-slate-500 font-black uppercase tracking-widest ml-1">Margin ({quoteAsset})</label>
             <input 
               type="number" value={usdcAmount} onChange={e => handleUsdcChange(Number(e.target.value))}
               className="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 text-lg font-mono outline-none focus:border-blue-500 transition-all text-white font-black"
             />
           </div>
-          <div className="space-y-2">
-            <label className="text-[10px] text-slate-500 font-black uppercase tracking-widest ml-1">Receive ({symbol.replace(quoteAsset, '')})</label>
+          <div className="space-y-2 relative group">
+            <label className="text-[10px] text-slate-500 font-black uppercase tracking-widest ml-1">Position Size ({symbol.replace(quoteAsset, '')})</label>
             <input 
               type="number" step="0.0001" value={quantity} onChange={e => handleQuantityChange(Number(e.target.value))}
               className="w-full bg-slate-800/30 border border-slate-800 rounded-xl px-4 py-3 text-lg font-mono outline-none focus:border-blue-500/50 transition-all text-slate-300"
             />
+            {leverage > 1 && (
+                <div className="absolute right-4 bottom-3 text-[9px] font-black text-slate-600 uppercase">
+                    Value: ${(quantity * currentPrice).toFixed(2)}
+                </div>
+            )}
           </div>
         </div>
+
+        {/* Risk Indicators (Futures Only) */}
+        {tradingMode === 'LEAD' && liqPrice > 0 && (
+            <div className="flex gap-2">
+                <div className="flex-1 bg-rose-500/5 border border-rose-500/20 p-3 rounded-xl flex flex-col items-center">
+                    <span className="text-[8px] font-black text-rose-500 uppercase mb-1">Est. Liquidation</span>
+                    <span className="text-xs font-mono font-black text-white">${liqPrice.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                </div>
+                <div className="flex-1 bg-slate-900 border border-slate-800 p-3 rounded-xl flex flex-col items-center">
+                    <span className="text-[8px] font-black text-slate-500 uppercase mb-1">Risk Buffer</span>
+                    <span className="text-xs font-mono font-black text-emerald-400">
+                        {Math.abs(((liqPrice - currentPrice) / currentPrice * 100)).toFixed(1)}%
+                    </span>
+                </div>
+            </div>
+        )}
 
         <div className="space-y-4 pt-4 border-t border-slate-800">
           <div className={`p-4 rounded-2xl border transition-all ${tpEnabled ? 'bg-emerald-900/10 border-emerald-900/30' : 'bg-slate-800/30 border-slate-800 opacity-40'}`}>
