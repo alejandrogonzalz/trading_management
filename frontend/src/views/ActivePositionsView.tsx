@@ -214,9 +214,17 @@ const SmartTradeCard = ({ trade, onCancel, currentPrice, onSelectSymbol }) => {
                                     {pnl >= 0 ? '+' : ''}{pnl.toFixed(2)}%
                                 </p>
                                 <div className="flex items-center justify-end gap-2 mt-1">
-                                    <span className="text-xs text-slate-500 font-black uppercase tracking-widest">Profit:</span>
+                                    <span className="text-[10px] text-slate-500 font-black uppercase tracking-widest">Net Profit:</span>
                                     <span className={`text-lg font-mono font-black ${pnl >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
-                                        ${((Math.abs(currentPrice - entryPrice) * trade.origQty) * (pnl >= 0 ? 1 : -1)).toFixed(2)}
+                                        {(() => {
+                                            const assetName = trade.symbol.replace('USDT','').replace('USDC','');
+                                            const entryFees = trade.smart_meta?.entry_fees || 0;
+                                            const feeAsset = trade.smart_meta?.fee_asset;
+                                            const entryFeeValue = feeAsset === assetName ? (entryFees * entryPrice) : entryFees;
+                                            const grossProfit = (currentPrice - entryPrice) * trade.origQty * (tradeSide === 'BUY' ? 1 : -1);
+                                            const estExitFee = Math.abs(grossProfit + (entryPrice * trade.origQty)) * 0.001; // Estimate 0.1% fee
+                                            return `$${(grossProfit - entryFeeValue - estExitFee).toFixed(2)}`;
+                                        })()}
                                     </span>
                                 </div>
                             </>
@@ -264,6 +272,7 @@ const SmartHistoryTable = ({ history, onSelectSymbol }) => {
                         <th className="p-6 text-center">Side</th>
                         <th className="p-6 text-center">Entry Price</th>
                         <th className="p-6 text-center">Exit Price</th>
+                        <th className="p-6 text-center">Fees</th>
                         <th className="p-6 text-center">Net P&L</th>
                         <th className="p-6 text-center">Opened At</th>
                         <th className="p-6 text-center">Closed At</th>
@@ -272,10 +281,23 @@ const SmartHistoryTable = ({ history, onSelectSymbol }) => {
                 </thead>
                 <tbody className="font-mono text-xs text-slate-300">
                     {history.length > 0 ? history.map(h => {
+                        const assetName = h.symbol.replace('USDT','').replace('USDC','');
+                        const quoteAsset = h.symbol.endsWith('USDT') ? 'USDT' : 'USDC';
+                        
+                        // Robust Fee Calculation (No Guard - Relying on DB source)
+                        let entryFeeValue = 0;
+                        if (h.fee_asset === assetName) entryFeeValue = h.entry_fees * h.entry_price;
+                        else if (h.fee_asset === 'BNB') entryFeeValue = h.entry_fees * 600;
+                        else entryFeeValue = h.entry_fees || 0;
+
+                        let exitFeeValue = 0;
+                        if (h.exit_fee_asset === assetName) exitFeeValue = h.exit_fees * h.exit_price;
+                        else if (h.exit_fee_asset === 'BNB') exitFeeValue = h.exit_fees * 600;
+                        else if (!h.exit_fee_asset && h.fee_asset === assetName) exitFeeValue = h.exit_fees * h.exit_price;
+                        else exitFeeValue = h.exit_fees || 0;
+
+                        const totalFees = entryFeeValue + exitFeeValue;
                         const grossPnl = ((h.exit_price - h.entry_price) / h.entry_price * 100 * (h.side === 'BUY' ? 1 : -1));
-                        const entryFeeValue = h.fee_asset === h.symbol.replace('USDT','').replace('USDC','') ? (h.entry_fees * h.entry_price) : h.entry_fees;
-                        const exitFeeValue = h.exit_fees;
-                        const totalFees = (entryFeeValue || 0) + (exitFeeValue || 0);
                         const invested = h.quantity * h.entry_price;
                         const grossProfit = invested * (grossPnl / 100);
                         const netProfit = grossProfit - totalFees;
@@ -298,6 +320,7 @@ const SmartHistoryTable = ({ history, onSelectSymbol }) => {
                                 </td>
                                 <td className="p-6 text-center">${fmt(h.entry_price)}</td>
                                 <td className="p-6 text-center">${fmt(h.exit_price)}</td>
+                                <td className="p-6 text-center text-slate-500">-${totalFees.toFixed(4)}</td>
                                 <td className="p-6 text-center">
                                     <div className={`flex flex-col items-center font-black ${netProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                                         <div className="flex items-center gap-1">
@@ -334,14 +357,64 @@ const ActivePositionsView = ({ openOrders, handleCancelOrder, quoteBalance, onSe
     const [activeTab, setActiveTab] = useState('active'); // 'active' or 'history'
     const [smartHistory, setSmartHistory] = useState([]);
 
+    const stats = useMemo(() => {
+        if (smartHistory.length === 0) return null;
+        
+        let totalNetProfit = 0;
+        let wins = 0;
+        let bestTrade = -Infinity;
+        
+        const historyWithNet = smartHistory.map(h => {
+            const assetName = h.symbol.replace('USDT','').replace('USDC','');
+            let entryFeeValue = h.fee_asset === assetName ? (h.entry_fees * h.entry_price) : (h.fee_asset === 'BNB' ? h.entry_fees * 600 : (h.entry_fees || 0));
+            let exitFeeValue = h.exit_fee_asset === assetName ? (h.exit_fees * h.exit_price) : (h.exit_fee_asset === 'BNB' ? h.exit_fees * 600 : (h.exit_fees || 0));
+            
+            const tradeValue = h.quantity * h.entry_price;
+            const totalFeesRaw = entryFeeValue + exitFeeValue;
+            const totalFees = totalFeesRaw > (tradeValue * 0.02) ? (tradeValue * 0.002) : totalFeesRaw;
+
+            const grossProfit = (h.exit_price - h.entry_price) * h.quantity * (h.side === 'BUY' ? 1 : -1);
+            const netProfit = grossProfit - totalFees;
+            const netPnlPercent = tradeValue > 0 ? (netProfit / tradeValue) * 100 : 0;
+            
+            return { netProfit, netPnlPercent };
+        });
+
+        historyWithNet.forEach(h => {
+            totalNetProfit += h.netProfit;
+            if (h.netProfit > 0) wins++;
+            if (h.netPnlPercent > bestTrade) bestTrade = h.netPnlPercent;
+        });
+
+        return {
+            totalProfit: totalNetProfit,
+            winRate: (wins / smartHistory.length) * 100,
+            avgProfit: totalNetProfit / smartHistory.length,
+            bestTrade: bestTrade === -Infinity ? 0 : bestTrade,
+            count: smartHistory.length
+        };
+    }, [smartHistory]);
+
     useEffect(() => {
-        if (activeTab === 'history') {
+        const fetchHistory = () => {
             fetch(`${API_BASE}/trades/smart-history`)
                 .then(res => res.json())
                 .then(data => setSmartHistory(data))
                 .catch(err => console.error("History fetch failed:", err));
+        };
+        fetchHistory();
+    }, [openOrders]);
+
+    useEffect(() => {
+        if (activeTab === 'history') {
+            const interval = setInterval(() => {
+                fetch(`${API_BASE}/trades/smart-history`)
+                    .then(res => res.json())
+                    .then(data => setSmartHistory(data));
+            }, 30000);
+            return () => clearInterval(interval);
         }
-    }, [activeTab, openOrders]);
+    }, [activeTab]);
 
     useEffect(() => {
         const smartOrders = openOrders.filter(o => (o.clientOrderId?.startsWith('SMART_') || o.listClientOrderId?.startsWith('LIST_SMART_')));
@@ -395,9 +468,9 @@ const ActivePositionsView = ({ openOrders, handleCancelOrder, quoteBalance, onSe
     };
 
     return (
-        <div className="h-full flex flex-col bg-slate-900 overflow-y-auto scrollbar-thin scrollbar-thumb-slate-800">
-            <header className="px-6 pt-8 pb-4">
-                <div className="flex justify-between items-end">
+        <div className="h-full flex flex-col bg-slate-900 overflow-hidden">
+            <header className="px-6 pt-8 pb-4 shrink-0">
+                <div className="max-w-[1400px] w-full flex justify-between items-start">
                     <div>
                         <h1 className="text-3xl font-black text-white flex items-center gap-3 tracking-tighter uppercase">
                             <Zap size={32} className="text-blue-500" /> SMART TRADES
@@ -407,27 +480,58 @@ const ActivePositionsView = ({ openOrders, handleCancelOrder, quoteBalance, onSe
                             <button onClick={() => setActiveTab('history')} className={`px-6 py-2 rounded-t-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'history' ? 'bg-slate-800 text-blue-400 border-b-2 border-blue-500' : 'text-slate-500 hover:text-slate-300'}`}>Closed Trades</button>
                         </div>
                     </div>
+
+                    {/* STATS PANEL */}
+                    {stats && (
+                        <div className="flex gap-4 animate-in fade-in slide-in-from-right-4 duration-700">
+                            <div className="bg-slate-950/50 border border-slate-800 rounded-2xl px-6 py-3 flex flex-col items-end min-w-[120px]">
+                                <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest mb-1">Win Rate</span>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-lg font-black text-emerald-400 font-mono">{stats.winRate.toFixed(1)}%</span>
+                                    <TrendingUp size={14} className="text-emerald-500/50" />
+                                </div>
+                            </div>
+                            <div className="bg-slate-950/50 border border-slate-800 rounded-2xl px-6 py-3 flex flex-col items-end min-w-[120px]">
+                                <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest mb-1">Total Net P&L</span>
+                                <span className={`text-lg font-black font-mono ${stats.totalProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                    {stats.totalProfit >= 0 ? '+' : ''}${stats.totalProfit.toFixed(2)}
+                                </span>
+                            </div>
+                            <div className="bg-slate-950/50 border border-slate-800 rounded-2xl px-6 py-3 flex flex-col items-end min-w-[120px]">
+                                <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest mb-1">Avg per Trade</span>
+                                <span className={`text-lg font-black font-mono ${stats.avgProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                    ${stats.avgProfit.toFixed(2)}
+                                </span>
+                            </div>
+                            <div className="bg-blue-600/5 border border-blue-500/20 rounded-2xl px-6 py-3 flex flex-col items-end min-w-[120px]">
+                                <span className="text-[8px] font-black text-blue-400/70 uppercase tracking-widest mb-1">Best Trade</span>
+                                <span className="text-lg font-black text-blue-100 font-mono">+{stats.bestTrade.toFixed(2)}%</span>
+                            </div>
+                        </div>
+                    )}
                 </div>
-                <div className="h-px w-full bg-slate-800"></div>
+                <div className="h-px max-w-[1400px] w-full bg-slate-800"></div>
             </header>
 
-            <div className="px-6 py-6 max-w-[1400px]">
-                {activeTab === 'active' ? (
-                    smartTrades.length > 0 ? (
-                        <div className="flex flex-col gap-4">
-                            {smartTrades.map(trade => (
-                                <SmartTradeCard key={trade.orderId} trade={trade} onCancel={onCancelClick} currentPrice={prices[trade.symbol] || 0} onSelectSymbol={onSelectSymbol} />
-                            ))}
-                        </div>
+            <div className="flex-1 overflow-y-auto px-6 py-2 custom-scrollbar">
+                <div className="max-w-[1400px] w-full pb-12">
+                    {activeTab === 'active' ? (
+                        smartTrades.length > 0 ? (
+                            <div className="flex flex-col gap-4 w-full">
+                                {smartTrades.map(trade => (
+                                    <SmartTradeCard key={trade.orderId} trade={trade} onCancel={onCancelClick} currentPrice={prices[trade.symbol] || 0} onSelectSymbol={onSelectSymbol} />
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="py-32 text-center bg-slate-950 rounded-3xl border border-slate-800 border-dashed opacity-20">
+                                <Zap size={64} className="mx-auto mb-4" />
+                                <p className="font-black text-xl tracking-widest uppercase">No Active Smart Trades</p>
+                            </div>
+                        )
                     ) : (
-                        <div className="py-32 text-center bg-slate-950 rounded-3xl border border-slate-800 border-dashed opacity-20">
-                            <Zap size={64} className="mx-auto mb-4" />
-                            <p className="font-black text-xl tracking-widest uppercase">No Active Smart Trades</p>
-                        </div>
-                    )
-                ) : (
-                    <SmartHistoryTable history={smartHistory} onSelectSymbol={onSelectSymbol} />
-                )}
+                        <SmartHistoryTable history={smartHistory} onSelectSymbol={onSelectSymbol} />
+                    )}
+                </div>
             </div>
         </div>
     );
