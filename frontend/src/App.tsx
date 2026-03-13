@@ -41,6 +41,7 @@ function App() {
   const [openOrders, setOpenOrders] = useState([]);
   const [tradeHistory, setTradeHistory] = useState([]);
   const [symbols, setSymbols] = useState(['BTCUSDT', 'ETHUSDT', 'SOLUSDT']);
+  const [leadWhitelist, setLeadWhitelist] = useState<string[]>([]);
   const [symbol, setSymbol] = useState('BTCUSDT');
   const [tradingMode, setTradingMode] = useState('SPOT'); // 'SPOT' or 'LEAD'
   const [symbolSearch, setSymbolSearch] = useState('BTCUSDT');
@@ -72,10 +73,10 @@ function App() {
     { label: '1w', value: '1w' }, { label: '1M', value: '1M' },
   ];
 
-  const filteredSymbols = useMemo(() =>
-    symbols.filter(s => s.toLowerCase().includes(symbolSearch.toLowerCase())),
-    [symbols, symbolSearch]
-  );
+  const filteredSymbols = useMemo(() => {
+    const list = (tradingMode === 'LEAD' && leadWhitelist.length > 0) ? leadWhitelist : symbols;
+    return list.filter(s => s.toLowerCase().includes(symbolSearch.toLowerCase()));
+  }, [symbols, leadWhitelist, symbolSearch, tradingMode]);
 
   const assetBalance = useMemo(() => {
     const quoteAsset = symbol.endsWith('USDT') ? 'USDT' : 'USDC';
@@ -106,13 +107,25 @@ function App() {
 
   const fetchPrivateData = async () => {
     try {
-      const bRes = await fetch(`${API_BASE}/account/balances`);
-      if (bRes.ok) setBalances(await bRes.json());
+      const isLead = tradingMode === 'LEAD';
+      const prefix = isLead ? 'lead' : 'trades';
+      const balanceEndpoint = isLead ? 'lead/balances' : 'account/balances';
 
-      const oRes = await fetch(`${API_BASE}/trades/open`);
+      // 1. Fetch Balances
+      const bRes = await fetch(`${API_BASE}/${balanceEndpoint}`);
+      if (bRes.ok) {
+        const bData = await bRes.json();
+        // Futures API returns a different structure (v2 account info)
+        setBalances(isLead ? (bData.assets || []) : bData);
+      }
+
+      // 2. Fetch Open Orders
+      const oRes = await fetch(`${API_BASE}/${prefix}/open`);
       if (oRes.ok) setOpenOrders(await oRes.json());
 
-      const hRes = await fetch(`${API_BASE}/trades/history?symbol=${symbol}`);
+      // 3. Fetch History
+      const historyEndpoint = isLead ? 'lead/history' : `trades/history?symbol=${symbol}`;
+      const hRes = await fetch(`${API_BASE}/${historyEndpoint}`);
       if (hRes.ok) setTradeHistory(await hRes.json());
 
       setError(null);
@@ -126,7 +139,17 @@ function App() {
         try {
           const sRes = await fetch(`${API_BASE}/symbols`);
           if (sRes.ok) setSymbols(await sRes.json());
-        } catch (err) { console.error("Error fetching symbols:", err); }
+          
+          const lRes = await fetch(`${API_BASE}/lead/symbols`);
+          if (lRes.ok) {
+            setLeadWhitelist(await lRes.json());
+          } else {
+            console.log("Lead whitelist not available (Keys missing).");
+            setLeadWhitelist([]);
+          }
+        } catch (err) { 
+          console.warn("Could not connect to lead symbols endpoint:", err);
+        }
     };
     fetchGlobalData();
   }, []);

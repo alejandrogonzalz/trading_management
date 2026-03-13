@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException
 from typing import Optional, List, Dict, Any
 
 from app.services.futures_service import futures_service
-from app.models import LeadOrderRequest, SetLeverageRequest, FuturesCloseRequest
+from app.models import LeadOrderRequest, SetLeverageRequest, FuturesCloseRequest, CancelOrderRequest
 
 router = APIRouter(tags=["Lead Trading"])
 
@@ -16,6 +16,11 @@ def get_lead_symbols():
     """Returns the list of symbols whitelisted for Lead Trading."""
     return futures_service.get_tradable_symbols()
 
+@router.get("/balances")
+def get_lead_balances():
+    """Retrieves USDS-M Futures wallet balances."""
+    return futures_service.get_balances()
+
 @router.get("/positions")
 def get_lead_positions(symbol: Optional[str] = None):
     """Retrieves active USDS-M Futures lead positions."""
@@ -25,6 +30,21 @@ def get_lead_positions(symbol: Optional[str] = None):
 def get_lead_open_orders(symbol: Optional[str] = None):
     """Retrieves pending lead orders."""
     return futures_service.get_open_orders(symbol=symbol)
+
+@router.get("/history")
+def get_lead_history():
+    """Retrieves closed Lead/Futures trades from MongoDB."""
+    return futures_service.get_lead_history()
+
+@router.get("/binance-history")
+def get_lead_binance_history(symbol: Optional[str] = None):
+    """Retrieves raw execution history from USDS-M Futures."""
+    return futures_service.get_binance_trade_history(symbol=symbol)
+
+@router.delete("/order")
+def cancel_lead_order(req: CancelOrderRequest):
+    """Cancels a pending Lead order."""
+    return futures_service.cancel_order(symbol=req.symbol, order_id=req.orderId)
 
 @router.post("/leverage")
 def set_lead_leverage(req: SetLeverageRequest):
@@ -40,6 +60,18 @@ def create_lead_order(req: LeadOrderRequest):
         order_type=req.type,
         quantity=req.quantity,
         price=req.price
+    )
+
+@router.post("/smart-order")
+def create_smart_lead_order(req: LeadOrderRequest):
+    """Places a new lead order with automated TP/SL management."""
+    return futures_service.create_smart_lead_order(
+        symbol=req.symbol,
+        side=req.side,
+        quantity=req.quantity,
+        tp_price=req.take_profit_price or 0,
+        sl_price=req.stop_loss_price or 0,
+        leverage=req.leverage or 10
     )
 
 @router.post("/close-position")

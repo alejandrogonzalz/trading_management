@@ -11,6 +11,10 @@ from binance_common.configuration import ConfigurationRestAPI
 
 from app.core.config import settings
 from app.services import audit_service
+from app.db.database import db
+
+# Isolated collection for Lead/Futures trades
+lead_trades_collection = db.lead_trades
 
 class FuturesService:
     def __init__(self):
@@ -36,6 +40,24 @@ class FuturesService:
                 status_code=400, 
                 detail="Lead Trading API keys not configured in backend .env"
             )
+
+    def get_balances(self):
+        """Retrieves USDS-M Futures wallet balances."""
+        self._ensure_client()
+        try:
+            # v2 returns account info including balances
+            return self.lead_client.account_v2()
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Futures Balance Error: {str(e)}")
+
+    def get_lead_history(self):
+        """Retrieves closed Lead/Futures trades from MongoDB."""
+        cursor = lead_trades_collection.find({"status": "CLOSED"}).sort("close_time", -1)
+        trades = []
+        for doc in cursor:
+            doc["id"] = str(doc.pop("_id"))
+            trades.append(doc)
+        return trades
 
     def get_lead_status(self):
         """Returns the user's status in the Lead Trading ecosystem."""
@@ -93,6 +115,52 @@ class FuturesService:
             audit_service.log_api_call("POST", "lead/order-FAILED", {"symbol": symbol}, str(e), 400)
             raise HTTPException(status_code=400, detail=f"Order Failed: {str(e)}")
 
+    def create_smart_lead_order(self, symbol: str, side: str, quantity: float, tp_price: float, sl_price: float, leverage: int = 10):
+        """
+        Executes a Lead Entry order and initializes background management for TP/SL.
+        Stored in an isolated 'lead_trades' collection.
+        """
+        self._ensure_client()
+        try:
+            # 1. Set Leverage first
+            self.set_leverage(symbol, leverage)
+            
+            # 2. Execute Entry (Market for immediate follow)
+            params = {
+                "symbol": symbol.upper(),
+                "side": side.upper(),
+                "type": "MARKET",
+                "quantity": quantity
+            }
+            
+            entry_res = self.lead_client.new_order(**params)
+            audit_service.log_api_call("POST", "lead/smart-entry", params, entry_res)
+            
+            # 3. Store Metadata for management
+            trade_id = f"LEAD_{int(time.time())}"
+            metadata = {
+                "_id": trade_id,
+                "symbol": symbol.upper(),
+                "side": side.upper(),
+                "entry_price": float(entry_res.get('avgPrice', 0)),
+                "quantity": quantity,
+                "tp": tp_price,
+                "sl": sl_price,
+                "leverage": leverage,
+                "status": "ACTIVE",
+                "timestamp": time.time(),
+                "entry_order_id": entry_res.get('orderId')
+            }
+            lead_trades_collection.insert_one(metadata)
+            
+            return {
+                "trade_id": trade_id,
+                "entry": entry_res,
+                "status": "ACTIVE"
+            }
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Lead Smart Order Failed: {str(e)}")
+
     def get_active_positions(self, symbol: str = None):
         """Retrieves currently open Futures positions."""
         self._ensure_client()
@@ -118,6 +186,25 @@ class FuturesService:
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"Open Orders Error: {str(e)}")
 
+    def cancel_order(self, symbol: str, order_id: int):
+        """Cancels a pending Lead order."""
+        self._ensure_client()
+        try:
+            return self.lead_client.cancel_order(symbol=symbol.upper(), orderId=order_id)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Cancel Failed: {str(e)}")
+
+    def get_binance_trade_history(self, symbol: str = None):
+        """Retrieves raw execution history from USDS-M Futures."""
+        self._ensure_client()
+        try:
+            params = {}
+            if symbol:
+                params["symbol"] = symbol.upper()
+            return self.lead_client.get_account_trades(**params)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"History Error: {str(e)}")
+
     def close_position(self, symbol: str, quantity: float = None):
         """
         Closes an active Lead position by placing an opposite Market order.
@@ -129,9 +216,12 @@ class FuturesService:
             if not positions:
                 return {"status": "NO_POSITION_FOUND"}
             
-            pos = positions[0]
+            # Find the exact match for the symbol
+            pos = next((p for p in positions if p['symbol'] == symbol.upper()), None)
+            if not pos:
+                return {"status": "NO_MATCHING_POSITION"}
+                
             amt = float(pos.get('positionAmt', 0))
-            
             if amt == 0:
                 return {"status": "EMPTY_POSITION"}
 
@@ -150,9 +240,27 @@ class FuturesService:
             response = self.lead_client.new_order(**params)
             audit_service.log_api_call("POST", "lead/close-position", params, response)
             
+            # 4. Mark associated MongoDB trades as CLOSED
+            # We look for all ACTIVE trades for this symbol in lead_trades_collection
+            lead_trades_collection.update_many(
+                {"symbol": symbol.upper(), "status": "ACTIVE"},
+                {"$set": {
+                    "status": "CLOSED",
+                    "exit_price": float(response.get('avgPrice', 0)),
+                    "close_time": time.time()
+                }}
+            )
+            
             return response
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"Close Failed: {str(e)}")
+
+    def reconcile_lead_trades(self):
+        """
+        Background worker to sync lead positions.
+        """
+        # Note: Futures TP/SL management logic will be built here
+        pass
 
 # Singleton instance
 futures_service = FuturesService()

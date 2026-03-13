@@ -32,6 +32,8 @@ class LeadOrderRequest(BaseModel):
     quantity: float
     price: Optional[float] = None
     leverage: Optional[int] = 10
+    take_profit_price: Optional[float] = 0
+    stop_loss_price: Optional[float] = 0
 
 class SetLeverageRequest(BaseModel):
     symbol: str
