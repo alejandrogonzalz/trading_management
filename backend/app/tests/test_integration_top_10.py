@@ -1,10 +1,10 @@
 import os
 import time
 import json
-from . import binance_service
-from . import trade_tracker
-from . import market_service_utils
-from .database import trades_collection
+from app.services import binance_service
+from app.services import trade_tracker
+from app.utils import market_utils as market_service_utils
+from app.db.database import trades_collection
 
 def run_top_10_test():
     print("🚀 STARTING TOP 10 OPPORTUNITY INTEGRATION TEST")

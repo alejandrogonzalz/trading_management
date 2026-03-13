@@ -28,4 +28,4 @@ COPY . /app
 # Set PYTHONPATH to include /app so 'import backend' works
 ENV PYTHONPATH=/app
 
-CMD ["python", "-m", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8001"]
+CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001"]

@@ -2,7 +2,7 @@ import time
 import json
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
-from .database import db
+from app.db.database import db
 
 class EndpointAuditMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):

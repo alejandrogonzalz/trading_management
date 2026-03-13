@@ -1,7 +1,7 @@
 import time
-from . import binance_service
-from . import trade_tracker
-from .database import trades_collection
+from app.services import binance_service
+from app.services import trade_tracker
+from app.db.database import trades_collection
 
 def test_reconciler_step_by_step():
     print("🔍 UNIT TEST: RECONCILER LOGIC")

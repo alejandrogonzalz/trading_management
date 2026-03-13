@@ -1,8 +1,8 @@
 import os
 import time
 import json
-from . import binance_service
-from . import trade_tracker
+from app.services import binance_service
+from app.services import trade_tracker
 
 def run_fill_path_test():
     print("🚀 STARTING RECONCILER FILL-PATH TEST")

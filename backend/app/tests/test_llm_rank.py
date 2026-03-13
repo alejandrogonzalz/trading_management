@@ -10,7 +10,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # Load env
 load_dotenv()
 
-from backend import llm_service
+from app.services import llm_service
 
 async def test_llm_ranking_mock():
     print("--- Testing AI Ranking with 20 Mock Pairs ---")

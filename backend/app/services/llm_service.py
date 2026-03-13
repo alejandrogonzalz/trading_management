@@ -4,8 +4,8 @@ import re
 import asyncio
 from ollama import AsyncClient
 from typing import List, Dict, Any, Optional
-from .config import settings
-from . import scanner_service
+from app.core.config import settings
+from app.services import scanner_service
 
 OLLAMA_BASE_URL = settings.OLLAMA_BASE_URL
 LLM_MODEL = settings.LLM_MODEL

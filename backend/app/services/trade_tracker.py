@@ -2,7 +2,7 @@ import time
 import os
 import json
 from typing import Dict, Any, Optional, List
-from .database import trades_collection
+from app.db.database import trades_collection
 
 def save_trade_metadata(client_order_id: str, symbol: str, tp_price: float, sl_price: float, side: str):
     """Saves or updates trade metadata in MongoDB."""

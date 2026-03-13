@@ -3,8 +3,8 @@ import numpy as np
 import talib
 from typing import List, Dict, Any, Optional
 from concurrent.futures import ThreadPoolExecutor
-from . import binance_service
-from . import market_service
+from app.services import binance_service
+from app.services import market_service
 
 def compute_metrics_for_symbol(c: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """Worker to compute opportunity metrics for a single symbol."""

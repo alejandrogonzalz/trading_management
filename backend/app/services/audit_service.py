@@ -1,6 +1,6 @@
 import time
 from typing import Any, Dict
-from .database import audit_collection
+from app.db.database import audit_collection
 
 def log_api_call(method: str, endpoint: str, request_data: Any, response_data: Any, status_code: int = 200):
     """Logs an API interaction to MongoDB audit collection."""

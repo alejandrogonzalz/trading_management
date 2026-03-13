@@ -1,6 +1,6 @@
 import os
 from pymongo import MongoClient
-from .config import settings
+from app.core.config import settings
 
 # Use MONGO_URL from environment or default to local
 MONGO_URL = os.getenv("MONGO_URL", "mongodb://localhost:27017")

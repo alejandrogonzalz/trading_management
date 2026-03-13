@@ -1,8 +1,8 @@
 from typing import List, Dict, Any, Optional
 from concurrent.futures import ThreadPoolExecutor
-from . import market_service
-from . import indicator_service
-from . import scoring_service
+from app.services import market_service
+from app.services import indicator_service
+from app.services import scoring_service
 import datetime
 
 # In-memory store for the latest scan results

@@ -1,6 +1,6 @@
 from typing import List, Dict, Any
 from concurrent.futures import ThreadPoolExecutor
-from .binance_service import binance_client # Relative import
+from app.services.binance_service import binance_client # Relative import
 
 def get_candles(symbol: str, interval: str, limit: int = 200) -> List[Dict[str, Any]]:
     """

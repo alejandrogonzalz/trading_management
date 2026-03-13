@@ -5,9 +5,9 @@ from fastapi import HTTPException
 import time
 import math
 from typing import Optional, List, Dict, Any
-from .config import settings
-from . import trade_tracker
-from . import audit_service
+from app.core.config import settings
+from app.services import trade_tracker
+from app.services import audit_service
 
 # Initialize Binance Client
 binance_client = Client(
@@ -124,7 +124,7 @@ def reconcile_trades():
                 if found_fill:
                     _mark_trade_closed(meta['symbol'], None, tid, meta['quantity'], exit_price, exit_fees, actual_close_time, exit_fee_asset)
                 else:
-                    from .database import trades_collection
+                    from app.db.database import trades_collection
                     trades_collection.update_one({"_id": tid}, {"$set": {"status": "MANUAL_CONTROL"}})
     except Exception as e:
         print(f"Reconciler Error: {e}")
@@ -195,7 +195,7 @@ def create_smart_trade(symbol: str, quantity: float, buy_price: Optional[float],
                 exit_order = binance_client.create_order(symbol=symbol, side=SIDE_SELL if side == "BUY" else SIDE_BUY, type=ORDER_TYPE_STOP_LOSS_LIMIT, timeInForce=TIME_IN_FORCE_GTC, quantity=oco_qty, stopPrice=format_price(symbol, stop_loss_price), price=format_price(symbol, stop_loss_price), newClientOrderId=f"SL_{client_order_id}", recvWindow=60000)
                 trade_tracker.add_order_to_trade(client_order_id, exit_order['orderId'], "STOP_LOSS_LIMIT", "SL")
         except Exception as e:
-            from .database import trades_collection
+            from app.db.database import trades_collection
             trades_collection.update_one({"_id": client_order_id}, {"$set": {"status": "PROTECTION_FAILED", "error_msg": str(e)}})
             return {"entry": entry_order, "status": "PROTECTION_FAILED", "error": str(e)}
             
@@ -257,7 +257,7 @@ def _mark_trade_closed(symbol: str, order_list_id: Optional[int] = None, client_
             elif not order_list_id and not client_order_id and abs(tmeta.get('quantity', 0) - quantity) < (quantity * 0.1): match = True
             
             if match:
-                from .database import trades_collection
+                from app.db.database import trades_collection
                 update_data = {
                     "status": "CLOSED", 
                     "exit_price": exit_price, 

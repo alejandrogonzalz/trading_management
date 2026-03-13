@@ -1,6 +1,6 @@
 import time
-from . import binance_service
-from .database import trades_collection, audit_collection
+from app.services import binance_service
+from app.db.database import trades_collection, audit_collection
 
 def final_cleanup():
     print("🧹 STARTING FINAL CLEANUP...")

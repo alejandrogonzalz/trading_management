@@ -9,7 +9,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # Load env
 load_dotenv()
 
-from backend import market_service_utils
+from app.utils import market_utils as market_service_utils
 
 async def test_ranking():
     print("--- Testing Top 20 Opportunity Ranking ---")

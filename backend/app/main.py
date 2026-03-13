@@ -7,19 +7,19 @@ import logging
 import asyncio
 
 # Local imports
-from .config import settings
-from .models import SmartTradeRequest, CancelOrderRequest, MarketCloseRequest, RunScannerRequest
-from . import binance_service
-from . import market_service
-from . import market_service_utils
-from . import indicator_service
-from . import scoring_service
-from . import scanner_service
-from . import llm_service
-from . import database
-from . import trade_tracker
-from . import audit_service
-from .audit_middleware import EndpointAuditMiddleware
+from app.core.config import settings
+from app.models import SmartTradeRequest, CancelOrderRequest, MarketCloseRequest, RunScannerRequest
+from app.services import binance_service
+from app.services import market_service
+from app.utils import market_utils as market_service_utils
+from app.services import indicator_service
+from app.services import scoring_service
+from app.services import scanner_service
+from app.services import llm_service
+from app.db import database
+from app.services import trade_tracker
+from app.services import audit_service
+from app.core.middleware import EndpointAuditMiddleware
 
 # Configure logging for APScheduler
 logging.basicConfig(level=logging.INFO)

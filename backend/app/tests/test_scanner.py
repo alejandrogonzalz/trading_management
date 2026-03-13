@@ -10,7 +10,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # Load env before imports
 load_dotenv()
 
-from backend import scanner_service
+from app.services import scanner_service
 
 async def test_full_scan():
     print("Starting Test Scan for top pairs...")
