@@ -37,27 +37,36 @@ const NotificationToast = ({ message, type, onClose }) => {
 
 function App() {
   const [notification, setNotification] = useState<{message: string, type: 'success' | 'error'} | null>(null);
-  const [balances, setBalances] = useState([]);
-  const [openOrders, setOpenOrders] = useState([]);
-  const [tradeHistory, setTradeHistory] = useState([]);
+  
+  // SHARED STATE
   const [symbols, setSymbols] = useState(['BTCUSDT', 'ETHUSDT', 'SOLUSDT']);
   const [leadWhitelist, setLeadWhitelist] = useState<string[]>([]);
   const [symbol, setSymbol] = useState('BTCUSDT');
   const [tradingMode, setTradingMode] = useState('SPOT'); // 'SPOT' or 'LEAD'
   const [symbolSearch, setSymbolSearch] = useState('BTCUSDT');
+  const [globalPrices, setGlobalPrices] = useState<any[]>([]);
+  const [currentPrice, setCurrentPrice] = useState(0);
+  const [price24hAgo, setPrice24hAgo] = useState(0);
+  const [isTrading, setIsTrading] = useState(false);
+  const [error, setError] = useState(null);
+
+  // ISOLATED DATA STATE
+  const [spotBalances, setSpotBalances] = useState([]);
+  const [leadBalances, setLeadBalances] = useState([]);
+  const [spotOrders, setSpotOrders] = useState([]);
+  const [leadOrders, setLeadOrders] = useState([]);
+  const [spotHistory, setSpotHistory] = useState([]);
+  const [leadHistory, setLeadHistory] = useState([]);
+  const [leadPositions, setLeadPositions]    = useState([]);
+
+  // UI STATE
   const [interval, setIntervalTime] = useState('1h');
   const [showChartTargets, setShowChartTargets] = useState(true);
   const [emaSettings, setEmaSettings] = useState([
     { id: 1, period: 20, color: '#3b82f6', enabled: true },
     { id: 2, period: 50, color: '#f97316', enabled: true }
   ]);
-  const [globalPrices, setGlobalPrices] = useState<any[]>([]);
-  const [currentPrice, setCurrentPrice] = useState(0);
-  const [price24hAgo, setPrice24hAgo] = useState(0);
   const [filterOrdersBySymbol, setFilterOrdersBySymbol] = useState(true);
-  const [error, setError] = useState(null);
-  const [isTrading, setIsTrading] = useState(false);
-  
   const [tpPrice, setTpPrice] = useState(0);
   const [slPrice, setSlPrice] = useState(0);
   const [tpPercent, setTpPercent] = useState(2);
@@ -65,6 +74,7 @@ function App() {
   const [tpEnabled, setTpEnabled] = useState(true);
   const [slEnabled, setSlEnabled] = useState(true);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isSearchFocused, setIsSearchFocused] = useState(false); // State for search focus
 
   const timeframes = [
     { label: '1m', value: '1m' }, { label: '5m', value: '5m' },
@@ -78,20 +88,59 @@ function App() {
     return list.filter(s => s.toLowerCase().includes(symbolSearch.toLowerCase()));
   }, [symbols, leadWhitelist, symbolSearch, tradingMode]);
 
-  const assetBalance = useMemo(() => {
-    const quoteAsset = symbol.endsWith('USDT') ? 'USDT' : 'USDC';
-    const asset = symbol.replace(quoteAsset, '');
-    const b = balances.find(b => b.asset === asset);
-    return b ? parseFloat(b.free) : 0;
-  }, [balances, symbol]);
-
-  const quoteBalance = useMemo(() => {
-    const quoteAsset = symbol.endsWith('USDT') ? 'USDT' : 'USDC';
-    const b = balances.find(b => b.asset === quoteAsset);
-    return b ? parseFloat(b.free).toFixed(2) : "0.00";
-  }, [balances, symbol]);
+  // DERIVED DATA FOR COMPONENTS
+  const activeBalances = useMemo(() => tradingMode === 'LEAD' ? leadBalances : spotBalances, [tradingMode, leadBalances, spotBalances]);
+  const activeOrders = useMemo(() => tradingMode === 'LEAD' ? leadOrders : spotOrders, [tradingMode, leadOrders, spotOrders]);
+  const activeHistory = useMemo(() => tradingMode === 'LEAD' ? leadHistory : spotHistory, [tradingMode, leadHistory, spotHistory]);
 
   const quoteAsset = useMemo(() => symbol.endsWith('USDT') ? 'USDT' : 'USDC', [symbol]);
+
+  const assetBalance = useMemo(() => {
+    const asset = symbol.replace(quoteAsset, '');
+    const b = activeBalances.find(b => b.asset === asset);
+    if (!b) return 0;
+    return tradingMode === 'LEAD' ? parseFloat(b.availableBalance || 0) : parseFloat(b.free || 0);
+  }, [activeBalances, symbol, quoteAsset, tradingMode]);
+
+  const quoteBalance = useMemo(() => {
+    const b = activeBalances.find(b => b.asset === quoteAsset);
+    if (!b) return "0.00";
+    const val = tradingMode === 'LEAD' ? parseFloat(b.availableBalance || 0) : parseFloat(b.free || 0);
+    return val.toFixed(2);
+  }, [activeBalances, symbol, quoteAsset, tradingMode]);
+
+  const fetchPrivateData = async () => {
+    const isLead = tradingMode === 'LEAD';
+    try {
+      if (isLead) {
+        const [bRes, oRes, pRes, hRes] = await Promise.all([
+          fetch(`${API_BASE}/lead/balances`),
+          fetch(`${API_BASE}/lead/open-orders`),
+          fetch(`${API_BASE}/lead/positions`),
+          fetch(`${API_BASE}/lead/history?symbol=${symbol}`)
+        ]);
+        if (bRes.ok) { const data = await bRes.json(); setLeadBalances(data.assets || []); }
+        if (oRes.ok) setLeadOrders(await oRes.json());
+        if (pRes.ok) setLeadPositions(await pRes.json());
+        if (hRes.ok) setLeadHistory(await hRes.json());
+      } else {
+        const [bRes, oRes, hRes] = await Promise.all([
+          fetch(`${API_BASE}/account/balances`),
+          fetch(`${API_BASE}/trades/open`),
+          fetch(`${API_BASE}/trades/smart-history`)
+        ]);
+        if (bRes.ok) setSpotBalances(await bRes.json());
+        if (oRes.ok) setSpotOrders(await oRes.json());
+        if (hRes.ok) setSpotHistory(await hRes.json());
+      }
+    } catch (err) { console.error("Private data fetch failed:", err); }
+  };
+
+  useEffect(() => {
+    fetchPrivateData();
+    const interval = setInterval(fetchPrivateData, 5000);
+    return () => clearInterval(interval);
+  }, [tradingMode, symbol]);
 
   useEffect(() => {
     const fetchGlobalPrices = async () => {
@@ -105,35 +154,6 @@ function App() {
     return () => clearInterval(interval);
   }, []);
 
-  const fetchPrivateData = async () => {
-    try {
-      const isLead = tradingMode === 'LEAD';
-      const prefix = isLead ? 'lead' : 'trades';
-      const balanceEndpoint = isLead ? 'lead/balances' : 'account/balances';
-
-      // 1. Fetch Balances
-      const bRes = await fetch(`${API_BASE}/${balanceEndpoint}`);
-      if (bRes.ok) {
-        const bData = await bRes.json();
-        // Futures API returns a different structure (v2 account info)
-        setBalances(isLead ? (bData.assets || []) : bData);
-      }
-
-      // 2. Fetch Open Orders
-      const oRes = await fetch(`${API_BASE}/${prefix}/open`);
-      if (oRes.ok) setOpenOrders(await oRes.json());
-
-      // 3. Fetch History
-      const historyEndpoint = isLead ? 'lead/history' : `trades/history?symbol=${symbol}`;
-      const hRes = await fetch(`${API_BASE}/${historyEndpoint}`);
-      if (hRes.ok) setTradeHistory(await hRes.json());
-
-      setError(null);
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
   useEffect(() => {
     const fetchGlobalData = async () => {
         try {
@@ -142,14 +162,13 @@ function App() {
           
           const lRes = await fetch(`${API_BASE}/lead/symbols`);
           if (lRes.ok) {
-            setLeadWhitelist(await lRes.json());
-          } else {
-            console.log("Lead whitelist not available (Keys missing).");
-            setLeadWhitelist([]);
+            const raw = await lRes.json();
+            const list = Array.isArray(raw.data) 
+                ? raw.data.map((item: any) => typeof item === 'string' ? item : item.symbol)
+                : (Array.isArray(raw) ? raw : []);
+            setLeadWhitelist(list);
           }
-        } catch (err) { 
-          console.warn("Could not connect to lead symbols endpoint:", err);
-        }
+        } catch (err) { console.warn("Symbols fetch failed", err); }
     };
     fetchGlobalData();
   }, []);
@@ -174,30 +193,34 @@ function App() {
     return () => clearInterval(intervalId);
   }, [symbol]);
 
-  useEffect(() => {
-    fetchPrivateData();
-    const intervalId = setInterval(fetchPrivateData, 5000);
-    return () => clearInterval(intervalId);
-  }, [symbol]);
-
   const handleSmartTrade = async (tradeData) => {
     setIsTrading(true);
     try {
-      const response = await fetch(`${API_BASE}/trades/smart-trade`, {
+      const isLead = tradingMode === 'LEAD';
+      const endpoint = isLead ? 'lead/smart-order' : 'trades/smart-trade';
+      
+      const payload: any = {
+        symbol,
+        quantity: tradeData.quantity,
+        take_profit_price: tradeData.tpPrice,
+        stop_loss_price: tradeData.slPrice,
+        side: tradeData.side,
+        mode: tradeData.mode
+      };
+
+      if (isLead) {
+          payload.leverage = tradeData.leverage || 10;
+          payload.type = 'MARKET';
+      }
+
+      const response = await fetch(`${API_BASE}/${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          symbol,
-          quantity: tradeData.quantity,
-          take_profit_price: tradeData.tpPrice,
-          stop_loss_price: tradeData.slPrice,
-          side: tradeData.side,
-          mode: tradeData.mode
-        }),
+        body: JSON.stringify(payload),
       });
       if (response.ok) {
         await fetchPrivateData();
-        setNotification({ message: `Successfully executed ${tradeData.side} order for ${symbol}`, type: 'success' });
+        setNotification({ message: `Successfully executed ${tradeData.side} ${isLead ? 'LEAD' : ''} order for ${symbol}`, type: 'success' });
       } else {
         const err = await response.json();
         setNotification({ message: err.detail || 'Trade execution failed', type: 'error' });
@@ -210,25 +233,49 @@ function App() {
 
   const handleCancelOrder = async (orderId, orderSymbol) => {
     try {
-      const response = await fetch(`${API_BASE}/trades/order`, {
-        method: 'DELETE',
+      const isLead = tradingMode === 'LEAD';
+      const endpoint = isLead ? 'lead/order' : 'trades/cancel';
+      const method = isLead ? 'DELETE' : 'POST';
+      
+      const response = await fetch(`${API_BASE}/${endpoint}`, {
+        method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ symbol: orderSymbol, orderId }),
+        body: JSON.stringify({ orderId, symbol: orderSymbol }),
       });
-      if (response.ok) fetchPrivateData();
-    } catch (err) { console.error("Cancel failed:", err); }
+      if (response.ok) {
+          fetchPrivateData();
+          setNotification({ message: `Cancelled order for ${orderSymbol}`, type: 'success' });
+      } else {
+          setNotification({ message: 'Cancel failed', type: 'error' });
+      }
+    } catch (err) { console.error("Cancel failed", err); }
   };
 
   const handleMarketClose = async () => {
-    if (window.confirm(`Emergency SELL all ${assetBalance} ${symbol.replace(quoteAsset, '')}?`)) {
+    const isLead = tradingMode === 'LEAD';
+    const confirmMsg = isLead 
+        ? `Close active LEAD position for ${symbol}?`
+        : `Emergency SELL all ${assetBalance} ${symbol.replace(quoteAsset, '')}?`;
+
+    if (window.confirm(confirmMsg)) {
         try {
-            const res = await fetch(`${API_BASE}/trades/market-close`, {
+            const endpoint = isLead ? 'lead/close-position' : 'trades/market-close';
+            const res = await fetch(`${API_BASE}/${endpoint}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ symbol, quantity: assetBalance })
+                body: JSON.stringify({ symbol, quantity: isLead ? null : assetBalance })
             });
-            if (res.ok) fetchPrivateData();
-        } catch (e) { console.error(e); }
+            if (res.ok) {
+                fetchPrivateData();
+                setNotification({ message: `Successfully closed ${isLead ? 'LEAD position' : 'SPOT holdings'} for ${symbol}`, type: 'success' });
+            } else {
+                const err = await res.json();
+                setNotification({ message: err.detail || 'Close failed', type: 'error' });
+            }
+        } catch (e) { 
+            console.error(e);
+            setNotification({ message: 'Failed to connect to exchange', type: 'error' });
+        }
     }
   };
 
@@ -261,95 +308,73 @@ function App() {
 
   return (
     <BrowserRouter>
-      <div className="flex h-screen w-full bg-slate-900 text-slate-100 font-sans overflow-hidden">
-        {notification && (
-          <NotificationToast 
-            message={notification.message} 
-            type={notification.type} 
-            onClose={() => setNotification(null)} 
-          />
-        )}
+      <div className="flex h-screen bg-slate-900 text-slate-300 font-sans selection:bg-blue-500/30">
+        {notification && <NotificationToast message={notification.message} type={notification.type} onClose={() => setNotification(null)} />}
+        
         <Sidebar isSidebarOpen={isSidebarOpen} setIsSidebarOpen={setIsSidebarOpen} />
-        <main className="flex-1 flex flex-col min-w-0">
-          <header className="flex justify-between items-center px-6 py-4 border-b border-slate-800 bg-slate-900/50 backdrop-blur-sm z-50">
-              <div className="flex items-center gap-8">
-                  <div className="relative group w-72">
-                      <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-slate-500 group-focus-within:text-blue-400">
-                        <ScanSearch size={16} />
-                      </div>
-                      <input
-                          type="text"
-                          placeholder="Search Pair (e.g. BTC)"
-                          value={symbolSearch}
-                          onChange={(e) => setSymbolSearch(e.target.value.toUpperCase())}
-                          className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2.5 pl-10 pr-4 text-xs font-black tracking-widest outline-none focus:border-blue-500 transition-all focus:ring-1 focus:ring-blue-500/20"
-                      />
-                      {symbolSearch && symbolSearch !== symbol && (
-                          <div className="absolute top-full left-0 right-0 mt-2 bg-slate-900 border border-slate-800 rounded-xl shadow-2xl z-[3000] overflow-hidden overflow-y-auto max-h-80 custom-scrollbar backdrop-blur-xl">
-                              {filteredSymbols.length > 0 ? filteredSymbols.map(s => (
-                                  <div
-                                      key={s}
-                                      onMouseDown={() => { setSymbol(s); setSymbolSearch(s); }}
-                                      className="px-4 py-3 hover:bg-slate-800 cursor-pointer text-sm font-bold border-b border-slate-800/50 last:border-0 transition-colors text-white"
-                                  >
-                                      {s}
-                                  </div>
-                              )) : (
-                                  <div className="px-4 py-3 text-slate-500 text-xs italic text-center">No symbols found</div>
-                              )}
-                          </div>
-                      )}
+
+        <main className={`flex-1 flex flex-col min-w-0 transition-all duration-300`}>
+          <header className="h-16 border-b border-slate-800 bg-slate-900/50 backdrop-blur-md flex items-center justify-between px-6 shrink-0 z-40">
+              <div className="flex items-center gap-6">
+                  {/* MODE SWITCHER */}
+                  <div className="bg-slate-950 p-1 rounded-xl border border-slate-800 flex shadow-inner">
+                      <button 
+                        onClick={() => setTradingMode('SPOT')}
+                        className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${tradingMode === 'SPOT' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' : 'text-slate-500 hover:text-slate-300'}`}
+                      >
+                        Spot
+                      </button>
+                      <button 
+                        onClick={() => setTradingMode('LEAD')}
+                        className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${tradingMode === 'LEAD' ? 'bg-orange-600 text-white shadow-lg shadow-orange-900/20' : 'text-slate-500 hover:text-slate-300'}`}
+                      >
+                        Lead Trading
+                      </button>
                   </div>
 
-                  <div className="flex items-center gap-4">
-                      <div className="flex flex-col">
-                          <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest leading-none mb-1">Live Price</span>
-                          <div className={`text-xl font-black font-mono tracking-tighter ${priceChangeColor} leading-none`}>
-                              {currentPrice > 0 ? `$${currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 8 })}` : 'SYNCING...'}
-                          </div>
+                  <div className="h-8 w-px bg-slate-800"></div>
+
+                  {/* SYMBOL SEARCH */}
+                  <div className="relative group">
+                    <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-slate-500 group-focus-within:text-blue-400 transition-colors">
+                      <ScanSearch size={16} />
+                    </div>
+                    <input 
+                      type="text" 
+                      placeholder="Search pair..."
+                      className="bg-slate-950 border border-slate-800 rounded-xl py-2 pl-10 pr-4 text-sm font-black text-white focus:outline-none focus:border-blue-500/50 focus:ring-4 focus:ring-blue-500/5 w-64 transition-all"
+                      value={symbolSearch}
+                      onChange={(e) => setSymbolSearch(e.target.value.toUpperCase())}
+                      onFocus={() => setIsSearchFocused(true)}
+                      onBlur={() => setTimeout(() => setIsSearchFocused(false), 150)}
+                    />
+                    {isSearchFocused && filteredSymbols.length > 0 && (
+                      <div className="absolute top-full left-0 right-0 mt-2 bg-slate-950 border border-slate-800 rounded-xl shadow-2xl overflow-hidden z-50 max-h-64 overflow-y-auto custom-scrollbar backdrop-blur-xl">
+                        {filteredSymbols.map(s => (
+                          <button 
+                            key={s}
+                            onClick={() => handleSelectSymbol(s)}
+                            className="w-full px-4 py-3 text-left text-xs font-black text-slate-300 hover:bg-blue-600 hover:text-white border-b border-slate-800/50 last:border-0 transition-colors flex justify-between items-center"
+                          >
+                            {s}
+                            <span className="text-[8px] opacity-50 font-black">BINANCE</span>
+                          </button>
+                        ))}
                       </div>
+                    )}
                   </div>
               </div>
 
-              <div className="flex items-center gap-6">
-                  <div className="flex bg-slate-950 p-1 rounded-2xl border border-slate-800">
-                    <button 
-                      onClick={() => setTradingMode('SPOT')}
-                      className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all duration-300 flex items-center gap-2 ${
-                        tradingMode === 'SPOT' 
-                          ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/40' 
-                          : 'text-slate-500 hover:text-slate-300'
-                      }`}
-                    >
-                      <div className={`w-1.5 h-1.5 rounded-full ${tradingMode === 'SPOT' ? 'bg-blue-200 animate-pulse' : 'bg-slate-700'}`}></div>
-                      Spot Mode
-                    </button>
-                    <button 
-                      onClick={() => setTradingMode('LEAD')}
-                      className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all duration-300 flex items-center gap-2 ${
-                        tradingMode === 'LEAD' 
-                          ? 'bg-orange-600 text-white shadow-lg shadow-orange-900/40' 
-                          : 'text-slate-500 hover:text-slate-300'
-                      }`}
-                    >
-                      <div className={`w-1.5 h-1.5 rounded-full ${tradingMode === 'LEAD' ? 'bg-orange-200 animate-pulse' : 'bg-slate-700'}`}></div>
-                      Lead Trading
-                    </button>
-                  </div>
-
-                  <div className="flex gap-2">
-                    {/* BOX 1: BASE ASSET */}
-                    <div className="bg-slate-950 px-5 py-2 rounded-xl border border-slate-800 flex flex-col items-end justify-center min-w-[130px] h-[52px]">
-                        <span className="text-slate-500 text-[8px] font-black uppercase tracking-[0.2em] mb-0.5 opacity-70">{symbol.replace(quoteAsset, '')} Balance</span>
-                        <p className="font-mono text-sm font-black text-white tracking-tighter">{parseFloat(assetBalance.toString()).toLocaleString(undefined, { minimumFractionDigits: 4 })}</p>
+              <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-6 px-6">
+                    <div className="flex flex-col items-end">
+                        <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest mb-0.5">Current Price</span>
+                        <p className={`font-mono text-lg font-black tracking-tighter ${priceChangeColor}`}>
+                          ${currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        </p>
                     </div>
-                    {/* BOX 2: QUOTE ASSET */}
-                    <div className="bg-slate-950 px-5 py-2 rounded-xl border border-slate-800 flex flex-col items-end justify-center min-w-[130px] h-[52px]">
-                        <span className="text-slate-500 text-[8px] font-black uppercase tracking-[0.2em] mb-0.5 opacity-70">{quoteAsset} Balance</span>
-                        <p className="font-mono text-sm font-black text-white tracking-tighter">${parseFloat(quoteBalance).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
-                    </div>
-                    {/* BOX 3: WALLET VALUE (MEGA TOOLTIP) */}
-                    <WalletBalances balances={balances} quoteAsset={quoteAsset} globalPrices={globalPrices} />
+                    <div className="bg-slate-800 w-px h-8"></div>
+                    <WalletBalances balances={activeBalances} quoteAsset={quoteAsset} globalPrices={globalPrices} mode={tradingMode} />
                   </div>
               </div>
           </header>
@@ -390,14 +415,14 @@ function App() {
                                interval={interval} 
                                plannedTp={tpEnabled ? tpPrice : 0} 
                                plannedSl={slEnabled ? slPrice : 0} 
-                               openOrders={openOrders.filter(o => o.symbol === symbol)} 
+                               openOrders={activeOrders.filter(o => o.symbol === symbol)} 
                                showTargets={showChartTargets} 
                                emaSettings={emaSettings}
                                onEmaUpdate={setEmaSettings}
                              />
                          </div>
                          <div className="flex-1 min-h-[250px] shrink-0">
-                           <BottomPanel openOrders={openOrders} tradeHistory={tradeHistory} symbol={symbol} filterOrdersBySymbol={filterOrdersBySymbol} setFilterOrdersBySymbol={setFilterOrdersBySymbol} handleCancelOrder={handleCancelOrder} />
+                           <BottomPanel openOrders={activeOrders} tradeHistory={activeHistory} symbol={symbol} filterOrdersBySymbol={filterOrdersBySymbol} setFilterOrdersBySymbol={setFilterOrdersBySymbol} handleCancelOrder={handleCancelOrder} tradingMode={tradingMode} />
                          </div>
                      </div>
                      <div className="xl:col-span-1 h-full min-h-[400px]">
@@ -406,8 +431,8 @@ function App() {
                  </div>
              } />
              <Route path="/scanner" element={<div className="h-full overflow-hidden bg-slate-900"><ScannerView symbols={symbols} onAutoTrade={onAutoTrade} onSelectSymbol={handleSelectSymbol} /></div>} />
-             <Route path="/trades" element={<ActivePositionsView openOrders={openOrders} handleCancelOrder={handleCancelOrder} quoteBalance={quoteBalance} onSelectSymbol={handleSelectSymbol} balances={balances} globalPrices={globalPrices} />} />
-             <Route path="/orders" element={<ActiveOrdersView openOrders={openOrders} handleCancelOrder={handleCancelOrder} quoteBalance={quoteBalance} onSelectSymbol={handleSelectSymbol} />} />
+             <Route path="/trades" element={<ActivePositionsView openOrders={activeOrders} handleCancelOrder={handleCancelOrder} quoteBalance={quoteBalance} onSelectSymbol={handleSelectSymbol} balances={activeBalances} globalPrices={globalPrices} tradingMode={tradingMode} leadPositions={leadPositions} smartHistory={activeHistory} />} />
+             <Route path="/orders" element={<ActiveOrdersView openOrders={activeOrders} handleCancelOrder={handleCancelOrder} quoteBalance={quoteBalance} onSelectSymbol={handleSelectSymbol} tradingMode={tradingMode} />} />
            </Routes>
           </div>        </main>
       </div>

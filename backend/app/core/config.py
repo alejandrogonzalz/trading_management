@@ -1,5 +1,8 @@
 import os
 from pydantic_settings import BaseSettings
+from dotenv import load_dotenv
+
+load_dotenv()
 
 class Settings(BaseSettings):
     # Spot Credentials
@@ -7,8 +10,8 @@ class Settings(BaseSettings):
     BINANCE_API_SECRET: str = os.getenv("BINANCE_API_SECRET", "").strip().strip("'").strip('"')
     
     # Lead Trading / Futures Credentials
-    LEAD_API_KEY: str = os.getenv("LEAD_API_KEY", "").strip().strip("'").strip('"')
-    LEAD_API_SECRET: str = os.getenv("LEAD_API_SECRET", "").strip().strip("'").strip('"')
+    LEAD_API_KEY: str = (os.getenv("LEAD_API_KEY") or os.getenv("BINANCE_COPY_TRADING_KEY") or "").strip().strip("'").strip('"')
+    LEAD_API_SECRET: str = (os.getenv("LEAD_API_SECRET") or os.getenv("BINANCE_COPY_TRADING_SECRET") or "").strip().strip("'").strip('"')
     
     OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434")
     LLM_MODEL: str = os.getenv("LLM_MODEL", "qwen2.5:14b")

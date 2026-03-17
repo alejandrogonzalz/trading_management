@@ -1,12 +1,31 @@
 import { useMemo } from 'react';
-import { Activity, XCircle, ShieldAlert } from 'lucide-react';
+import { Activity, XCircle, ShieldAlert, Zap } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
-const ActiveOrdersView = ({ openOrders, handleCancelOrder, quoteBalance, onSelectSymbol }) => {
+const ActiveOrdersView = ({ openOrders, handleCancelOrder, quoteBalance, onSelectSymbol, tradingMode }) => {
     const navigate = useNavigate();
-    const relevantOrders = useMemo(() => 
-        openOrders.filter(o => o.clientOrderId?.startsWith('SMART_') || o.listClientOrderId?.startsWith('LIST_SMART_')),
-    [openOrders]);
+    const isLead = tradingMode === 'LEAD';
+
+    const relevantOrders = useMemo(() => {
+        if (isLead) {
+            // For Lead/Futures, show everything that is an open order
+            return openOrders.filter(o => !o.type?.includes('POSITION')); 
+        }
+        // For Spot, maintain the "Protector Leg" filter
+        return openOrders.filter(o => o.clientOrderId?.startsWith('SMART_') || o.listClientOrderId?.startsWith('LIST_SMART_'));
+    }, [openOrders, isLead]);
+
+    const theme = isLead ? {
+        text: 'text-orange-500',
+        activeText: 'text-orange-400',
+        border: 'border-orange-500',
+        btn: 'hover:text-orange-400'
+    } : {
+        text: 'text-blue-500',
+        activeText: 'text-blue-400',
+        border: 'border-blue-500',
+        btn: 'hover:text-blue-400'
+    };
 
     return (
         <div className="h-full flex flex-col bg-slate-900 overflow-hidden">
@@ -14,12 +33,16 @@ const ActiveOrdersView = ({ openOrders, handleCancelOrder, quoteBalance, onSelec
                 <div className="flex justify-between items-end">
                     <div>
                         <h1 className="text-3xl font-black text-white flex items-center gap-3 tracking-tighter uppercase">
-                            <ShieldAlert size={32} className="text-orange-500" /> SYSTEM ORDERS
+                            <ShieldAlert size={32} className={theme.text} /> {isLead ? 'FUTURES ORDERS' : 'SYSTEM ORDERS'}
                         </h1>
-                        <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.2em] mt-2">Active Protector Legs & Smart Setups</p>
+                        <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.2em] mt-2">
+                            {isLead ? 'Active USDS-M Futures Orders' : 'Active Protector Legs & Smart Setups'}
+                        </p>
                     </div>
                     <div className="bg-slate-950 px-6 py-3 rounded-2xl border border-slate-800 flex flex-col items-end shadow-lg mb-2">
-                        <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1 opacity-60">Total Cash</span>
+                        <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1 opacity-60">
+                            {isLead ? 'Available Margin' : 'Total Cash'}
+                        </span>
                         <p className="font-mono text-xl font-black text-white tracking-tighter">${parseFloat(quoteBalance).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
                     </div>
                 </div>
@@ -36,6 +59,7 @@ const ActiveOrdersView = ({ openOrders, handleCancelOrder, quoteBalance, onSelec
                                 <th className="p-4 text-center">Side</th>
                                 <th className="p-6 text-center">Price</th>
                                 <th className="p-6 text-center">Quantity</th>
+                                {isLead && <th className="p-6 text-center">Leverage</th>}
                                 <th className="p-6 text-right">Action</th>
                             </tr>
                         </thead>
@@ -45,7 +69,7 @@ const ActiveOrdersView = ({ openOrders, handleCancelOrder, quoteBalance, onSelec
                                     <td className="p-6">
                                         <button 
                                             onClick={() => { onSelectSymbol(o.symbol); navigate('/'); }}
-                                            className="font-black text-white hover:text-blue-400 transition-colors hover:underline text-left outline-none"
+                                            className={`font-black text-white ${theme.btn} transition-colors hover:underline text-left outline-none`}
                                         >
                                             {o.symbol}
                                         </button>
@@ -58,20 +82,21 @@ const ActiveOrdersView = ({ openOrders, handleCancelOrder, quoteBalance, onSelec
                                     </td>
                                     <td className="p-6 text-center text-white font-black">${parseFloat(o.price || o.stopPrice).toLocaleString()}</td>
                                     <td className="p-6 text-center text-slate-400">{o.origQty}</td>
+                                    {isLead && <td className="p-6 text-center text-orange-400">{o.leverage || '--'}x</td>}
                                     <td className="p-6 text-right">
                                         <button 
                                             onClick={() => handleCancelOrder(o.orderId, o.symbol)}
                                             className="px-4 py-1.5 rounded-lg bg-rose-600/10 hover:bg-rose-600 text-rose-500 hover:text-white text-[10px] font-black uppercase tracking-widest transition-all border border-rose-500/20"
                                         >
-                                            Cancel Leg
+                                            Cancel Order
                                         </button>
                                     </td>
                                 </tr>
                             )) : (
                                 <tr>
-                                    <td colSpan={6} className="py-32 text-center text-slate-700 uppercase font-black opacity-30 tracking-widest">
+                                    <td colSpan={isLead ? 7 : 6} className="py-32 text-center text-slate-700 uppercase font-black opacity-30 tracking-widest">
                                         <ShieldAlert size={48} className="mx-auto mb-4 opacity-20" />
-                                        No System Orders Active
+                                        No {isLead ? 'Futures' : 'System'} Orders Active
                                     </td>
                                 </tr>
                             )}
