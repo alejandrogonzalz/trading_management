@@ -6,11 +6,11 @@ const SmartTerminalView = ({
   tpPrice, setTpPrice, slPrice, setSlPrice, 
   tpEnabled, setTpEnabled, slEnabled, setSlEnabled, 
   assetBalance, tradingMode, isTrading,
-  tpPercent, setTpPercent, slPercent, setSlPercent
+  tpPercent, setTpPercent, slPercent, setSlPercent,
+  side, setSide
 }) => {
   const [quantity, setQuantity] = useState(0.001);
   const [usdcAmount, setUsdcAmount] = useState(0);
-  const [side, setSide] = useState('BUY'); // 'BUY' (Long) or 'SELL' (Short)
   const [leverage, setLeverage] = useState(10);
 
   // Force 'BUY' if in SPOT mode
@@ -115,16 +115,26 @@ const SmartTerminalView = ({
     });
   }
 
-  // Estimated Liquidation Price (Simple approximation for isolated margin)
+  // Estimated Liquidation Price (More precise approximation)
   const liqPrice = useMemo(() => {
-    if (tradingMode !== 'LEAD' || currentPrice <= 0 || leverage <= 1) return 0;
-    const maintenanceMargin = 0.005; // 0.5% approximation
+    if (tradingMode !== 'LEAD' || currentPrice <= 0 || leverage <= 0) return 0;
+    
+    // Maintenance Margin Rate (MMR) for lower tiers on Binance is typically 0.4% (0.004)
+    const mmr = 0.004; 
+    
+    // Long: Liq = Entry * (1 - (1/Lev) + MMR)
+    // Short: Liq = Entry * (1 + (1/Lev) - MMR)
     if (side === 'BUY') {
-        return currentPrice * (1 - (1 / leverage) + maintenanceMargin);
+        return currentPrice * (1 - (1 / leverage) + mmr);
     } else {
-        return currentPrice * (1 + (1 / leverage) - maintenanceMargin);
+        return currentPrice * (1 + (1 / leverage) - mmr);
     }
   }, [currentPrice, leverage, side, tradingMode]);
+
+  const riskBuffer = useMemo(() => {
+    if (liqPrice <= 0 || currentPrice <= 0) return 0;
+    return Math.abs(((liqPrice - currentPrice) / currentPrice * 100));
+  }, [liqPrice, currentPrice]);
 
   const quoteAsset = symbol.endsWith('USDT') ? 'USDT' : 'USDC';
   const modeColor = tradingMode === 'LEAD' ? 'orange' : 'blue';
@@ -160,7 +170,7 @@ const SmartTerminalView = ({
 
         {/* Leverage Slider (Only for Lead Trading) */}
         {tradingMode === 'LEAD' && (
-            <div className="space-y-3 bg-slate-900/50 p-4 rounded-2xl border border-slate-800">
+            <div className="space-y-3 bg-slate-900/50 p-4 rounded-2xl border border-slate-800 group relative">
                 <div className="flex justify-between items-center">
                     <label className="text-[10px] text-slate-500 font-black uppercase tracking-widest">Initial Leverage</label>
                     <span className="text-sm font-mono font-black text-orange-400">{leverage}x</span>
@@ -175,6 +185,22 @@ const SmartTerminalView = ({
                     <span>10x</span>
                     <span>25x</span>
                     <span>50x</span>
+                </div>
+
+                {/* Leverage Tooltip */}
+                <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-4 w-56 p-4 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl opacity-0 group-hover:opacity-100 pointer-events-none transition-all duration-300 z-50">
+                    <p className="text-[10px] font-black text-orange-500 uppercase tracking-widest mb-2 border-b border-slate-800 pb-2">Leverage Impact</p>
+                    <div className="space-y-2">
+                        <div className="flex justify-between">
+                            <span className="text-[9px] text-slate-500 font-bold uppercase">Buying Power</span>
+                            <span className="text-[10px] text-white font-black">{leverage}x</span>
+                        </div>
+                        <div className="flex justify-between">
+                            <span className="text-[9px] text-slate-500 font-bold uppercase">Margin Req.</span>
+                            <span className="text-[10px] text-white font-black">{(100 / leverage).toFixed(1)}%</span>
+                        </div>
+                        <p className="text-[8px] text-slate-600 italic leading-tight pt-1">Higher leverage increases liquidation risk and volatility sensitivity.</p>
+                    </div>
                 </div>
             </div>
         )}
@@ -204,15 +230,51 @@ const SmartTerminalView = ({
         {/* Risk Indicators (Futures Only) */}
         {tradingMode === 'LEAD' && liqPrice > 0 && (
             <div className="flex gap-2">
-                <div className="flex-1 bg-rose-500/5 border border-rose-500/20 p-3 rounded-xl flex flex-col items-center">
+                <div className="flex-1 bg-rose-500/5 border border-rose-500/20 p-3 rounded-xl flex flex-col items-center group relative cursor-help">
                     <span className="text-[8px] font-black text-rose-500 uppercase mb-1">Est. Liquidation</span>
-                    <span className="text-xs font-mono font-black text-white">${liqPrice.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                    <span className="text-sm font-mono font-black text-white">${liqPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}</span>
+                    
+                    {/* Liq Tooltip */}
+                    <div className="absolute left-0 right-0 bottom-full mb-4 w-64 p-4 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl opacity-0 group-hover:opacity-100 pointer-events-none transition-all duration-300 z-50 mx-auto">
+                        <div className="flex items-center gap-2 mb-2 border-b border-slate-800 pb-2">
+                            <ShieldAlert size={14} className="text-rose-500" />
+                            <p className="text-[10px] font-black text-rose-500 uppercase tracking-widest">Liquidation Logic</p>
+                        </div>
+                        <p className="text-[9px] text-slate-400 leading-relaxed font-medium">
+                            If market price hits <span className="text-white font-black">${liqPrice.toFixed(4)}</span>, your isolated margin will be seized to close the position.
+                        </p>
+                        <div className="mt-3 pt-3 border-t border-slate-800 flex justify-between">
+                            <span className="text-[9px] text-slate-500 uppercase font-black">Side</span>
+                            <span className={`text-[9px] font-black ${side === 'BUY' ? 'text-emerald-400' : 'text-rose-400'}`}>{side === 'BUY' ? 'LONG' : 'SHORT'}</span>
+                        </div>
+                    </div>
                 </div>
-                <div className="flex-1 bg-slate-900 border border-slate-800 p-3 rounded-xl flex flex-col items-center">
+
+                <div className="flex-1 bg-slate-900 border border-slate-800 p-3 rounded-xl flex flex-col items-center group relative cursor-help">
                     <span className="text-[8px] font-black text-slate-500 uppercase mb-1">Risk Buffer</span>
-                    <span className="text-xs font-mono font-black text-emerald-400">
-                        {Math.abs(((liqPrice - currentPrice) / currentPrice * 100)).toFixed(1)}%
+                    <span className={`text-sm font-mono font-black ${riskBuffer > 10 ? 'text-emerald-400' : riskBuffer > 5 ? 'text-orange-400' : 'text-rose-400'}`}>
+                        {riskBuffer.toFixed(2)}%
                     </span>
+
+                    {/* Risk Buffer Tooltip */}
+                    <div className="absolute left-0 right-0 bottom-full mb-4 w-64 p-4 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl opacity-0 group-hover:opacity-100 pointer-events-none transition-all duration-300 z-50 mx-auto">
+                        <div className="flex items-center gap-2 mb-2 border-b border-slate-800 pb-2">
+                            <Zap size={14} className="text-blue-400" />
+                            <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest">Safety Distance</p>
+                        </div>
+                        <div className="space-y-2">
+                            <div className="flex justify-between">
+                                <span className="text-[9px] text-slate-500 font-bold uppercase">Price Distance</span>
+                                <span className="text-[10px] text-white font-black">{riskBuffer.toFixed(2)}%</span>
+                            </div>
+                            <div className="flex justify-between">
+                                <span className="text-[9px] text-slate-500 font-bold uppercase">Status</span>
+                                <span className={`text-[10px] font-black ${riskBuffer > 10 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                    {riskBuffer > 10 ? 'SAFE' : 'HIGH RISK'}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         )}
