@@ -73,8 +73,11 @@ function App() {
   const [slPercent, setSlPercent] = useState(1);
   const [tpEnabled, setTpEnabled] = useState(true);
   const [slEnabled, setSlEnabled] = useState(true);
+  const [tradeSide, setTradeSide] = useState('BUY');
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-  const [isSearchFocused, setIsSearchFocused] = useState(false); // State for search focus
+
+  // ... (rest of the states)
 
   const timeframes = [
     { label: '1m', value: '1m' }, { label: '5m', value: '5m' },
@@ -282,6 +285,17 @@ function App() {
   const onAutoTrade = (setup) => {
     setSymbol(setup.pair);
     setSymbolSearch(setup.pair);
+    
+    // Determine side from AI bias
+    const bias = setup.bias?.toLowerCase() || 'bullish';
+    const side = bias === 'bearish' ? 'SELL' : 'BUY';
+    setTradeSide(side);
+
+    // If Bearish, automatically switch to LEAD mode as SPOT doesn't support shorts
+    if (side === 'SELL' && tradingMode === 'SPOT') {
+      setTradingMode('LEAD');
+    }
+
     const entry = setup.entry || currentPrice;
     if (setup.tp) { 
       setTpPrice(setup.tp); setTpEnabled(true);
@@ -439,7 +453,7 @@ function App() {
                          </div>
                      </div>
                      <div className="xl:col-span-1 h-full min-h-[400px]">
-                         <SmartTerminalView symbol={symbol} currentPrice={currentPrice} handleSmartTrade={handleSmartTrade} handleMarketClose={handleMarketClose} tpPrice={tpPrice} setTpPrice={setTpPrice} slPrice={slPrice} setSlPrice={setSlPrice} tpEnabled={tpEnabled} setTpEnabled={setTpEnabled} slEnabled={slEnabled} setSlEnabled={setSlEnabled} assetBalance={assetBalance} tradingMode={tradingMode} isTrading={isTrading} tpPercent={tpPercent} setTpPercent={setTpPercent} slPercent={slPercent} setSlPercent={setSlPercent} />
+                         <SmartTerminalView symbol={symbol} currentPrice={currentPrice} handleSmartTrade={handleSmartTrade} handleMarketClose={handleMarketClose} tpPrice={tpPrice} setTpPrice={setTpPrice} slPrice={slPrice} setSlPrice={setSlPrice} tpEnabled={tpEnabled} setTpEnabled={setTpEnabled} slEnabled={slEnabled} setSlEnabled={setSlEnabled} assetBalance={assetBalance} tradingMode={tradingMode} isTrading={isTrading} tpPercent={tpPercent} setTpPercent={setTpPercent} slPercent={slPercent} setSlPercent={setSlPercent} side={tradeSide} setSide={setTradeSide} />
                      </div>
                  </div>
              } />
