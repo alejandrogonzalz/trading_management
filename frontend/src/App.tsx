@@ -70,7 +70,7 @@ function App() {
   const [tpPrice, setTpPrice] = useState(0);
   const [slPrice, setSlPrice] = useState(0);
   const [tpPercent, setTpPercent] = useState(2);
-  const [slPercent, setSlPercent] = useState(-1);
+  const [slPercent, setSlPercent] = useState(1);
   const [tpEnabled, setTpEnabled] = useState(true);
   const [slEnabled, setSlEnabled] = useState(true);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -286,14 +286,14 @@ function App() {
     if (setup.tp) { 
       setTpPrice(setup.tp); setTpEnabled(true);
       if (entry > 0) {
-        const percent = (setup.tp - entry) / entry * 100;
+        const percent = Math.abs((setup.tp - entry) / entry * 100);
         setTpPercent(parseFloat(percent.toFixed(4)));
       }
     }
     if (setup.sl) { 
       setSlPrice(setup.sl); setSlEnabled(true);
       if (entry > 0) {
-        const percent = (setup.sl - entry) / entry * 100;
+        const percent = Math.abs((setup.sl - entry) / entry * 100);
         setSlPercent(parseFloat(percent.toFixed(4)));
       }
     }

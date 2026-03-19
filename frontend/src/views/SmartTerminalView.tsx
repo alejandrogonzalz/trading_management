@@ -67,19 +67,21 @@ const SmartTerminalView = ({
 
   // Price/Percent Sync Logic
   const handleTpPercentChange = (val: number) => {
-    const fixedVal = Number(val.toFixed(4));
+    const fixedVal = Math.abs(Number(val.toFixed(4)));
     setTpPercent(fixedVal);
     if (currentPrice > 0) {
+      // TP: Long goes UP (+), Short goes DOWN (-)
       const multiplier = side === 'BUY' ? (1 + fixedVal / 100) : (1 - fixedVal / 100);
       setTpPrice(Number((currentPrice * multiplier).toFixed(8)));
     }
   };
 
   const handleSlPercentChange = (val: number) => {
-    const fixedVal = Number(val.toFixed(4));
+    const fixedVal = Math.abs(Number(val.toFixed(4)));
     setSlPercent(fixedVal);
     if (currentPrice > 0) {
-      const multiplier = side === 'BUY' ? (1 + fixedVal / 100) : (1 - fixedVal / 100);
+      // SL: Long goes DOWN (-), Short goes UP (+)
+      const multiplier = side === 'BUY' ? (1 - fixedVal / 100) : (1 + fixedVal / 100);
       setSlPrice(Number((currentPrice * multiplier).toFixed(8)));
     }
   };
@@ -87,16 +89,18 @@ const SmartTerminalView = ({
   const handleTpPriceChange = (val: number) => {
     setTpPrice(val);
     if (currentPrice > 0) {
+      // TP: Distance is positive in the profit direction
       const diff = side === 'BUY' ? (val - currentPrice) : (currentPrice - val);
-      setTpPercent(Number((diff / currentPrice * 100).toFixed(4)));
+      setTpPercent(Number(Math.abs(diff / currentPrice * 100).toFixed(4)));
     }
   };
 
   const handleSlPriceChange = (val: number) => {
     setSlPrice(val);
     if (currentPrice > 0) {
-      const diff = side === 'BUY' ? (val - currentPrice) : (currentPrice - val);
-      setSlPercent(Number((diff / currentPrice * 100).toFixed(4)));
+      // SL: Distance is positive in the loss direction
+      const diff = side === 'BUY' ? (currentPrice - val) : (val - currentPrice);
+      setSlPercent(Number(Math.abs(diff / currentPrice * 100).toFixed(4)));
     }
   };
   
