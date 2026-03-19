@@ -313,36 +313,18 @@ function App() {
         
         <Sidebar isSidebarOpen={isSidebarOpen} setIsSidebarOpen={setIsSidebarOpen} />
 
-        <main className={`flex-1 flex flex-col min-w-0 transition-all duration-300`}>
+        <main className={`flex-1 flex flex-col min-w-0 transition-all duration-300 overflow-hidden`}>
           <header className="h-16 border-b border-slate-800 bg-slate-900/50 backdrop-blur-md flex items-center justify-between px-6 shrink-0 z-40">
-              <div className="flex items-center gap-6">
-                  {/* MODE SWITCHER */}
-                  <div className="bg-slate-950 p-1 rounded-xl border border-slate-800 flex shadow-inner">
-                      <button 
-                        onClick={() => setTradingMode('SPOT')}
-                        className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${tradingMode === 'SPOT' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' : 'text-slate-500 hover:text-slate-300'}`}
-                      >
-                        Spot
-                      </button>
-                      <button 
-                        onClick={() => setTradingMode('LEAD')}
-                        className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${tradingMode === 'LEAD' ? 'bg-orange-600 text-white shadow-lg shadow-orange-900/20' : 'text-slate-500 hover:text-slate-300'}`}
-                      >
-                        Lead Trading
-                      </button>
-                  </div>
-
-                  <div className="h-8 w-px bg-slate-800"></div>
-
+              <div className="flex items-center gap-8">
                   {/* SYMBOL SEARCH */}
-                  <div className="relative group">
+                  <div className="relative group w-72">
                     <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-slate-500 group-focus-within:text-blue-400 transition-colors">
                       <ScanSearch size={16} />
                     </div>
                     <input 
                       type="text" 
                       placeholder="Search pair..."
-                      className="bg-slate-950 border border-slate-800 rounded-xl py-2 pl-10 pr-4 text-sm font-black text-white focus:outline-none focus:border-blue-500/50 focus:ring-4 focus:ring-blue-500/5 w-64 transition-all"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2 pl-10 pr-4 text-xs font-black text-white focus:outline-none focus:border-blue-500/50 focus:ring-4 focus:ring-blue-500/5 transition-all uppercase tracking-widest"
                       value={symbolSearch}
                       onChange={(e) => setSymbolSearch(e.target.value.toUpperCase())}
                       onFocus={() => setIsSearchFocused(true)}
@@ -363,17 +345,48 @@ function App() {
                       </div>
                     )}
                   </div>
+
+                  <div className="flex items-center gap-4">
+                      <div className="flex flex-col">
+                          <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest leading-none mb-1">Live Price</span>
+                          <div className={`text-lg font-black font-mono tracking-tighter ${priceChangeColor} leading-none`}>
+                              {currentPrice > 0 ? `$${currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 8 })}` : 'SYNCING...'}
+                          </div>
+                      </div>
+                  </div>
               </div>
 
-              <div className="flex items-center gap-4">
-                  <div className="flex items-center gap-6 px-6">
-                    <div className="flex flex-col items-end">
-                        <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest mb-0.5">Current Price</span>
-                        <p className={`font-mono text-lg font-black tracking-tighter ${priceChangeColor}`}>
-                          ${currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                        </p>
+              <div className="flex items-center gap-6">
+                  {/* MODE SWITCHER */}
+                  <div className="bg-slate-950 p-1 rounded-2xl border border-slate-800 flex shadow-inner">
+                      <button 
+                        onClick={() => setTradingMode('SPOT')}
+                        className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all duration-300 flex items-center gap-2 ${tradingMode === 'SPOT' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/40' : 'text-slate-500 hover:text-slate-300'}`}
+                      >
+                        <div className={`w-1.5 h-1.5 rounded-full ${tradingMode === 'SPOT' ? 'bg-blue-200 animate-pulse' : 'bg-slate-700'}`}></div>
+                        Spot
+                      </button>
+                      <button 
+                        onClick={() => setTradingMode('LEAD')}
+                        className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all duration-300 flex items-center gap-2 ${tradingMode === 'LEAD' ? 'bg-orange-600 text-white shadow-lg shadow-orange-900/40' : 'text-slate-500 hover:text-slate-300'}`}
+                      >
+                        <div className={`w-1.5 h-1.5 rounded-full ${tradingMode === 'LEAD' ? 'bg-orange-200 animate-pulse' : 'bg-slate-700'}`}></div>
+                        Lead Trading
+                      </button>
+                  </div>
+
+                  <div className="flex gap-2">
+                    {/* BOX 1: BASE ASSET */}
+                    <div className="bg-slate-950 px-5 py-2 rounded-xl border border-slate-800 flex flex-col items-end justify-center min-w-[130px] h-[52px]">
+                        <span className="text-slate-500 text-[8px] font-black uppercase tracking-[0.2em] mb-0.5 opacity-70">{symbol.replace(quoteAsset, '')} Balance</span>
+                        <p className="font-mono text-sm font-black text-white tracking-tighter">{parseFloat(assetBalance.toString()).toLocaleString(undefined, { minimumFractionDigits: 4 })}</p>
                     </div>
-                    <div className="bg-slate-800 w-px h-8"></div>
+                    {/* BOX 2: QUOTE ASSET */}
+                    <div className="bg-slate-950 px-5 py-2 rounded-xl border border-slate-800 flex flex-col items-end justify-center min-w-[130px] h-[52px]">
+                        <span className="text-slate-500 text-[8px] font-black uppercase tracking-[0.2em] mb-0.5 opacity-70">{quoteAsset} Balance</span>
+                        <p className="font-mono text-sm font-black text-white tracking-tighter">${parseFloat(quoteBalance).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                    </div>
+                    {/* BOX 3: WALLET VALUE (MEGA TOOLTIP) */}
                     <WalletBalances balances={activeBalances} quoteAsset={quoteAsset} globalPrices={globalPrices} mode={tradingMode} />
                   </div>
               </div>
