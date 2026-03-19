@@ -83,9 +83,12 @@ class FuturesService:
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"Futures Balance Error: {str(e)}")
 
-    def get_lead_history(self):
+    def get_lead_history(self, symbol: str = None):
         """Retrieves closed Lead/Futures trades from MongoDB."""
-        cursor = lead_trades_collection.find({"status": "CLOSED"}).sort("close_time", -1)
+        query = {"status": "CLOSED"}
+        if symbol:
+            query["symbol"] = symbol.upper()
+        cursor = lead_trades_collection.find(query).sort("close_time", -1)
         trades = []
         for doc in cursor:
             doc["id"] = str(doc.pop("_id"))

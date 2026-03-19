@@ -23,7 +23,7 @@ const BottomPanel = ({
             const fetchHistory = async () => {
                 setIsLoadingHistory(true);
                 try {
-                    const endpoint = isLead ? `lead/binance-history?symbol=${symbol}` : `account/history?symbol=${symbol}`;
+                    const endpoint = isLead ? `lead/binance-history?symbol=${symbol}` : `trades/history?symbol=${symbol}`;
                     const res = await fetch(`${API_BASE}/${endpoint}`);
                     if (res.ok) {
                         const data = await res.json();
@@ -127,17 +127,30 @@ const BottomPanel = ({
                         <tbody className="font-mono text-[10px]">
                             {displayOrders.length > 0 ? displayOrders.map((o, idx) => {
                                 if (!o) return null;
+                                const isHistory = activeTab === 'history';
+                                
+                                // Normalize fields based on Spot Order vs Futures Trade
                                 const s = o.symbol || 'N/A';
-                                const side = o.side || 'N/A';
-                                const status = o.status || 'NEW';
+                                const side = (o.side || (parseFloat(o.qty) > 0 ? 'BUY' : 'SELL')).toUpperCase();
+                                
+                                // Status handling
+                                let status = o.status || 'NEW';
+                                if (isHistory && !o.status) status = 'FILLED'; // Trades are always filled
+                                
+                                // Quantity handling (Spot uses origQty, Futures uses qty)
                                 const q = o.origQty || o.qty || '0';
+                                
+                                // Price handling (Spot uses price, Futures uses price)
                                 const p = o.price || o.avgPrice || o.stopPrice || '0';
+                                
                                 const cid = o.clientOrderId || '';
                                 const lcid = o.listClientOrderId || '';
                                 const isSmart = cid.startsWith('SMART_') || lcid.startsWith('LIST_SMART_') || cid.startsWith('LEAD_');
                                 
+                                const pnl = o.realizedPnl ? parseFloat(o.realizedPnl) : null;
+                                
                                 return (
-                                    <tr key={`${o.orderId || idx}-${idx}`} className={`border-b border-slate-800/20 hover:bg-slate-800/40 transition-colors ${isSmart ? `bg-${isLead ? 'orange' : 'blue'}-500/5` : ''}`}>
+                                    <tr key={`${o.orderId || o.id || idx}-${idx}`} className={`border-b border-slate-800/20 hover:bg-slate-800/40 transition-colors ${isSmart ? `bg-${isLead ? 'orange' : 'blue'}-500/5` : ''}`}>
                                         <td className="p-3 pl-4 font-black text-slate-200">
                                             <div className="flex items-center gap-2">
                                                 {s}
@@ -154,16 +167,22 @@ const BottomPanel = ({
                                         <td className="p-3 text-center text-slate-400">
                                             ${parseFloat(p).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                                         </td>
-                                        <td className="p-3 text-center text-slate-500">{q}</td>
+                                        <td className="p-3 text-center text-slate-500">{Math.abs(parseFloat(q))}</td>
                                         <td className="p-3 text-center">
-                                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${
-                                                status === 'FILLED' ? 'bg-emerald-900/30 text-emerald-500' : 
-                                                status === 'CANCELED' ? 'bg-rose-900/30 text-rose-500' :
-                                                'bg-slate-800 text-slate-500'
-                                            }`}>{status}</span>
+                                            {isHistory && pnl !== null ? (
+                                                <span className={`font-black ${pnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                                    {pnl >= 0 ? '+' : ''}{pnl.toFixed(2)}
+                                                </span>
+                                            ) : (
+                                                <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${
+                                                    status === 'FILLED' ? 'bg-emerald-900/30 text-emerald-500' : 
+                                                    status === 'CANCELED' || status === 'REJECTED' ? 'bg-rose-900/30 text-rose-500' :
+                                                    'bg-slate-800 text-slate-500'
+                                                }`}>{status}</span>
+                                            )}
                                         </td>
                                         <td className="p-3 text-right pr-4">
-                                            {activeTab === 'history' ? (
+                                            {isHistory ? (
                                                 <span className="text-slate-600 text-[9px] whitespace-nowrap">
                                                     {new Date(o.updateTime || o.time || Date.now()).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
                                                 </span>

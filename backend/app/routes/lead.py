@@ -32,9 +32,9 @@ def get_lead_open_orders(symbol: Optional[str] = None):
     return futures_service.get_open_orders(symbol=symbol)
 
 @router.get("/history")
-def get_lead_history():
+def get_lead_history(symbol: Optional[str] = None):
     """Retrieves closed Lead/Futures trades from MongoDB."""
-    return futures_service.get_lead_history()
+    return futures_service.get_lead_history(symbol=symbol)
 
 @router.get("/binance-history")
 def get_lead_binance_history(symbol: Optional[str] = None):
