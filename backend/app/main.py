@@ -8,8 +8,7 @@ import asyncio
 # Local imports
 from app.core.config import settings
 from app.db import database
-from app.services import binance_service
-from app.services import scanner_service
+from app.services import binance_service, scanner_service, futures_service
 from app.utils import market_utils as market_service_utils
 from app.core.middleware import EndpointAuditMiddleware
 from app.routes import spot, market, lead

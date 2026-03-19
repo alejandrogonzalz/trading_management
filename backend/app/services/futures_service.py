@@ -12,7 +12,7 @@ from binance_common.configuration import ConfigurationRestAPI
 from app.core.config import settings
 from app.services import audit_service
 from app.db.database import db
-from app.services.binance_service import binance_client
+from app.services.binance_service import binance_client, round_step_size
 
 import binance_common.utils as binance_utils
 
@@ -160,50 +160,73 @@ class FuturesService:
 
     def create_smart_lead_order(self, symbol: str, side: str, quantity: float, tp_price: float, sl_price: float, leverage: int = 10):
         """
-        Executes a Lead Entry order and initializes background management for TP/SL.
-        Stored in an isolated 'lead_trades' collection.
+        Executes a Lead Entry order and ensures protection orders exist.
+        Rolls back (closes entry) if protection orders fail.
         """
         self._ensure_client()
+        trade_id = f"LEAD_{int(time.time())}"
+        
         try:
-            # 1. Set Leverage first
+            # 1. Set Leverage
             self.set_leverage(symbol, leverage)
+
+            # 2. Precision & Rounding
+            exchange_info = binance_client.futures_exchange_info()
+            symbol_info = next((s for s in exchange_info['symbols'] if s['symbol'] == symbol.upper()), None)
+            if not symbol_info or symbol_info['status'] != 'TRADING':
+                raise HTTPException(status_code=400, detail=f"Symbol {symbol} not tradable.")
+
+            tick_size = float(next(f for f in symbol_info['filters'] if f['filterType'] == 'PRICE_FILTER')['tickSize'])
+            step_size = float(next(f for f in symbol_info['filters'] if f['filterType'] == 'LOT_SIZE')['stepSize'])
+            rounded_qty = round_step_size(quantity, step_size)
+            rounded_tp = round_step_size(tp_price, tick_size) if tp_price > 0 else 0
+            rounded_sl = round_step_size(sl_price, tick_size) if sl_price > 0 else 0
             
-            # 2. Execute Entry (Market for immediate follow)
-            params = {
-                "symbol": symbol.upper(),
-                "side": side.upper(),
-                "type": "MARKET",
-                "quantity": quantity
-            }
-            
+            # 3. Execute Entry
+            params = {"symbol": symbol.upper(), "side": side.upper(), "type": "MARKET", "quantity": rounded_qty}
             res = self.lead_client.new_order(**params)
             entry_res = res.data()
             audit_service.log_api_call("POST", "lead/smart-entry", params, entry_res)
             
-            # 3. Store Metadata for management
-            trade_id = f"LEAD_{int(time.time())}"
+            # 4. Initialize Trade in DB (ENTRY_ONLY status)
             metadata = {
-                "_id": trade_id,
-                "symbol": symbol.upper(),
-                "side": side.upper(),
+                "_id": trade_id, "symbol": symbol.upper(), "side": side.upper(),
                 "entry_price": float(entry_res.get('avgPrice', 0)),
-                "quantity": quantity,
-                "tp": tp_price,
-                "sl": sl_price,
-                "leverage": leverage,
-                "status": "ACTIVE",
-                "timestamp": time.time(),
-                "entry_order_id": entry_res.get('orderId')
+                "quantity": rounded_qty, "tp": rounded_tp, "sl": rounded_sl,
+                "leverage": leverage, "status": "ENTRY_ONLY", "timestamp": time.time()
             }
             lead_trades_collection.insert_one(metadata)
             
-            return {
-                "trade_id": trade_id,
-                "entry": entry_res,
-                "status": "ACTIVE"
-            }
+            # 5. Place Protection Orders
+            exit_side = "SELL" if side.upper() == "BUY" else "BUY"
+            protection_orders = []
+
+            if rounded_sl > 0:
+                sl_res = self.lead_client.new_order(symbol=symbol.upper(), side=exit_side, type="STOP_MARKET", stop_price=rounded_sl, close_position="TRUE", timeInForce="GTC")
+                protection_orders.append(sl_res.data())
+                audit_service.log_api_call("POST", "lead/smart-sl", {"sl": rounded_sl}, sl_res.data())
+
+            if rounded_tp > 0:
+                tp_res = self.lead_client.new_order(symbol=symbol.upper(), side=exit_side, type="TAKE_PROFIT_MARKET", stop_price=rounded_tp, close_position="TRUE", timeInForce="GTC")
+                protection_orders.append(tp_res.data())
+                audit_service.log_api_call("POST", "lead/smart-tp", {"tp": rounded_tp}, tp_res.data())
+
+            # 6. Success: Update to ACTIVE
+            lead_trades_collection.update_one({"_id": trade_id}, {"$set": {"status": "ACTIVE", "protection_orders": protection_orders}})
+            return {"trade_id": trade_id, "status": "ACTIVE", "entry": entry_res}
+
         except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Lead Smart Order Failed: {str(e)}")
+            error_msg = f"CRITICAL: Smart Lead Trade Failed: {str(e)}"
+            print(error_msg)
+            # Try to roll back position
+            try:
+                self.close_position(symbol)
+                error_msg += " (Position rolled back)"
+            except:
+                error_msg += " (ROLLBACK FAILED - MANUAL INTERVENTION REQUIRED)"
+            
+            audit_service.log_api_call("POST", "lead/smart-trade-FAILED", {"symbol": symbol}, error_msg, 400)
+            raise HTTPException(status_code=400, detail=error_msg)
 
     def get_active_positions(self, symbol: str = None):
         """Retrieves currently open Futures positions."""
@@ -242,12 +265,15 @@ class FuturesService:
             formatted_setups = []
             for vs in virtual_setups:
                 formatted_setups.append({
+                    "id": vs["_id"],
                     "orderId": vs["_id"],
                     "symbol": vs["symbol"],
                     "side": vs["side"],
                     "type": "POSITION", # Virtual tag
                     "origQty": vs["quantity"],
                     "price": vs["entry_price"],
+                    "tp": vs.get('tp'),
+                    "sl": vs.get('sl'),
                     "clientOrderId": vs["_id"],
                     "smart_meta": {
                         "entry_price": vs["entry_price"],
@@ -279,9 +305,21 @@ class FuturesService:
             params = {}
             if symbol:
                 params["symbol"] = symbol.upper()
+            
+            # Debugging
+            print(f"DEBUG: Fetching Lead History for {symbol} with params: {params}")
+            
             res = self.lead_client.get_account_trades(**params)
-            return res.data()
+            response = res.data()
+            
+            # Log successful fetch
+            audit_service.log_api_call("GET", "lead/binance-history", params, f"Fetched {len(response)} trades")
+            
+            return response
         except Exception as e:
+            print(f"CRITICAL: History Fetch Failed: {e}")
+            # Log failure
+            audit_service.log_api_call("GET", "lead/binance-history-FAILED", params, str(e), 400)
             raise HTTPException(status_code=400, detail=f"History Error: {str(e)}")
 
     def close_position(self, symbol: str, quantity: float = None):
@@ -334,13 +372,6 @@ class FuturesService:
             return response
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"Close Failed: {str(e)}")
-
-    def reconcile_lead_trades(self):
-        """
-        Background worker to sync lead positions.
-        """
-        # Note: Futures TP/SL management logic will be built here
-        pass
 
 # Singleton instance
 futures_service = FuturesService()

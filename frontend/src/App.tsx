@@ -74,6 +74,7 @@ function App() {
   const [tpEnabled, setTpEnabled] = useState(true);
   const [slEnabled, setSlEnabled] = useState(true);
   const [tradeSide, setTradeSide] = useState('BUY');
+  const [tradeLeverage, setTradeLeverage] = useState(10);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
@@ -291,6 +292,11 @@ function App() {
     const side = bias === 'bearish' ? 'SELL' : 'BUY';
     setTradeSide(side);
 
+    // Apply recommended leverage if available
+    if (setup.leverage) {
+      setTradeLeverage(parseInt(setup.leverage));
+    }
+
     // If Bearish, automatically switch to LEAD mode as SPOT doesn't support shorts
     if (side === 'SELL' && tradingMode === 'SPOT') {
       setTradingMode('LEAD');
@@ -453,7 +459,7 @@ function App() {
                          </div>
                      </div>
                      <div className="xl:col-span-1 h-full min-h-[400px]">
-                         <SmartTerminalView symbol={symbol} currentPrice={currentPrice} handleSmartTrade={handleSmartTrade} handleMarketClose={handleMarketClose} tpPrice={tpPrice} setTpPrice={setTpPrice} slPrice={slPrice} setSlPrice={setSlPrice} tpEnabled={tpEnabled} setTpEnabled={setTpEnabled} slEnabled={slEnabled} setSlEnabled={setSlEnabled} assetBalance={assetBalance} tradingMode={tradingMode} isTrading={isTrading} tpPercent={tpPercent} setTpPercent={setTpPercent} slPercent={slPercent} setSlPercent={setSlPercent} side={tradeSide} setSide={setTradeSide} />
+                         <SmartTerminalView symbol={symbol} currentPrice={currentPrice} handleSmartTrade={handleSmartTrade} handleMarketClose={handleMarketClose} tpPrice={tpPrice} setTpPrice={setTpPrice} slPrice={slPrice} setSlPrice={setSlPrice} tpEnabled={tpEnabled} setTpEnabled={setTpEnabled} slEnabled={slEnabled} setSlEnabled={setSlEnabled} assetBalance={assetBalance} tradingMode={tradingMode} isTrading={isTrading} tpPercent={tpPercent} setTpPercent={setTpPercent} slPercent={slPercent} setSlPercent={setSlPercent} side={tradeSide} setSide={setTradeSide} leverage={tradeLeverage} setLeverage={setTradeLeverage} />
                      </div>
                  </div>
              } />

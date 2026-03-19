@@ -42,6 +42,21 @@ const AnalysisModal = ({ data, onClose, onQuickTrade }) => {
                         </div>
                     </div>
 
+                    {data.leverage && (
+                        <div className="bg-orange-500/5 border border-orange-500/20 rounded-2xl p-4 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2 bg-orange-500/10 rounded-lg text-orange-400">
+                                    <Scale size={16} />
+                                </div>
+                                <div>
+                                    <p className="text-[10px] font-black text-orange-500 uppercase tracking-widest leading-none mb-1">AI Recommended Leverage</p>
+                                    <p className="text-xs text-slate-400 font-medium">Optimized for current volatility</p>
+                                </div>
+                            </div>
+                            <span className="text-2xl font-black text-white font-mono">{data.leverage}x</span>
+                        </div>
+                    )}
+
                     <div className="space-y-3">
                         <div className="flex items-center gap-2 text-blue-400">
                             <TargetIcon size={16} />
