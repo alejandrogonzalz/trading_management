@@ -121,7 +121,7 @@ function App() {
           fetch(`${API_BASE}/lead/balances`),
           fetch(`${API_BASE}/lead/open-orders`),
           fetch(`${API_BASE}/lead/positions`),
-          fetch(`${API_BASE}/lead/history?symbol=${symbol}`)
+          fetch(`${API_BASE}/lead/history`)
         ]);
         if (bRes.ok) { const data = await bRes.json(); setLeadBalances(data.assets || []); }
         if (oRes.ok) setLeadOrders(await oRes.json());

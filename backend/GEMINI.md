@@ -52,12 +52,19 @@ In this environment (Win32/PowerShell), the `&&` operator often fails.
 
 ---
 
-### Future Roadmap: Lead Trading & Universal Terminal
+### Future Roadmap: Lead Trading & Universal Terminal (COMPLETED ✅)
 
 #### 1. Backend: Futures Engine (COMPLETED ✅)
-- [x] Implement `futures_service.py` using specialized Binance SDKs.
-- [x] Create modular routes in `app/routes/lead.py`.
-- [x] Support for Leverage, Lead Orders, and Position Monitoring.
+- [x] **Bulletproof Execution**:
+  - `create_smart_lead_order`: Atomic Entry + Verified SL/TP.
+  - `close_position`: "Panic Sell" mode with order cancellation.
+  - `reconcile_lead_trades`: Captures fees and syncs P&L.
+- [x] **Verification Layer**:
+  - `_wait_for_position`: Polls Position Risk endpoint.
+  - `_verify_order_exists`: Confirms Algo orders (SL/TP) on book.
+- [x] **Reliability**:
+  - `sync_time` with safety buffer (-1000ms).
+  - Pydantic serialization for `audit_log`.
 
 #### 2. Frontend: Global State & Navigation
 - [x] **Dynamic Environment Switching**: Toggle between "Spot" and "Lead" modes in the header.

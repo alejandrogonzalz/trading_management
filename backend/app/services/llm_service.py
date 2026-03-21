@@ -33,15 +33,16 @@ async def analyze_row(pair_data: Dict[str, Any]) -> Dict[str, Any]:
     - entry: float
     - tp: float
     - sl: float
+    - leverage: integer (1-50, recommend based on volatility/ATR)
     - risk_reward: string
     - trade_setup: title
-    - reasoning: 2 sentences
+    - reasoning: 2 sentences (mention volume and volatility impact)
     """
     try:
         response = await client.chat(
             model=LLM_MODEL,
             messages=[
-                {'role': 'system', 'content': 'You are an Expert Analyst. Output JSON only. Use exact keys: bias, confidence, entry, tp, sl, risk_reward, trade_setup, reasoning.'},
+                {'role': 'system', 'content': 'You are an Expert Quant Analyst. Output JSON only. Use exact keys: bias, confidence, entry, tp, sl, leverage, risk_reward, trade_setup, reasoning.'},
                 {'role': 'user', 'content': prompt}
             ],
             options={'temperature': 0.2},
@@ -55,6 +56,7 @@ async def analyze_row(pair_data: Dict[str, Any]) -> Dict[str, Any]:
             "entry_price": "entry", "suggested_entry": "entry",
             "take_profit": "tp", "target_price": "tp", "exit_target": "tp",
             "stop_loss": "sl", "stop_price": "sl",
+            "suggested_leverage": "leverage", "recommended_leverage": "leverage",
             "rr": "risk_reward", "risk_to_reward": "risk_reward",
             "setup": "trade_setup", "title": "trade_setup",
             "analysis": "reasoning", "reason": "reasoning"
@@ -66,7 +68,7 @@ async def analyze_row(pair_data: Dict[str, Any]) -> Dict[str, Any]:
             final_data[standard_key] = val
             
         # Ensure numeric values are actually floats
-        for num_key in ['entry', 'tp', 'sl']:
+        for num_key in ['entry', 'tp', 'sl', 'leverage']:
             if num_key in final_data and final_data[num_key] is not None:
                 try:
                     final_data[num_key] = float(str(final_data[num_key]).replace(',', ''))

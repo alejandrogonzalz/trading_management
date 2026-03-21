@@ -313,7 +313,7 @@ const SmartHistoryTable = ({ history, onSelectSymbol, mode }) => {
                         <th className="p-6 text-center">Side</th>
                         <th className="p-6 text-center">Entry Price</th>
                         <th className="p-6 text-center">Exit Price</th>
-                        <th className="p-6 text-center">{isLead ? 'Leverage' : 'Fees'}</th>
+                        <th className="p-6 text-center">Fees</th>
                         <th className="p-6 text-center">Net P&L</th>
                         <th className="p-6 text-center">Opened At</th>
                         <th className="p-6 text-center">Closed At</th>
@@ -324,7 +324,22 @@ const SmartHistoryTable = ({ history, onSelectSymbol, mode }) => {
                     {history.length > 0 ? history.map(h => {
                         if (isLead) {
                             const pnl = ((h.exit_price - h.entry_price) / h.entry_price * 100 * (h.side === 'BUY' ? 1 : -1));
-                            const finalPnl = pnl * (h.leverage || 1);
+                            const grossPnl = pnl * (h.leverage || 1);
+                            
+                            // Lead Fees Calculation
+                            const exitFees = h.exit_fees || 0; 
+                            // Entry fees are typically ~0.05% of notional. If not captured, we can estimate or leave as 0 until we have entry capture.
+                            // For now, we only have reliable exit fees from reconciliation.
+                            const totalFees = exitFees; 
+                            
+                            // Net Profit Calculation (Approximation for P&L %)
+                            // Net % = (Gross Profit - Fees) / Initial Margin
+                            // Initial Margin = (Quantity * Entry Price) / Leverage
+                            const initialMargin = (h.quantity * h.entry_price) / (h.leverage || 1);
+                            const grossProfitVal = (initialMargin * (grossPnl / 100));
+                            const netProfitVal = grossProfitVal - totalFees;
+                            const netPnlPercent = initialMargin > 0 ? (netProfitVal / initialMargin * 100) : 0;
+
                             return (
                                 <tr key={h.id || h._id} className="border-b border-slate-800/30 hover:bg-slate-800/10 transition-all">
                                     <td className="p-6">
@@ -333,19 +348,23 @@ const SmartHistoryTable = ({ history, onSelectSymbol, mode }) => {
                                         </button>
                                     </td>
                                     <td className="p-6 text-center">
-                                        <span className={`px-2 py-0.5 rounded text-[10px] font-black ${h.side === 'BUY' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
-                                            {h.side === 'BUY' ? 'LONG' : 'SHORT'}
-                                        </span>
+                                        <div className="flex flex-col items-center gap-1">
+                                            <span className={`px-2 py-0.5 rounded text-[10px] font-black ${h.side === 'BUY' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
+                                                {h.side === 'BUY' ? 'LONG' : 'SHORT'}
+                                            </span>
+                                            <span className="text-[9px] text-orange-400 font-bold">{h.leverage}x</span>
+                                        </div>
                                     </td>
                                     <td className="p-6 text-center">${fmt(h.entry_price)}</td>
                                     <td className="p-6 text-center">${fmt(h.exit_price)}</td>
-                                    <td className="p-6 text-center text-orange-400">{h.leverage}x</td>
+                                    <td className="p-6 text-center text-slate-500">-${totalFees.toFixed(4)}</td>
                                     <td className="p-6 text-center">
-                                        <div className={`flex flex-col items-center font-black ${finalPnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                        <div className={`flex flex-col items-center font-black ${netProfitVal >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                                             <div className="flex items-center gap-1">
-                                                {finalPnl >= 0 ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
-                                                {finalPnl.toFixed(2)}%
+                                                {netProfitVal >= 0 ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
+                                                {netPnlPercent.toFixed(2)}%
                                             </div>
+                                            <span className="text-[10px] opacity-60">(${netProfitVal.toFixed(2)})</span>
                                         </div>
                                     </td>
                                     <td className="p-6 text-center text-slate-500 text-[10px]">
@@ -523,11 +542,14 @@ const ActivePositionsView = ({ openOrders, handleCancelOrder, onSelectSymbol, tr
     }, [leadSmartTrades, spotSmartTrades, isLead]);
 
     const onCancelClick = async (orderId: any, symbol: string, trade?: any) => {
+        const isLeadTrade = isLead || orderId.toString().startsWith('LEAD_') || (trade as any)?.smart_meta?.leverage;
+
         if (orderId.toString().startsWith('POS_') || trade?.smart_meta) {
             const qty = trade?.origQty || trade?.smart_meta?.quantity || 0;
             if (window.confirm(`Market Sell the ${qty} ${symbol}?`)) {
                 try {
-                    const res = await fetch(`${API_BASE}/trades/market-close`, {
+                    const endpoint = isLeadTrade ? `${API_BASE}/lead/close-position` : `${API_BASE}/trades/market-close`;
+                    const res = await fetch(endpoint, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ symbol, quantity: qty })
@@ -561,14 +583,14 @@ const ActivePositionsView = ({ openOrders, handleCancelOrder, onSelectSymbol, tr
                     <div>
                         <h1 className="text-3xl font-black text-white flex items-center gap-3 tracking-tighter uppercase">
                             <Zap size={32} className={theme.icon} /> 
-                            {isLead ? 'LEAD TRADES' : 'SMART TRADES'}
+                            {isLead ? 'SMART LEAD TRADES' : 'SMART SPOT TRADES'}
                         </h1>
                         <div className="flex gap-1 mt-4">
                             <button onClick={() => setActiveTab('active')} className={`px-6 py-2 rounded-t-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'active' ? `bg-slate-800 ${theme.activeText} border-b-2 ${theme.activeBorder}` : 'text-slate-500 hover:text-slate-300'}`}>
                                 {isLead ? 'Active Positions' : 'Active Setups'}
                             </button>
                             <button onClick={() => setActiveTab('history')} className={`px-6 py-2 rounded-t-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'history' ? `bg-slate-800 ${theme.activeText} border-b-2 ${theme.activeBorder}` : 'text-slate-500 hover:text-slate-300'}`}>
-                                {isLead ? 'Lead History' : 'Closed Trades'}
+                                {isLead ? 'Smart Lead History' : 'Smart Spot History'}
                             </button>
                         </div>
                     </div>

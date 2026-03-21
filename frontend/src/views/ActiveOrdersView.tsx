@@ -8,8 +8,9 @@ const ActiveOrdersView = ({ openOrders, handleCancelOrder, quoteBalance, onSelec
 
     const relevantOrders = useMemo(() => {
         if (isLead) {
-            // For Lead/Futures, show everything that is an open order
-            return openOrders.filter(o => !o.type?.includes('POSITION')); 
+            // For Lead/Futures, show everything active including virtual 'POSITION' markers
+            // Filter out FILLED or CANCELED orders which might still be returned by some endpoints
+            return openOrders.filter(o => o.status !== 'FILLED' && o.status !== 'CANCELED'); 
         }
         // For Spot, maintain the "Protector Leg" filter
         return openOrders.filter(o => o.clientOrderId?.startsWith('SMART_') || o.listClientOrderId?.startsWith('LIST_SMART_'));

@@ -54,30 +54,24 @@ In this environment (Win32/PowerShell), the `&&` operator often fails.
 
 ---
 
-### Future Roadmap: Lead Trading & Universal Terminal
+### Future Roadmap: Lead Trading & Universal Terminal (COMPLETED ✅)
 
 #### 1. Backend: Futures Engine (COMPLETED ✅)
-- [x] Implement `futures_service.py` using specialized Binance SDKs.
-- [x] Create modular routes in `app/routes/lead.py`.
-- [x] Support for Leverage, Lead Orders, and Position Monitoring.
+- [x] **Bulletproof Smart Trade**: Implemented "Verify-then-Proceed" architecture for SL/TP.
+  - Position verification (polling).
+  - Standard Order Engine (for reliability).
+  - Atomic Rollback (Cancel All + Market Close).
+- [x] **Panic Sell**: One-click liquidation of position and cancellation of all open orders.
+- [x] **Reconciliation**: Background job to capture exit fees and accurate P&L.
+- [x] **Algo Engine Integration**: Correctly handling `STOP_MARKET` and `TAKE_PROFIT_MARKET` via Algo endpoints.
 
-#### 2. Frontend: Global State & Navigation
-- [x] **Dynamic Environment Switching**: Toggle between "Spot" and "Lead" modes in the header.
-- [x] **Context-Aware Search**: Automatically filter the symbol search bar based on the active mode (Spot symbols vs. Lead Whitelist).
-- [ ] **Unified Mode Sync**: Ensure that clicking a symbol in the scanner automatically respects the current trading mode.
+#### 2. Frontend: Universal Terminal (COMPLETED ✅)
+- [x] **Smart Lead Trades**: Dedicated history view with Fees, Leverage, and Net P&L.
+- [x] **Global History**: Bottom panel now aggregates raw Binance history + Smart Trade records.
+- [x] **Active Filtering**: Cleaned up "Active Orders" to hide filled/canceled setups.
+- [x] **Fee Accounting**: Visualization of exit fees in trade history.
 
-#### 3. Frontend: Smart Terminal & Deep Analysis
-- [x] **Leverage Management**: Add a high-precision slider (1x - 50x) to the terminal for Futures setups.
-- [x] **Short/Long Support**: Fully implement the dual-side logic for Lead Positions.
-- [ ] **Deep Analysis "Setup Futures"**: Add a dedicated button in the AI Analysis popup to generate leverage-optimized setups.
-- [x] **Pre-Trade Risk**: Display estimated Liquidation Price and Margin Required before clicking "Execute."
-
-#### 4. Frontend: Monitoring & Wallet
-- [ ] **Lead Positions Table**: New view dedicated to live Futures tracking (Size, Entry, Mark Price, Liq Price, ROE%).
-- [ ] **Mega-Tooltip 2.0**: Expand the wallet hover to show a detailed "Futures Wallet" section alongside "Spot Wallet."
-- [ ] **Margin Health**: Visual "Margin Ratio" indicator to prevent liquidations.
-
-#### 5. Frontend: Scanner & History
-- [ ] **Scanner Whitelist Toggle**: Filter the scanner results to only show symbols eligible for Lead Trading.
-- [ ] **Advanced History**: Add "Mode" (Spot/Lead) and "Leverage" columns to the Closed Trades tab.
-- [ ] **Performance Analytics**: Include Futures-specific metrics (Funding Fees, ROE) in the header stats panel.
+#### 3. Next Steps (Optimization)
+- [ ] **Trailing Stop**: Implement dynamic trailing for Lead positions.
+- [ ] **Multi-Exchange**: Abstract `futures_service` for Bybit/OKX.
+- [ ] **Mobile View**: Optimize `ActivePositionsView` for smaller screens.

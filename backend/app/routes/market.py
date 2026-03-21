@@ -48,8 +48,8 @@ async def run_scanner_api(req: RunScannerRequest):
     base_tf = req.timeframe or "1h"
     if not pairs:
         pairs = await asyncio.to_thread(market_service_utils.get_top_opportunity_pairs, 20)
-    results = await asyncio.to_thread(scanner_service.run_scan, pairs, base_tf)
-    return results
+    await asyncio.to_thread(scanner_service.run_scan, pairs, base_tf)
+    return scanner_service.get_latest_scan()
 
 @router.get("/scanner/table")
 def get_scanner_table():

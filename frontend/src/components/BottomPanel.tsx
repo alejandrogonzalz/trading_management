@@ -42,9 +42,15 @@ const BottomPanel = ({
     const displayOrders = useMemo(() => {
         try {
             const orders = Array.isArray(openOrders) ? openOrders : [];
+            const history = Array.isArray(tradeHistory) ? tradeHistory : [];
             
             let result = [];
-            if (activeTab === 'history') result = binanceHistory;
+            if (activeTab === 'history') {
+                // Merge raw Binance history with our database Smart/Lead history
+                // We show our database records first as they have more metadata
+                const merged = [...history, ...binanceHistory];
+                result = filterOrdersBySymbol ? merged.filter(o => o && o.symbol === symbol) : merged;
+            }
             else if (activeTab === 'global') result = orders;
             else result = filterOrdersBySymbol ? orders.filter(o => o && o.symbol === symbol) : orders;
             
@@ -53,7 +59,7 @@ const BottomPanel = ({
             console.error("[BottomPanel] Memo Error:", e);
             return [];
         }
-    }, [openOrders, binanceHistory, symbol, filterOrdersBySymbol, activeTab]);
+    }, [openOrders, binanceHistory, tradeHistory, symbol, filterOrdersBySymbol, activeTab]);
 
     const theme = isLead ? {
         bg: 'bg-orange-600',
