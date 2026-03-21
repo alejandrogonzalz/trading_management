@@ -138,11 +138,18 @@ class FuturesService:
         try:
             params = {
                 "symbol": symbol.upper(),
-                "leverage": leverage
+                "leverage": leverage,
+                "recv_window": 60000
             }
             res = self.lead_client.change_initial_leverage(**params)
             return res.data()
         except Exception as e:
+            # Retry mechanism for timeout
+            if "Read timed out" in str(e):
+                print("Leverage set timed out, retrying...")
+                time.sleep(2)
+                res = self.lead_client.change_initial_leverage(**params)
+                return res.data()
             raise HTTPException(status_code=400, detail=f"Leverage Error: {str(e)}")
 
     def create_lead_order(self, symbol: str, side: str, order_type: str, quantity: float, price: float = None):
@@ -262,19 +269,31 @@ class FuturesService:
             entry_res = res.data()
             audit_service.log_api_call("POST", "lead/smart-entry", entry_params, entry_res)
             
-            # 3. VERIFY POSITION (STATE: ENTRY_FILLED)
+            # 3. VERIFY POSITION & CAPTURE ACTUALS (STATE: ENTRY_FILLED)
             if not self._wait_for_position(symbol, side.upper()):
-                raise Exception("Position verification timed out. Entry might have failed or is lagging.")
+                raise Exception("Position verification timed out.")
             
-            # SDK returns avg_price as String. Must cast.
-            raw_avg = getattr(entry_res, 'avg_price', '0') or '0'
-            actual_entry_price = float(raw_avg)
+            # Fetch execution details for entry fees and precise price
+            # We fetch trades for this symbol to find the fill matching our client order ID
+            history = self.std_client.futures_account_trades(symbol=symbol.upper(), limit=10)
+            entry_fill = next((h for h in history if h.get('clientOrderId') == f"ENT_{trade_id}"), None)
+            
+            actual_entry_price = float(entry_fill['price']) if entry_fill else float(getattr(entry_res, 'avg_price', 0) or getattr(entry_res, 'price', 0))
+            actual_qty = float(entry_fill['qty']) if entry_fill else rounded_qty
+            entry_fees = float(entry_fill['commission']) if entry_fill else 0
+            
             if actual_entry_price == 0:
-                # Fallback to current ticker if market order price not returned correctly
                 ticker = binance_client.futures_symbol_ticker(symbol=symbol.upper())
                 actual_entry_price = float(ticker.get('price', 0))
 
-            lead_trades_collection.update_one({"_id": trade_id}, {"$set": {"status": "ENTRY_FILLED", "entry_price": actual_entry_price}})
+            lead_trades_collection.update_one({"_id": trade_id}, {"$set": {
+                "status": "ENTRY_FILLED", 
+                "entry_price": actual_entry_price,
+                "quantity": actual_qty,
+                "entry_fees": entry_fees,
+                "entry_fee_asset": entry_fill.get('commissionAsset', 'USDT') if entry_fill else 'USDT',
+                "entry_order_id": entry_res.order_id if hasattr(entry_res, 'order_id') else None
+            }})
 
             # 4. PROTECTION (STATE: ACTIVE)
             exit_side = "SELL" if side.upper() == "BUY" else "BUY"

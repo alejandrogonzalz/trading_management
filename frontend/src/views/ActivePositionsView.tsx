@@ -73,7 +73,6 @@ const LeadPositionCard = ({ position, onSelectSymbol }) => {
                         <span className="text-[9px] text-slate-600 font-bold font-mono">Size: {Math.abs(amount).toFixed(3)}</span>
                     </div>
                 </div>
-
                 <div className="flex-1 p-6 flex flex-col justify-center space-y-8">
                     <div className="relative pt-2">
                         <div className="h-1.5 w-full bg-slate-900 rounded-full overflow-hidden border border-slate-800/50 relative">
@@ -86,12 +85,10 @@ const LeadPositionCard = ({ position, onSelectSymbol }) => {
                                 }}
                             ></div>
                         </div>
-                        
                         <div className="absolute top-[-12px] w-full text-[8px] font-black uppercase tracking-tighter text-slate-600">
                             <span className="absolute left-0 text-rose-500">Liquidation: ${liqPrice.toFixed(2)}</span>
                             <span className="absolute right-0 text-emerald-500">Entry: ${entryPrice.toFixed(2)}</span>
                         </div>
-
                         <div 
                             className="absolute top-[-2px] transition-all duration-1000 flex flex-col items-center z-10"
                             style={{ left: `${progress}%`, transform: 'translateX(-50%)' }}
@@ -102,7 +99,6 @@ const LeadPositionCard = ({ position, onSelectSymbol }) => {
                             </span>
                         </div>
                     </div>
-
                     <div className="grid grid-cols-3 gap-6 text-center">
                         <div className="flex flex-col">
                             <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Margin</span>
@@ -118,7 +114,6 @@ const LeadPositionCard = ({ position, onSelectSymbol }) => {
                         </div>
                     </div>
                 </div>
-
                 <div className="p-5 flex flex-col xl:flex-row items-center gap-6 border-t xl:border-t-0 xl:border-l border-slate-800 bg-slate-900/10 min-w-[320px]">
                     <div className="text-right flex-1 w-full xl:w-auto">
                         <p className={`text-3xl font-black font-mono tracking-tighter ${roe >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
@@ -131,7 +126,6 @@ const LeadPositionCard = ({ position, onSelectSymbol }) => {
                             </span>
                         </div>
                     </div>
-
                     <div className="flex gap-2 w-full xl:w-auto">
                         <button 
                             onClick={handleClose}
@@ -148,7 +142,7 @@ const LeadPositionCard = ({ position, onSelectSymbol }) => {
     );
 };
 
-const SmartTradeCard = ({ trade, onCancel, currentPrice, onSelectSymbol }) => {
+const SmartTradeCard = ({ trade, onCancel, currentPrice, onSelectSymbol, leadPositions }) => {
     const [isClosing, setIsClosing] = useState(false);
     const navigate = useNavigate();
 
@@ -157,19 +151,33 @@ const SmartTradeCard = ({ trade, onCancel, currentPrice, onSelectSymbol }) => {
         navigate('/');
     };
     
-    const entryPrice = trade.smart_meta?.entry_price || parseFloat(trade.price) || 0;
+    const livePos = leadPositions?.find(p => p.symbol === trade.symbol);
+    const entryPrice = livePos ? parseFloat(livePos.entry_price) : (parseFloat(trade.price) || parseFloat(trade.smart_meta?.entry_price) || 0);
     const tpPrice = trade.smart_meta?.tp || 0;
     const slPrice = trade.smart_meta?.sl || 0;
     const tradeSide = trade.smart_meta?.side || trade.side;
     const isSyncing = !currentPrice || currentPrice === 0;
-    const pnl = isSyncing ? 0 : ((currentPrice - entryPrice) / entryPrice * 100 * (tradeSide === 'BUY' ? 1 : -1));
+    
+    // P&L % formula: ((Price - Entry) / Entry) * 100 * (Side ? 1 : -1)
+    const pnl = (isSyncing || entryPrice === 0) ? 0 : ((currentPrice - entryPrice) / entryPrice * 100 * (tradeSide === 'BUY' ? 1 : -1));
+    
+    // Net profit calculation with fallback
+    const quantity = livePos ? Math.abs(parseFloat(livePos.position_amt)) : (trade.origQty || trade.smart_meta?.quantity || 0);
+    const grossProfit = entryPrice > 0 ? (currentPrice - entryPrice) * quantity * (tradeSide === 'BUY' ? 1 : -1) : 0;
+    
+    // Use stored entry fees and estimated exit fee (or 0 if not captured)
+    const entryFees = trade.smart_meta?.entry_fees || 0;
+    const estExitFee = Math.abs(grossProfit + (entryPrice * quantity)) * 0.001; 
+    
+    const netProfit = grossProfit - entryFees - estExitFee;
+    const netPnlPercent = (quantity * entryPrice) > 0 ? (netProfit / (quantity * entryPrice) * 100) : 0;
     
     const getPos = (price) => {
-        if (!price || !tpPrice || !slPrice) return 50;
-        const totalRange = tpPrice - slPrice;
-        if (totalRange === 0) return 50;
-        const currentPos = price - slPrice;
-        return Math.min(Math.max((currentPos / totalRange) * 100, 0), 100);
+        if (!price || !tpPrice || !slPrice || tpPrice === slPrice) return 50;
+        const totalRange = Math.abs(tpPrice - slPrice);
+        const currentDiff = Math.abs(price - slPrice);
+        const pos = (currentDiff / totalRange) * 100;
+        return Math.min(Math.max(pos, 0), 100);
     };
 
     const entryMarkerPos = getPos(entryPrice);
@@ -204,7 +212,7 @@ const SmartTradeCard = ({ trade, onCancel, currentPrice, onSelectSymbol }) => {
                     <div className="relative pt-2">
                         <div className="h-1.5 w-full bg-slate-900 rounded-full overflow-hidden border border-slate-800/50 relative">
                             <div 
-                                className={`absolute h-full transition-all duration-1000 ${pnl >= 0 ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]' : 'bg-rose-500 shadow-[0_0_10px_rgba(244,63,94,0.5)]'}`}
+                                className={`absolute h-full transition-all duration-1000 ${netPnlPercent >= 0 ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]' : 'bg-rose-500 shadow-[0_0_10px_rgba(244,63,94,0.5)]'}`}
                                 style={{ 
                                     left: `${Math.min(entryMarkerPos, currentMarkerPos)}%`, 
                                     width: `${Math.abs(currentMarkerPos - entryMarkerPos)}%` 
@@ -251,21 +259,13 @@ const SmartTradeCard = ({ trade, onCancel, currentPrice, onSelectSymbol }) => {
                             </div>
                         ) : (
                             <>
-                                <p className={`text-3xl font-black font-mono tracking-tighter ${pnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                                    {pnl >= 0 ? '+' : ''}{pnl.toFixed(2)}%
+                                <p className={`text-3xl font-black font-mono tracking-tighter ${netPnlPercent >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                    {netPnlPercent >= 0 ? '+' : ''}{netPnlPercent.toFixed(2)}%
                                 </p>
                                 <div className="flex items-center justify-end gap-2 mt-1">
                                     <span className="text-[10px] text-slate-500 font-black uppercase tracking-widest">Net Profit:</span>
-                                    <span className={`text-lg font-mono font-black ${pnl >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
-                                        {(() => {
-                                            const assetName = trade.symbol.replace('USDT','').replace('USDC','');
-                                            const entryFees = trade.smart_meta?.entry_fees || 0;
-                                            const feeAsset = trade.smart_meta?.fee_asset;
-                                            const entryFeeValue = feeAsset === assetName ? (entryFees * entryPrice) : entryFees;
-                                            const grossProfit = (currentPrice - entryPrice) * trade.origQty * (tradeSide === 'BUY' ? 1 : -1);
-                                            const estExitFee = Math.abs(grossProfit + (entryPrice * trade.origQty)) * 0.001; 
-                                            return `$${(grossProfit - entryFeeValue - estExitFee).toFixed(2)}`;
-                                        })()}
+                                    <span className={`text-lg font-mono font-black ${netProfit >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                        ${netProfit.toFixed(2)}
                                     </span>
                                 </div>
                             </>
@@ -326,15 +326,10 @@ const SmartHistoryTable = ({ history, onSelectSymbol, mode }) => {
                             const pnl = ((h.exit_price - h.entry_price) / h.entry_price * 100 * (h.side === 'BUY' ? 1 : -1));
                             const grossPnl = pnl * (h.leverage || 1);
                             
-                            // Lead Fees Calculation
                             const exitFees = h.exit_fees || 0; 
-                            // Entry fees are typically ~0.05% of notional. If not captured, we can estimate or leave as 0 until we have entry capture.
-                            // For now, we only have reliable exit fees from reconciliation.
+                            const feeAsset = h.exit_fee_asset || 'USDT';
                             const totalFees = exitFees; 
                             
-                            // Net Profit Calculation (Approximation for P&L %)
-                            // Net % = (Gross Profit - Fees) / Initial Margin
-                            // Initial Margin = (Quantity * Entry Price) / Leverage
                             const initialMargin = (h.quantity * h.entry_price) / (h.leverage || 1);
                             const grossProfitVal = (initialMargin * (grossPnl / 100));
                             const netProfitVal = grossProfitVal - totalFees;
@@ -357,7 +352,11 @@ const SmartHistoryTable = ({ history, onSelectSymbol, mode }) => {
                                     </td>
                                     <td className="p-6 text-center">${fmt(h.entry_price)}</td>
                                     <td className="p-6 text-center">${fmt(h.exit_price)}</td>
-                                    <td className="p-6 text-center text-slate-500">-${totalFees.toFixed(4)}</td>
+                                    <td className="p-6 text-center">
+                                        <span className="text-slate-500 text-[10px] font-bold">
+                                            -{totalFees.toFixed(4)} <span className="text-[8px] opacity-70">{feeAsset}</span>
+                                        </span>
+                                    </td>
                                     <td className="p-6 text-center">
                                         <div className={`flex flex-col items-center font-black ${netProfitVal >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                                             <div className="flex items-center gap-1">
@@ -490,11 +489,27 @@ const ActivePositionsView = ({ openOrders, handleCancelOrder, onSelectSymbol, tr
     const leadSmartTrades = useMemo(() => {
         if (!isLead) return [];
         // Lead smart trades in MongoDB/FuturesService start with LEAD_
-        return openOrders.filter(o => 
+        const rawTrades = openOrders.filter(o => 
             (o as any).smart_meta && 
             (o.orderId?.toString().startsWith('LEAD_') || o.clientOrderId?.startsWith('LEAD_'))
         );
-    }, [openOrders, isLead]);
+
+        // Sync with live position data if available
+        return rawTrades.map(trade => {
+            const livePos = leadPositions.find(p => p.symbol === trade.symbol);
+            if (livePos) {
+                // Clone and override quantity/price with live reality
+                const updatedMeta = { ...trade.smart_meta, quantity: Math.abs(parseFloat(livePos.position_amt)), entry_price: parseFloat(livePos.entry_price) };
+                return { 
+                    ...trade, 
+                    origQty: Math.abs(parseFloat(livePos.position_amt)), 
+                    price: parseFloat(livePos.entry_price),
+                    smart_meta: updatedMeta 
+                };
+            }
+            return trade;
+        });
+    }, [openOrders, isLead, leadPositions]);
 
     const leadRawPositions = useMemo(() => {
         if (!isLead) return [];
@@ -631,7 +646,7 @@ const ActivePositionsView = ({ openOrders, handleCancelOrder, onSelectSymbol, tr
                     {activeTab === 'active' ? (
                         <div className="flex flex-col gap-4 w-full">
                             {isLead && leadSmartTrades.map(trade => (
-                                <SmartTradeCard key={trade.orderId} trade={trade} onCancel={onCancelClick} currentPrice={prices[trade.symbol] || 0} onSelectSymbol={onSelectSymbol} />
+                                <SmartTradeCard key={trade.orderId} trade={trade} onCancel={onCancelClick} currentPrice={prices[trade.symbol] || 0} onSelectSymbol={onSelectSymbol} leadPositions={leadPositions} />
                             ))}
                             {isLead && leadRawPositions.map(pos => (
                                 <LeadPositionCard key={pos.symbol} position={pos} onSelectSymbol={onSelectSymbol} />

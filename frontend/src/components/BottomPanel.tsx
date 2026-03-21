@@ -10,7 +10,8 @@ const BottomPanel = ({
     filterOrdersBySymbol = true, 
     setFilterOrdersBySymbol = () => {}, 
     handleCancelOrder = () => {},
-    tradingMode = 'SPOT'
+    tradingMode = 'SPOT',
+    leadPositions = []
 }) => {
     const [activeTab, setActiveTab] = useState('orders');
     const [binanceHistory, setBinanceHistory] = useState([]);
@@ -42,24 +43,38 @@ const BottomPanel = ({
     const displayOrders = useMemo(() => {
         try {
             const orders = Array.isArray(openOrders) ? openOrders : [];
+            
+            // Sync logic for Lead mode
+            let syncedOrders = orders;
+            if (isLead && leadPositions.length > 0) {
+                syncedOrders = orders.map(o => {
+                    // Sync Smart Trade Virtual Positions
+                    if (o.type === 'POSITION') {
+                        const livePos = leadPositions.find(p => p.symbol === o.symbol);
+                        if (livePos) {
+                            return { ...o, origQty: Math.abs(parseFloat(livePos.position_amt)), price: parseFloat(livePos.entry_price) };
+                        }
+                    }
+                    return o;
+                });
+            }
+
             const history = Array.isArray(tradeHistory) ? tradeHistory : [];
             
             let result = [];
             if (activeTab === 'history') {
-                // Merge raw Binance history with our database Smart/Lead history
-                // We show our database records first as they have more metadata
                 const merged = [...history, ...binanceHistory];
                 result = filterOrdersBySymbol ? merged.filter(o => o && o.symbol === symbol) : merged;
             }
-            else if (activeTab === 'global') result = orders;
-            else result = filterOrdersBySymbol ? orders.filter(o => o && o.symbol === symbol) : orders;
+            else if (activeTab === 'global') result = syncedOrders;
+            else result = filterOrdersBySymbol ? syncedOrders.filter(o => o && o.symbol === symbol) : syncedOrders;
             
             return Array.isArray(result) ? result : [];
         } catch (e) {
             console.error("[BottomPanel] Memo Error:", e);
             return [];
         }
-    }, [openOrders, binanceHistory, tradeHistory, symbol, filterOrdersBySymbol, activeTab]);
+    }, [openOrders, binanceHistory, tradeHistory, symbol, filterOrdersBySymbol, activeTab, isLead, leadPositions]);
 
     const theme = isLead ? {
         bg: 'bg-orange-600',
@@ -144,10 +159,17 @@ const BottomPanel = ({
                                 if (isHistory && !o.status) status = 'FILLED'; // Trades are always filled
                                 
                                 // Quantity handling (Spot uses origQty, Futures uses qty)
-                                const q = o.origQty || o.qty || '0';
+                                // If Close Position order (qty=0), show label
+                                let q = o.origQty || o.qty || '0';
+                                const isClosePos = isLead && parseFloat(q) === 0 && !isHistory;
+                                const displayQty = isClosePos ? 'CLOSE ALL' : Math.abs(parseFloat(q));
                                 
                                 // Price handling (Spot uses price, Futures uses price)
-                                const p = o.price || o.avgPrice || o.stopPrice || '0';
+                                // If Market/Stop Market (price=0), use stopPrice
+                                let p = parseFloat(o.price || o.avgPrice || '0');
+                                if (p === 0 && (o.stopPrice || o.activatePrice)) {
+                                    p = parseFloat(o.stopPrice || o.activatePrice || '0');
+                                }
                                 
                                 const cid = o.clientOrderId || '';
                                 const lcid = o.listClientOrderId || '';
@@ -171,9 +193,9 @@ const BottomPanel = ({
                                             {side}
                                         </td>
                                         <td className="p-3 text-center text-slate-400">
-                                            ${parseFloat(p).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                            ${p.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                                         </td>
-                                        <td className="p-3 text-center text-slate-500">{Math.abs(parseFloat(q))}</td>
+                                        <td className="p-3 text-center text-slate-500">{displayQty}</td>
                                         <td className="p-3 text-center">
                                             {isHistory && pnl !== null ? (
                                                 <span className={`font-black ${pnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>

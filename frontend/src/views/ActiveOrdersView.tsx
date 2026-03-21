@@ -2,19 +2,39 @@ import { useMemo } from 'react';
 import { Activity, XCircle, ShieldAlert, Zap } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
-const ActiveOrdersView = ({ openOrders, handleCancelOrder, quoteBalance, onSelectSymbol, tradingMode }) => {
+const ActiveOrdersView = ({ openOrders, handleCancelOrder, quoteBalance, onSelectSymbol, tradingMode, leadPositions = [] }) => {
     const navigate = useNavigate();
     const isLead = tradingMode === 'LEAD';
 
     const relevantOrders = useMemo(() => {
         if (isLead) {
-            // For Lead/Futures, show everything active including virtual 'POSITION' markers
-            // Filter out FILLED or CANCELED orders which might still be returned by some endpoints
-            return openOrders.filter(o => o.status !== 'FILLED' && o.status !== 'CANCELED'); 
+            // For Lead/Futures, show real pending orders (SL/TP/Limit)
+            // Filter out FILLED/CANCELED orders
+            // Filter out virtual 'POSITION' markers (which are just for the Smart Terminal view)
+            const raw = openOrders.filter(o => 
+                o.status !== 'FILLED' && 
+                o.status !== 'CANCELED' && 
+                o.type !== 'POSITION'
+            );
+
+            // Sync Smart Trades (which appear as orders) with live position data
+            return raw.map(o => {
+                if (o.clientOrderId?.startsWith('LEAD_') || o.orderId?.toString().startsWith('LEAD_')) {
+                    const livePos = leadPositions.find(p => p.symbol === o.symbol);
+                    if (livePos) {
+                        return { 
+                            ...o, 
+                            origQty: Math.abs(parseFloat(livePos.position_amt)),
+                            price: parseFloat(livePos.entry_price) || o.price
+                        };
+                    }
+                }
+                return o;
+            });
         }
         // For Spot, maintain the "Protector Leg" filter
         return openOrders.filter(o => o.clientOrderId?.startsWith('SMART_') || o.listClientOrderId?.startsWith('LIST_SMART_'));
-    }, [openOrders, isLead]);
+    }, [openOrders, isLead, leadPositions]);
 
     const theme = isLead ? {
         text: 'text-orange-500',
@@ -81,8 +101,12 @@ const ActiveOrdersView = ({ openOrders, handleCancelOrder, quoteBalance, onSelec
                                             {o.side}
                                         </span>
                                     </td>
-                                    <td className="p-6 text-center text-white font-black">${parseFloat(o.price || o.stopPrice).toLocaleString()}</td>
-                                    <td className="p-6 text-center text-slate-400">{o.origQty}</td>
+                                    <td className="p-6 text-center text-white font-black">
+                                        ${parseFloat(o.stopPrice || o.price || '0').toLocaleString()}
+                                    </td>
+                                    <td className="p-6 text-center text-slate-400">
+                                        {parseFloat(o.origQty || o.qty) === 0 ? 'CLOSE ALL' : o.origQty}
+                                    </td>
                                     {isLead && <td className="p-6 text-center text-orange-400">{o.leverage || '--'}x</td>}
                                     <td className="p-6 text-right">
                                         <button 

@@ -455,7 +455,7 @@ function App() {
                              />
                          </div>
                          <div className="flex-1 min-h-[250px] shrink-0">
-                           <BottomPanel openOrders={activeOrders} tradeHistory={activeHistory} symbol={symbol} filterOrdersBySymbol={filterOrdersBySymbol} setFilterOrdersBySymbol={setFilterOrdersBySymbol} handleCancelOrder={handleCancelOrder} tradingMode={tradingMode} />
+                           <BottomPanel openOrders={activeOrders} tradeHistory={activeHistory} symbol={symbol} filterOrdersBySymbol={filterOrdersBySymbol} setFilterOrdersBySymbol={setFilterOrdersBySymbol} handleCancelOrder={handleCancelOrder} tradingMode={tradingMode} leadPositions={leadPositions} />
                          </div>
                      </div>
                      <div className="xl:col-span-1 h-full min-h-[400px]">
@@ -465,7 +465,7 @@ function App() {
              } />
              <Route path="/scanner" element={<div className="h-full overflow-hidden bg-slate-900"><ScannerView symbols={symbols} onAutoTrade={onAutoTrade} onSelectSymbol={handleSelectSymbol} /></div>} />
              <Route path="/trades" element={<ActivePositionsView openOrders={activeOrders} handleCancelOrder={handleCancelOrder} quoteBalance={quoteBalance} onSelectSymbol={handleSelectSymbol} balances={activeBalances} globalPrices={globalPrices} tradingMode={tradingMode} leadPositions={leadPositions} smartHistory={activeHistory} />} />
-             <Route path="/orders" element={<ActiveOrdersView openOrders={activeOrders} handleCancelOrder={handleCancelOrder} quoteBalance={quoteBalance} onSelectSymbol={handleSelectSymbol} tradingMode={tradingMode} />} />
+             <Route path="/orders" element={<ActiveOrdersView openOrders={activeOrders} handleCancelOrder={handleCancelOrder} quoteBalance={quoteBalance} onSelectSymbol={handleSelectSymbol} tradingMode={tradingMode} leadPositions={leadPositions} />} />
            </Routes>
           </div>        </main>
       </div>
