@@ -42,6 +42,21 @@ const AnalysisModal = ({ data, onClose, onQuickTrade }) => {
                         </div>
                     </div>
 
+                    {data.leverage && (
+                        <div className="bg-orange-500/5 border border-orange-500/20 rounded-2xl p-4 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2 bg-orange-500/10 rounded-lg text-orange-400">
+                                    <Scale size={16} />
+                                </div>
+                                <div>
+                                    <p className="text-[10px] font-black text-orange-500 uppercase tracking-widest leading-none mb-1">AI Recommended Leverage</p>
+                                    <p className="text-xs text-slate-400 font-medium">Optimized for current volatility</p>
+                                </div>
+                            </div>
+                            <span className="text-2xl font-black text-white font-mono">{data.leverage}x</span>
+                        </div>
+                    )}
+
                     <div className="space-y-3">
                         <div className="flex items-center gap-2 text-blue-400">
                             <TargetIcon size={16} />
@@ -135,6 +150,7 @@ const ColumnHeader = ({ label, tooltip, sortKey, currentSort, onSort }) => {
 
 const ScannerView = ({ symbols, onAutoTrade, onSelectSymbol }) => {
     const [scannerResults, setScannerResults] = useState([]);
+    const [scanTimestamp, setScanTimestamp] = useState(null);
     const [scanning, setScanning] = useState(false);
     const [rankingLLM, setRankingLLM] = useState(false);
     const [analyzingLLM, setAnalyzingLLM] = useState<string | null>(null);
@@ -189,7 +205,8 @@ const ScannerView = ({ symbols, onAutoTrade, onSelectSymbol }) => {
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.detail || "Failed to run scanner");
-            setScannerResults(data);
+            setScannerResults(data.results || []);
+            setScanTimestamp(data.timestamp);
             setLastScanTF(selectedTF);
         } catch (err) { setError(err.message); } finally { setScanning(false); }
     };
@@ -235,6 +252,7 @@ const ScannerView = ({ symbols, onAutoTrade, onSelectSymbol }) => {
             const data = await res.json();
             if (res.ok && data.results) {
                 setScannerResults(data.results);
+                setScanTimestamp(data.timestamp);
                 if (data.base_timeframe) setLastScanTF(data.base_timeframe);
             }
         } catch (err) { console.error("Error fetching latest scan:", err); }
@@ -255,6 +273,17 @@ const ScannerView = ({ symbols, onAutoTrade, onSelectSymbol }) => {
         return 'text-slate-400';
     };
 
+    const formatTimestamp = (ts) => {
+        if (!ts) return null;
+        const date = new Date(ts);
+        return date.toLocaleString(undefined, {
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        }).toUpperCase();
+    };
+
     return (
         <div className="h-full flex flex-col bg-slate-900 overflow-hidden">
             <AnalysisModal data={analysisResult} onClose={() => setAnalysisResult(null)} onQuickTrade={handleQuickTrade} />
@@ -263,18 +292,26 @@ const ScannerView = ({ symbols, onAutoTrade, onSelectSymbol }) => {
                     <h1 className="text-3xl font-black text-white flex items-center gap-3 tracking-tighter uppercase">
                         <ScanSearch size={32} className="text-blue-500" /> QUANT SCANNER
                     </h1>
-                    <div className="flex items-center gap-2 mt-1 group relative cursor-help">
-                        <p className="text-slate-500 text-xs font-bold uppercase tracking-widest">Top 20 Opportunity Markets (USDC/USDT)</p>
-                        <Info size={12} className="text-slate-600" />
-                        <div className="absolute top-full left-0 mt-2 w-64 bg-slate-800 p-3 rounded-lg border border-slate-700 shadow-2xl z-[100] invisible group-hover:visible text-[10px] text-slate-300 leading-relaxed font-medium">
-                            <span className="text-blue-400 font-bold block mb-1 uppercase">Selection Logic:</span>
-                            Ranked using a multi-factor Opportunity Score:<br/>
-                            • 30% 24h Volume (&gt;1M Quote Value)<br/>
-                            • 25% Volatility (ATR)<br/>
-                            • 20% Momentum (RSI)<br/>
-                            • 15% Trend Strength (ADX)<br/>
-                            • 10% Recent Price Move
+                    <div className="flex items-center gap-3 mt-1">
+                        <div className="flex items-center gap-2 group relative cursor-help">
+                            <p className="text-slate-500 text-xs font-bold uppercase tracking-widest">Top 20 Opportunity Markets (USDC/USDT)</p>
+                            <Info size={12} className="text-slate-600" />
+                            <div className="absolute top-full left-0 mt-2 w-64 bg-slate-800 p-3 rounded-lg border border-slate-700 shadow-2xl z-[100] invisible group-hover:visible text-[10px] text-slate-300 leading-relaxed font-medium">
+                                <span className="text-blue-400 font-bold block mb-1 uppercase">Selection Logic:</span>
+                                Ranked using a multi-factor Opportunity Score:<br/>
+                                • 30% 24h Volume (&gt;1M Quote Value)<br/>
+                                • 25% Volatility (ATR)<br/>
+                                • 20% Momentum (RSI)<br/>
+                                • 15% Trend Strength (ADX)<br/>
+                                • 10% Recent Price Move
+                            </div>
                         </div>
+                        {scanTimestamp && (
+                            <div className="flex items-center gap-2 px-3 py-1 bg-slate-950 border border-slate-800 rounded-lg shadow-sm">
+                                <div className="w-1.5 h-1.5 bg-blue-500 rounded-full shadow-[0_0_8px_rgba(59,130,246,0.5)]"></div>
+                                <span className="text-[10px] font-black text-slate-500 tracking-widest">{formatTimestamp(scanTimestamp)}</span>
+                            </div>
+                        )}
                     </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-4">

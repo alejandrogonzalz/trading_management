@@ -8,16 +8,17 @@ class EndpointAuditMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         start_time = time.time()
         
-        # Capture request body if possible
         request_body = None
         if request.method in ["POST", "PUT", "PATCH"]:
             try:
-                # We need to be careful with reading the body as it can only be read once
-                # But for our small-scale app it should be fine if we use a specific approach
-                # Actually, reading body here might interfere with FastAPI's own reading.
-                # A safer way is to just log headers and query params for now, 
-                # or use a more advanced body-replaying technique.
-                pass
+                # Read body and then replace it so following handlers can read it again
+                body = await request.body()
+                if body:
+                    request_body = json.loads(body)
+                # Re-create request with the body so it's available for standard FastAPI parsing
+                async def receive():
+                    return {"type": "http.request", "body": body}
+                request._receive = receive
             except:
                 pass
 
@@ -32,7 +33,8 @@ class EndpointAuditMiddleware(BaseHTTPMiddleware):
             "url": str(request.url),
             "client_host": request.client.host if request.client else None,
             "status_code": response.status_code,
-            "process_time_ms": round(process_time * 1000, 2)
+            "process_time_ms": round(process_time * 1000, 2),
+            "request_body": request_body
         }
         
         try:

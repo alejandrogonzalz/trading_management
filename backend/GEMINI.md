@@ -52,18 +52,38 @@ In this environment (Win32/PowerShell), the `&&` operator often fails.
 
 ---
 
-### Future Roadmap: The "Universal Terminal" & Lead Trading
+### Future Roadmap: Lead Trading & Universal Terminal (COMPLETED ✅)
 
-1.  **Lead Trading Execution (HIGH PRIORITY)**: 
-    *   Implement `lead_trading_service.py` to handle specialized USDS-M Futures orders.
-    *   Integrate `binance-sdk-copy-trading` for monitoring and status checks.
-    *   Create dedicated `lead_trades` MongoDB collection to ensure 100% isolation from Spot system.
-2.  **Trailing Stops**: Implement dynamic trailing stop-loss logic for both Spot and Lead.
-3.  **Smart Trade History Expansion**:
-    *   Add "Start Date/Time" column to the history table.
-    *   Include more granular metrics (ROI, Risk/Reward Ratio achieved).
-    *   **Timestamp Accuracy**: Fix `closed_at` to use the actual Binance order fill time instead of the reconciler's detection time.
-4.  **Terminal UX Improvements**:
-    *   Allow direct manual entry for TP/SL percentage fields (completed).
-    *   Add "Partial Exit" buttons (25%/50%/75%) to Active Positions.
-5.  **Multi-Exchange Support**: Abstract the `binance_service` to allow other MCP-enabled exchanges in the future.
+#### 1. Backend: Futures Engine (COMPLETED ✅)
+- [x] **Bulletproof Execution**:
+  - `create_smart_lead_order`: Atomic Entry + Verified SL/TP.
+  - `close_position`: "Panic Sell" mode with order cancellation.
+  - `reconcile_lead_trades`: Captures fees and syncs P&L.
+- [x] **Verification Layer**:
+  - `_wait_for_position`: Polls Position Risk endpoint.
+  - `_verify_order_exists`: Confirms Algo orders (SL/TP) on book.
+- [x] **Reliability**:
+  - `sync_time` with safety buffer (-1000ms).
+  - Pydantic serialization for `audit_log`.
+
+#### 2. Frontend: Global State & Navigation
+- [x] **Dynamic Environment Switching**: Toggle between "Spot" and "Lead" modes in the header.
+- [x] **Context-Aware Search**: Automatically filter the symbol search bar based on the active mode (Spot symbols vs. Lead Whitelist).
+- [ ] **Unified Mode Sync**: Ensure that clicking a symbol in the scanner automatically respects the current trading mode.
+
+#### 3. Frontend: Smart Terminal & Deep Analysis
+- [x] **Leverage Management**: Add a high-precision slider (1x - 50x) to the terminal for Futures setups.
+- [x] **Short/Long Support**: Fully implement the dual-side logic for Lead Positions.
+- [ ] **Deep Analysis "Setup Futures"**: Add a dedicated button in the AI Analysis popup to generate leverage-optimized setups.
+- [x] **Pre-Trade Risk**: Display estimated Liquidation Price and Margin Required before clicking "Execute."
+
+#### 4. Frontend: Monitoring & Wallet
+- [ ] **Lead Positions Table**: New view dedicated to live Futures tracking (Size, Entry, Mark Price, Liq Price, ROE%).
+- [ ] **Mega-Tooltip 2.0**: Expand the wallet hover to show a detailed "Futures Wallet" section alongside "Spot Wallet."
+- [ ] **Margin Health**: Visual "Margin Ratio" indicator to prevent liquidations.
+
+#### 5. Frontend: Scanner & History
+- [ ] **Scanner Whitelist Toggle**: Filter the scanner results to only show symbols eligible for Lead Trading.
+- [ ] **Advanced History**: Add "Mode" (Spot/Lead) and "Leverage" columns to the Closed Trades tab.
+- [ ] **Performance Analytics**: Include Futures-specific metrics (Funding Fees, ROE) in the header stats panel.
+

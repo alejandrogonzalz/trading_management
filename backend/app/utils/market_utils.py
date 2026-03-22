@@ -38,27 +38,41 @@ def compute_metrics_for_symbol(c: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         return None
 
 def get_top_opportunity_pairs(limit: int = 20) -> List[str]:
-    """Ranks USDC and USDT markets in parallel."""
+    """Ranks USDC and USDT markets in parallel. Ensures Futures compatibility."""
     print("Fetching market-wide tickers and exchange info...")
     tickers = binance_service.binance_client.get_ticker()
-    exchange_info = binance_service.binance_client.get_exchange_info()
     
-    # Map status for quick lookup
-    status_map = {s['symbol']: s['status'] for s in exchange_info['symbols']}
+    # Fetch Spot Info
+    spot_info = binance_service.binance_client.get_exchange_info()
+    spot_status = {s['symbol']: s['status'] for s in spot_info['symbols']}
+    
+    # Fetch Futures Info (Critical for Lead Trading)
+    try:
+        futures_info = binance_service.binance_client.futures_exchange_info()
+        futures_status = {s['symbol']: s['status'] for s in futures_info['symbols']}
+    except Exception as e:
+        print(f"Warning: Could not fetch Futures info: {e}")
+        futures_status = {}
     
     candidates = []
     for t in tickers:
         symbol = t['symbol']
         volume = float(t['quoteVolume'])
-        status = status_map.get(symbol, 'BREAK')
         
-        if (symbol.endswith('USDC') or symbol.endswith('USDT')) and volume > 1_000_000 and status == 'TRADING':
+        # Check both Spot and Futures status
+        is_spot_trading = spot_status.get(symbol) == 'TRADING'
+        is_futures_trading = futures_status.get(symbol) == 'TRADING'
+        
+        # Allow if valid in EITHER market (Union of opportunities)
+        if (symbol.endswith('USDC') or symbol.endswith('USDT')) and \
+           volume > 1_000_000 and \
+           (is_spot_trading or is_futures_trading):
             candidates.append({"symbol": symbol, "volume_24h": volume})
 
     if not candidates:
-        return ["BTCUSDC", "ETHUSDC", "SOLUSDC", "BTCUSDT", "ETHUSDT", "SOLUSDT"]
+        return ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "ADAUSDT"]
 
-    print(f"Analyzing {len(candidates)} candidates in parallel...")
+    print(f"Analyzing {len(candidates)} high-quality candidates in parallel...")
     
     # Process all 50+ candidates at once
     with ThreadPoolExecutor(max_workers=20) as executor:

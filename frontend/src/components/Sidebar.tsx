@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { BarChart3, Briefcase, Settings, LifeBuoy, ChevronsLeft, ChevronsRight, ScanSearch, Zap, Activity } from 'lucide-react';
+import { BarChart3, Briefcase, Settings, LifeBuoy, ChevronsLeft, ChevronsRight, ScanSearch, Zap, Activity, ShieldCheck } from 'lucide-react';
 
 const Sidebar = ({ isSidebarOpen, setIsSidebarOpen }) => {
     const navItems = [

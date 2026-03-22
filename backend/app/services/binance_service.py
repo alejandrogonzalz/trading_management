@@ -4,6 +4,7 @@ from binance.enums import *
 from fastapi import HTTPException
 import time
 import math
+from decimal import Decimal, ROUND_FLOOR, ROUND_DOWN
 from typing import Optional, List, Dict, Any
 from app.core.config import settings
 from app.services import trade_tracker
@@ -22,6 +23,17 @@ def sync_binance_time():
         binance_client.timestamp_offset = server_time - local_time
     except Exception as e:
         print(f"Error syncing time: {e}")
+
+def round_step_size(quantity, step_size):
+    """
+    Rounds a quantity to the nearest step size using high-precision Decimal.
+    """
+    if step_size <= 0: return quantity
+    q = Decimal(str(quantity))
+    s = Decimal(str(step_size))
+    # Round down to ensure we don't exceed balance
+    rounded = (q / s).quantize(Decimal('1'), rounding=ROUND_FLOOR) * s
+    return float(rounded.normalize())
 
 sync_binance_time()
 

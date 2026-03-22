@@ -8,8 +8,7 @@ import asyncio
 # Local imports
 from app.core.config import settings
 from app.db import database
-from app.services import binance_service
-from app.services import scanner_service
+from app.services import binance_service, scanner_service, futures_service
 from app.utils import market_utils as market_service_utils
 from app.core.middleware import EndpointAuditMiddleware
 from app.routes import spot, market, lead
@@ -58,6 +57,14 @@ async def scheduled_reconcile_job():
     except Exception as e:
         print(f"Error during reconciliation: {e}")
 
+async def scheduled_lead_reconcile_job():
+    """Background job to detect auto-closed Lead/Futures trades."""
+    print("Checking for auto-closed Lead trades...")
+    try:
+        await asyncio.to_thread(futures_service.futures_service.reconcile_lead_trades)
+    except Exception as e:
+        print(f"Error during lead reconciliation: {e}")
+
 # --- FastAPI Lifespan Events ---
 @app.on_event("startup")
 async def startup_event():
@@ -84,7 +91,13 @@ async def startup_event():
         id='scheduled_reconciler',
         replace_existing=True
     )
-    print(f"Scheduler started. Reconciler runs every 30 seconds.")
+    scheduler.add_job(
+        scheduled_lead_reconcile_job,
+        IntervalTrigger(seconds=30),
+        id='scheduled_lead_reconciler',
+        replace_existing=True
+    )
+    print(f"Scheduler started. Reconcilers run every 30 seconds.")
 
 @app.on_event("shutdown")
 async def shutdown_event():

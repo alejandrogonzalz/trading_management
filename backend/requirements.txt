@@ -11,3 +11,5 @@ pandas
 numpy
 motor
 pymongo
+binance-sdk-copy-trading
+binance-sdk-derivatives-trading-usds-futures

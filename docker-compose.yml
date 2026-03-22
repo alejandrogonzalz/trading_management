@@ -44,6 +44,19 @@ services:
     networks:
       - trading-network
 
+  mongodb-mcp:
+    image: node:20-slim
+    container_name: trading_management-mongodb-mcp
+    environment:
+      - MDB_MCP_CONNECTION_STRING=mongodb://mongodb:27017
+    command: >
+      npx -y @mongodb-js/mongodb-mcp-server --readOnly
+    depends_on:
+      - mongodb
+    networks:
+      - trading-network
+    restart: unless-stopped
+
   frontend:
     build: ./frontend
     ports:
