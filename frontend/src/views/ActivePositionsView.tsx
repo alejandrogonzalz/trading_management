@@ -9,13 +9,13 @@ const LeadPositionCard = ({ position, onSelectSymbol }) => {
     const navigate = useNavigate();
 
     const symbol = position.symbol;
-    const amount = parseFloat(position.position_amt);
-    const entryPrice = parseFloat(position.entry_price);
-    const markPrice = parseFloat(position.mark_price);
-    const liqPrice = parseFloat(position.liquidation_price);
+    const amount = parseFloat(position.positionAmt); // Changed from position_amt
+    const entryPrice = parseFloat(position.entryPrice); // Changed from entry_price
+    const markPrice = parseFloat(position.markPrice); // Changed from mark_price
+    const liqPrice = parseFloat(position.liquidationPrice); // Changed from liquidation_price
     const leverage = parseInt(position.leverage);
     const side = amount > 0 ? 'LONG' : 'SHORT';
-    const unrealizedProfit = parseFloat(position.un_realized_profit);
+    const unrealizedProfit = parseFloat(position.unRealizedProfit); // Changed from un_realized_profit
     
     const margin = Math.abs(amount * entryPrice) / leverage;
     const roe = (unrealizedProfit / margin) * 100;
@@ -152,17 +152,20 @@ const SmartTradeCard = ({ trade, onCancel, currentPrice, onSelectSymbol, leadPos
     };
     
     const livePos = leadPositions?.find(p => p.symbol === trade.symbol);
-    const entryPrice = livePos ? parseFloat(livePos.entry_price) : (parseFloat(trade.price) || parseFloat(trade.smart_meta?.entry_price) || 0);
-    const tpPrice = trade.smart_meta?.tp || 0;
-    const slPrice = trade.smart_meta?.sl || 0;
+    // 1. Try live position (Source of Truth)
+    // 2. Try entry_price directly on the trade object (populated by backend)
+    // 3. Fallback to smart_meta or order price
+    const entryPrice = livePos ? parseFloat(livePos.entry_price) : 
+                       (parseFloat(trade.entry_price) || parseFloat(trade.smart_meta?.entry_price) || parseFloat(trade.price) || 0);
+                       
+    const quantity = livePos ? Math.abs(parseFloat(livePos.position_amt)) : 
+                     (parseFloat(trade.origQty) || trade.smart_meta?.quantity || 0);
+
     const tradeSide = trade.smart_meta?.side || trade.side;
+    const tpPrice = Number(trade.smart_meta?.tp || trade.tp) || 0;
+    const slPrice = Number(trade.smart_meta?.sl || trade.sl) || 0;
     const isSyncing = !currentPrice || currentPrice === 0;
-    
-    // P&L % formula: ((Price - Entry) / Entry) * 100 * (Side ? 1 : -1)
-    const pnl = (isSyncing || entryPrice === 0) ? 0 : ((currentPrice - entryPrice) / entryPrice * 100 * (tradeSide === 'BUY' ? 1 : -1));
-    
-    // Net profit calculation with fallback
-    const quantity = livePos ? Math.abs(parseFloat(livePos.position_amt)) : (trade.origQty || trade.smart_meta?.quantity || 0);
+
     const grossProfit = entryPrice > 0 ? (currentPrice - entryPrice) * quantity * (tradeSide === 'BUY' ? 1 : -1) : 0;
     
     // Use stored entry fees and estimated exit fee (or 0 if not captured)
@@ -172,16 +175,16 @@ const SmartTradeCard = ({ trade, onCancel, currentPrice, onSelectSymbol, leadPos
     const netProfit = grossProfit - entryFees - estExitFee;
     const netPnlPercent = (quantity * entryPrice) > 0 ? (netProfit / (quantity * entryPrice) * 100) : 0;
     
-    const getPos = (price) => {
-        if (!price || !tpPrice || !slPrice || tpPrice === slPrice) return 50;
-        const totalRange = Math.abs(tpPrice - slPrice);
-        const currentDiff = Math.abs(price - slPrice);
+    const getPos = (price, tp, sl) => {
+        if (!price || !tp || !sl || tp === sl) return 50;
+        const totalRange = Math.abs(tp - sl);
+        const currentDiff = Math.abs(price - sl);
         const pos = (currentDiff / totalRange) * 100;
         return Math.min(Math.max(pos, 0), 100);
     };
 
-    const entryMarkerPos = getPos(entryPrice);
-    const currentMarkerPos = isSyncing ? entryMarkerPos : getPos(currentPrice);
+    const entryMarkerPos = getPos(entryPrice, tpPrice, slPrice);
+    const currentMarkerPos = isSyncing ? entryMarkerPos : getPos(currentPrice, tpPrice, slPrice);
 
     const fmt = (val) => Number(val).toLocaleString(undefined, { minimumFractionDigits: val < 1 ? 6 : 2, maximumFractionDigits: val < 1 ? 8 : 2 });
 
