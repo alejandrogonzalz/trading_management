@@ -1,16 +1,49 @@
 import { useState, useEffect, useMemo } from 'react';
-import { ScanSearch, TrendingUp, TrendingDown, Scale, Zap, Activity, Layers, Info, ArrowUp, ArrowDown, Filter, X, ShieldCheck, Target as TargetIcon, AlertCircle } from 'lucide-react';
+import { ScanSearch, TrendingUp, TrendingDown, Scale, Zap, Activity, Info, ArrowUp, ArrowDown, Filter, X, ShieldCheck, Target as TargetIcon, AlertCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8001';
 
-const AnalysisModal = ({ data, onClose, onQuickTrade }) => {
+interface AnalysisResult {
+  symbol?: string;
+  bias?: string;
+  confidence?: number;
+  quant_confidence?: number;
+  llm_adjustment?: number;
+  risk_reward?: string;
+  safety_margin?: number;
+  liquidation_safe?: boolean;
+  risk_pct?: number;
+  liq_pct?: number;
+  entry?: number;
+  tp?: number;
+  sl?: number;
+  leverage?: number;
+  pair?: string;
+  reasoning?: string;
+  issues?: string[];
+  changes?: string[];
+  // Add other fields as needed
+}
+
+const AnalysisModal = ({ data, onClose, onQuickTrade, mode, formatPrice }) => {
     if (!data) return null;
+
+    if (!formatPrice) {
+        formatPrice = (price) => {
+            if (price === undefined || price === null || isNaN(price)) return '--';
+            let precision = 2;
+            if (price < 0.001) precision = 8;
+            else if (price < 0.1) precision = 6;
+            else if (price < 1) precision = 4;
+            return price.toLocaleString(undefined, { minimumFractionDigits: precision, maximumFractionDigits: precision });
+        };
+    }
 
     const getBiasColor = (bias) => {
         const b = bias?.toLowerCase() || 'neutral';
-        if (b === 'bullish') return 'text-emerald-400 bg-emerald-400/10 border-emerald-400/20';
-        if (b === 'bearish') return 'text-rose-400 bg-rose-400/10 border-rose-400/20';
+        if (b === 'bullish' || b === 'long') return 'text-emerald-400 bg-emerald-400/10 border-emerald-400/20';
+        if (b === 'bearish' || b === 'short') return 'text-rose-400 bg-rose-400/10 border-rose-400/20';
         return 'text-slate-400 bg-slate-400/10 border-slate-400/20';
     };
 
@@ -19,72 +52,121 @@ const AnalysisModal = ({ data, onClose, onQuickTrade }) => {
             <div className="bg-slate-900 w-full max-w-lg rounded-3xl border border-slate-800 shadow-[0_0_80px_rgba(0,0,0,0.8)] overflow-hidden">
                 <div className="flex justify-between items-center p-6 border-b border-slate-800 bg-slate-900/50">
                     <div className="flex items-center gap-3">
-                        <div className="p-2 bg-blue-500/10 rounded-xl">
-                            <Activity size={20} className="text-blue-400" />
+                        <div className={`p-2 rounded-xl ${mode === 'LEAD' ? 'bg-orange-500/10' : 'bg-blue-500/10'}`}>
+                            <Activity size={20} className={mode === 'LEAD' ? 'text-orange-400' : 'text-blue-400'} />
                         </div>
                         <div>
-                            <h2 className="text-xl font-black text-white tracking-tighter uppercase">{data.pair || 'Analysis'}</h2>
-                            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">AI Expert Deep Dive</p>
+                            <h2 className="text-xl font-black text-white tracking-tighter uppercase">{data.symbol || 'Analysis'}</h2>
+                            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                                {mode === 'LEAD' ? 'LangGraph Futures Engine' : 'LangGraph Spot Research'}
+                            </p>
                         </div>
                     </div>
                     <button onClick={onClose} className="p-2 hover:bg-slate-800 rounded-full transition-colors text-slate-500 hover:text-white"><X size={20} /></button>
                 </div>
 
-                <div className="p-6 space-y-6">
+                <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto custom-scrollbar">
+                    {/* CONFIDENCE & BIAS */}
                     <div className="grid grid-cols-2 gap-4">
                         <div className={`p-4 rounded-2xl border ${getBiasColor(data.bias)} flex flex-col items-center gap-1`}>
                             <span className="text-[10px] font-black uppercase tracking-widest opacity-60">AI Bias</span>
                             <span className="text-lg font-black uppercase">{data.bias || 'Neutral'}</span>
                         </div>
-                        <div className="p-4 rounded-2xl border border-slate-800 bg-slate-950/50 flex flex-col items-center gap-1">
+                        <div className="p-4 rounded-2xl border border-slate-800 bg-slate-950/50 flex flex-col items-center gap-1 group relative">
                             <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Confidence</span>
-                            <span className="text-lg font-black text-white">{data.confidence || '5'}/10</span>
+                            <div className="flex items-baseline gap-1">
+                                <span className="text-lg font-black text-white">{data.confidence || '5'}</span>
+                                <span className="text-[10px] font-bold text-slate-600">/10</span>
+                            </div>
+                            {/* CONFIDENCE TOOLTIP */}
+                            <div className="absolute top-full left-0 right-0 mt-2 bg-slate-800 p-3 rounded-xl border border-slate-700 shadow-2xl z-[50] invisible group-hover:visible text-[10px] space-y-1">
+                                <div className="flex justify-between"><span>Quant Score:</span><span className="text-blue-400">{data.quant_confidence}</span></div>
+                                <div className="flex justify-between"><span>LLM Nudge:</span><span className={data.llm_adjustment >= 0 ? 'text-emerald-400' : 'text-rose-400'}>{data.llm_adjustment >= 0 ? '+' : ''}{data.llm_adjustment}</span></div>
+                            </div>
                         </div>
                     </div>
 
-                    {data.leverage && (
-                        <div className="bg-orange-500/5 border border-orange-500/20 rounded-2xl p-4 flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                                <div className="p-2 bg-orange-500/10 rounded-lg text-orange-400">
+                    {/* LIQUIDATION SAFETY (FUTURES ONLY) */}
+                    {mode === 'LEAD' && data.leverage && (
+                        <div className="space-y-3">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2 text-orange-400">
                                     <Scale size={16} />
+                                    <span className="text-xs font-black uppercase tracking-widest">Liquidation Safety</span>
                                 </div>
-                                <div>
-                                    <p className="text-[10px] font-black text-orange-500 uppercase tracking-widest leading-none mb-1">AI Recommended Leverage</p>
-                                    <p className="text-xs text-slate-400 font-medium">Optimized for current volatility</p>
-                                </div>
+                                <span className={`text-[10px] font-black px-2 py-0.5 rounded ${data.liquidation_safe ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
+                                    {data.liquidation_safe ? 'SAFE' : 'RISKY'}
+                                </span>
                             </div>
-                            <span className="text-2xl font-black text-white font-mono">{data.leverage}x</span>
+                            <div className="bg-slate-950/50 border border-slate-800 rounded-2xl p-4 space-y-3">
+                                <div className="flex justify-between items-end">
+                                    <div>
+                                        <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Recommended Leverage</p>
+                                        <p className="text-xl font-black text-white font-mono">{data.leverage}x</p>
+                                    </div>
+                                    <div className="text-right">
+                                        <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Safety Margin</p>
+                                        <p className={`text-sm font-black font-mono ${data.safety_margin > 0.02 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                            {(data.safety_margin * 100).toFixed(2)}%
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden flex">
+                                    <div className="h-full bg-rose-500" style={{ width: `${data.liq_pct > 0 ? Math.min(100, (data.risk_pct / data.liq_pct) * 100) : 0}%` }}></div>
+                                    <div className="h-full bg-emerald-500 opacity-30" style={{ width: '100%' }}></div>
+                                </div>
+                                <p className="text-[9px] text-slate-500 font-medium italic">Distance to Stop Loss vs Liquidation distance.</p>
+                            </div>
                         </div>
                     )}
 
+                    {/* TRADE SETUP */}
                     <div className="space-y-3">
                         <div className="flex items-center gap-2 text-blue-400">
                             <TargetIcon size={16} />
-                            <span className="text-xs font-black uppercase tracking-widest">Trade Setup</span>
+                            <span className="text-xs font-black uppercase tracking-widest">Validated Setup</span>
                         </div>
                         <div className="bg-slate-950/50 rounded-2xl border border-slate-800 p-4">
-                            <p className="text-sm font-bold text-white mb-2">{data.trade_setup || 'No setup provided'}</p>
-                            <div className="grid grid-cols-3 gap-2">
+                            <div className="grid grid-cols-3 gap-4">
                                 <div className="space-y-1">
                                     <span className="text-[9px] font-black text-slate-500 uppercase block">Entry</span>
-                                    <span className="text-xs font-mono font-bold text-slate-300">${data.entry || '--'}</span>
+                                    <span className="text-xs font-mono font-bold text-slate-300">${formatPrice(data.entry)}</span>
                                 </div>
                                 <div className="space-y-1">
                                     <span className="text-[9px] font-black text-emerald-500/70 uppercase block">Take Profit</span>
-                                    <span className="text-xs font-mono font-bold text-emerald-400">${data.tp || '--'}</span>
+                                    <span className="text-xs font-mono font-bold text-emerald-400">${formatPrice(data.tp)}</span>
                                 </div>
                                 <div className="space-y-1">
                                     <span className="text-[9px] font-black text-rose-500/70 uppercase block">Stop Loss</span>
-                                    <span className="text-xs font-mono font-bold text-rose-400">${data.sl || '--'}</span>
+                                    <span className="text-xs font-mono font-bold text-rose-400">${formatPrice(data.sl)}</span>
                                 </div>
                             </div>
                         </div>
                     </div>
 
+                    {/* ISSUES & AUDIT (IF ANY) */}
+                    {data.issues?.length > 0 && (
+                        <div className="space-y-3">
+                            <div className="flex items-center gap-2 text-amber-400">
+                                <AlertCircle size={16} />
+                                <span className="text-xs font-black uppercase tracking-widest">Optimization Audit</span>
+                            </div>
+                            <div className="bg-amber-500/5 border border-amber-500/20 rounded-2xl p-4 space-y-2">
+                                {data.issues.map((issue, i) => (
+                                    <div key={i} className="flex gap-2 items-start text-[10px] text-amber-200/70 font-medium uppercase tracking-tight">
+                                        <div className="w-1 h-1 rounded-full bg-amber-500 mt-1.5 shrink-0"></div>
+                                        {issue}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* REASONING */}
                     <div className="space-y-3">
                         <div className="flex items-center gap-2 text-purple-400">
                             <ShieldCheck size={16} />
-                            <span className="text-xs font-black uppercase tracking-widest">Reasoning</span>
+                            <span className="text-xs font-black uppercase tracking-widest">Strategic reasoning</span>
                         </div>
                         <p className="text-xs text-slate-400 leading-relaxed font-medium bg-slate-950/30 p-4 rounded-2xl italic border border-slate-800/50">"{data.reasoning || 'No analysis available'}"</p>
                     </div>
@@ -92,14 +174,13 @@ const AnalysisModal = ({ data, onClose, onQuickTrade }) => {
 
                 <div className="p-6 bg-slate-950/50 border-t border-slate-800 flex justify-between items-center">
                     <div className="flex items-center gap-2 text-slate-600">
-                        <AlertCircle size={14} />
-                        <span className="text-[9px] font-black uppercase tracking-widest">Risk Reward {data.risk_reward || 'N/A'}</span>
+                        <span className="text-[9px] font-black uppercase tracking-widest">RR {data.risk_reward || 'N/A'}</span>
                     </div>
                     <button 
                         onClick={() => onQuickTrade(data)}
-                        className="bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-black px-6 py-2.5 rounded-xl transition-all shadow-lg shadow-blue-900/20 uppercase tracking-widest"
+                        className={`text-white text-[10px] font-black px-6 py-2.5 rounded-xl transition-all shadow-lg uppercase tracking-widest ${mode === 'LEAD' ? 'bg-orange-600 hover:bg-orange-500 shadow-orange-900/20' : 'bg-blue-600 hover:bg-blue-500 shadow-blue-900/20'}`}
                     >
-                        Auto-Trade Setup
+                        Execute {mode === 'LEAD' ? 'Futures' : 'Spot'} Setup
                     </button>
                 </div>
             </div>
@@ -148,13 +229,13 @@ const ColumnHeader = ({ label, tooltip, sortKey, currentSort, onSort }) => {
     );
 };
 
-const ScannerView = ({ symbols, onAutoTrade, onSelectSymbol }) => {
+const ScannerView = ({ symbols: _symbols, onAutoTrade, onSelectSymbol, tradingMode }) => { // eslint-disable-line @typescript-eslint/no-unused-vars
     const [scannerResults, setScannerResults] = useState([]);
     const [scanTimestamp, setScanTimestamp] = useState(null);
     const [scanning, setScanning] = useState(false);
     const [rankingLLM, setRankingLLM] = useState(false);
     const [analyzingLLM, setAnalyzingLLM] = useState<string | null>(null);
-    const [analysisResult, setAnalysisResult] = useState<any>(null);
+    const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
     const [selectedTF, setSelectedTF] = useState('1h');
     const [lastScanTF, setLastScanTF] = useState('1h');
     const [error, setError] = useState(null);
@@ -234,7 +315,8 @@ const ScannerView = ({ symbols, onAutoTrade, onSelectSymbol }) => {
     const handleAnalyzeLLMRow = async (symbolToAnalyze: string) => {
         setAnalyzingLLM(symbolToAnalyze);
         try {
-            const res = await fetch(`${API_BASE}/llm/analyze_row/${symbolToAnalyze}`);
+            const mode = tradingMode === 'LEAD' ? 'FUTURES' : 'SPOT';
+            const res = await fetch(`${API_BASE}/llm/analyze_row/${symbolToAnalyze}?mode=${mode}`);
             const data = await res.json();
             if (!res.ok) throw new Error(data.detail || "Failed to analyze with LLM");
             setAnalysisResult({ ...data, pair: symbolToAnalyze });
@@ -284,9 +366,20 @@ const ScannerView = ({ symbols, onAutoTrade, onSelectSymbol }) => {
         }).toUpperCase();
     };
 
+
+
+    const formatPrice = (price: number) => {
+        if (price === undefined || price === null || isNaN(price)) return '--';
+        let precision = 2;
+        if (price < 0.001) precision = 8;
+        else if (price < 0.1) precision = 6;
+        else if (price < 1) precision = 4;
+        return price.toLocaleString(undefined, { minimumFractionDigits: precision, maximumFractionDigits: precision });
+    };
+
     return (
         <div className="h-full flex flex-col bg-slate-900 overflow-hidden">
-            <AnalysisModal data={analysisResult} onClose={() => setAnalysisResult(null)} onQuickTrade={handleQuickTrade} />
+            <AnalysisModal data={analysisResult} onClose={() => setAnalysisResult(null)} onQuickTrade={handleQuickTrade} mode={tradingMode} formatPrice={formatPrice} />
             <header className="flex flex-col lg:flex-row justify-between items-start lg:items-center px-6 py-6 gap-6 shrink-0">
                 <div>
                     <h1 className="text-3xl font-black text-white flex items-center gap-3 tracking-tighter uppercase">
@@ -371,7 +464,7 @@ const ScannerView = ({ symbols, onAutoTrade, onSelectSymbol }) => {
                                             {r.pair}
                                         </button>
                                     </td>
-                                    <td className="py-4 px-4 text-slate-300">${r.price?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}</td>
+                                    <td className="py-4 px-4 text-slate-300">${formatPrice(r.price)}</td>
                                     <td className="py-4 px-4"><div className="flex flex-col gap-1.5"><span className={`text-[10px] font-black tracking-widest ${getStatusColor(r.heatmap)}`}>{r.heatmap}</span>{r.heatmap_multi && <HeatmapCell heatmap={r.heatmap_multi} />}</div></td>
                                     <td className="py-4 px-4"><span className={`px-2 py-1 rounded text-[10px] font-black border ${r.structure === 'BREAKOUT' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 animate-pulse' : 'bg-slate-800 border-slate-700 text-slate-300'}`}>{r.structure}</span></td>
                                     <td className="py-4 px-4 text-center font-bold text-slate-400">{r.rsi?.toFixed(1)}</td>

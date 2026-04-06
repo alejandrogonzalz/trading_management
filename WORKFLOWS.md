@@ -1,35 +1,141 @@
-# Application Workflows & Architecture
+# Application Workflows
 
-This guide describes the end-to-end workflows that power the Trading Workstation.
+This guide describes the core workflows that power the Trading Management System. For complete documentation including installation, architecture, and API details, see [GEMINI.md](GEMINI.md).
 
-## 1. The Smart Trade Lifecycle (Set-and-Forget) ✅
+## 1. Smart Trade Lifecycle (Set-and-Forget)
 
-Designed to ensure your capital is protected even if your computer is offline.
+Designed to protect capital even when offline.
 
-1.  **Entry Phase**: System executes a `MARKET` order. It immediately parses the `fills` array from the response to calculate the exact **Weighted Average Entry Price** and **Entry Commissions**.
-2.  **Calculation Phase**: System uses **Floor Rounding** to format the quantity. It applies **Fee-Aware Clipping** (subtracting commissions from the total) to ensure the subsequent Sell order doesn't exceed the wallet balance.
-3.  **Protection Phase**: System places an **OCO (One-Cancels-the-Other)** order. If the market doesn't support OCO for that coin, it falls back to a single **Limit Sell** or **Stop Loss**.
-4.  **Database Phase**: The Master ID, Binance Order IDs, and Strategy Targets are saved to **MongoDB**.
-5.  **Monitoring**: The UI draws a **Visual Card** with a P&L progress bar. P&L is calculated using the real-time price against the recorded average entry price.
+```mermaid
+graph TD
+    A[Market Order Entry] --> B[Parse Fills Array]
+    B --> C[Calculate Weighted Avg Entry]
+    C --> D[Floor Round Quantity]
+    D --> E[Fee-Aware Clipping]
+    E --> F[Place OCO Orders]
+    F --> G[Save to SQLite]
+    G --> H[UI Monitoring]
+```
 
-## 2. Quantum Scanner & AI Ranking 🤖
+**Key Steps:**
+1. **Entry**: Execute `MARKET` order, parse `fills` for exact entry price and commissions
+2. **Calculation**: Apply floor rounding and fee-aware clipping (deduct commissions from sell quantity)
+3. **Protection**: Place OCO (One-Cancels-the-Other) orders; fallback to single Limit/Stop if OCO unsupported
+4. **Persistence**: Save trade record with Master ID and Binance Order IDs to SQLite database
+5. **Monitoring**: UI displays progress bar with real-time P&L against entry price
 
-1.  **Discovery**: Backend fetches 24hr stats for all 300+ USDT/USDC pairs. It filters for symbols where `status == 'TRADING'` and `24h_volume > $1M`.
-2.  **Scoring**: Top 20 candidates are analyzed across 7 timeframes. A **Quant Score (0-10)** is assigned based on RSI, ADX, and EMAs.
-3.  **AI Filtering (Ranking)**: The user clicks "AI Rank." The current scanner table is sent to the local **Qwen 2.5 14B** model. The AI identifies the top 3 setups with the highest technical confluence.
-4.  **Expert Deep Analysis**: Clicking the "Activity" icon on a row triggers a **Deep Dive**. The system rescans all timeframes for that specific coin and asks the AI to generate a precise trade setup (Entry, TP, SL).
+## 2. Quantum Scanner & AI Ranking Pipeline
 
-## 3. Autonomous Reconciliation (The Reconciler) 🛡️
+Multithreaded analysis with local LLM ranking.
 
-A background task running every 30 seconds to keep MongoDB in sync with Binance reality.
+```mermaid
+graph LR
+    A[Fetch 300+ Pairs] --> B[Filter: TRADING + $1M+ Volume]
+    B --> C[Score Top 20: 7 Timeframes]
+    C --> D[Quant Score 0-10]
+    D --> E[AI Ranking: Top 3 Setups]
+    E --> F[Deep Analysis: Per-Coin]
+```
 
-*   **Order ID Verification**: It queries Binance for every specific Order ID stored in a trade's `orders` array.
-*   **Fill Detection**: If a TP or SL ID is missing from "Open Orders," it checks the **Binance Trade History**.
-*   **Auto-Closure**: If a `FILLED` status is found, it captures the **Exit Price** and **Exit Fees**, marks the trade as `CLOSED` in MongoDB, and the card moves to the "Closed Trades" tab.
-*   **Manual Control Detection**: If orders are `CANCELLED` (e.g., via the Binance app), it switches the trade to `MANUAL_CONTROL` mode in our UI.
+**Process Details:**
 
-## 4. System Auditing & Data Persistence 🗄️
+### Phase 1: Discovery & Filtering
+- Fetch 24hr statistics for all USDT/USDC pairs
+- Filter symbols where `status == 'TRADING'` and `24h_volume > $1M`
+- Apply market guard to exclude symbols in `BREAK` or `HALT` status
 
-*   **Request Auditing**: Every single POST/DELETE/GET interaction with the Binance API is "Black-Boxed" in MongoDB with its raw payload and raw response.
-*   **Database**: All trades, rankings, and audit logs are stored in **MongoDB**. This ensures your trade history survives computer restarts and backend updates.
-*   **Safety Guards**: The system proactively uses `recvWindow=60000` and automatic clock synchronization to prevent timestamp-related API rejections.
+### Phase 2: Multi-Timeframe Scoring
+- Analyze top 20 candidates across 7 timeframes (5m to 1M)
+- Calculate weighted score:
+  - 30% Volume momentum
+  - 25% Volatility (ATR)
+  - 20% Momentum (RSI)
+  - 15% Trend Strength (ADX)
+  - 10% Recent price action
+
+### Phase 3: AI Filtering & Ranking
+- User clicks "AI Rank" to send scanner table to Qwen 2.5 14B
+- LLM identifies top 3 setups with highest technical confluence
+- Returns ranked list with reasoning
+
+### Phase 4: Expert Deep Analysis
+- Clicking activity icon triggers per-coin deep dive
+- Rescans all timeframes for specific symbol
+- AI generates precise trade setup: Entry, TP, SL with technical rationale
+
+## 3. Autonomous Reconciliation System
+
+Background task running every 30 seconds to maintain sync with Binance.
+
+**Reconciliation Loop:**
+```python
+for trade in active_trades:
+    for order_id in trade.orders:
+        binance_status = query_binance_order(order_id)
+        
+        if binance_status == "FILLED":
+            capture_exit_price_fees()
+            mark_trade_closed()
+            move_to_history()
+            
+        elif binance_status == "CANCELLED":
+            switch_to_manual_control()
+            alert_user()
+```
+
+**Key Functions:**
+- **Order ID Verification**: Query Binance for each stored Order ID
+- **Fill Detection**: Check Binance Trade History if order missing from Open Orders
+- **Auto-Closure**: Capture exit price/fees, mark as `CLOSED` in SQLite
+- **Manual Control Detection**: Switch to `MANUAL_CONTROL` if orders cancelled externally
+- **Fee Accounting**: Record exact commissions from Binance fill data
+
+## 4. Lead (Futures) Trading Engine
+
+Atomic execution for leveraged positions.
+
+### Entry Workflow
+```
+1. Position Verification → Poll Position Risk endpoint
+2. Order Placement → Entry order with verified quantity
+3. Protection Orders → SL/TP Algo orders via Binance Futures API
+4. Verification Loop → Confirm orders exist on book
+5. Rollback Ready → Setup cancellation triggers if verification fails
+```
+
+### Exit Workflow
+```
+1. Panic Sell → One-click liquidation + order cancellation
+2. Partial Close → Reduce position size with proportional SL/TP adjustment
+3. Take Profit → TP order execution with fee capture
+4. Stop Loss → SL trigger with position closure
+```
+
+### Safety Features
+- **Atomic Rollback**: Cancel all orders + market close on any failure
+- **Position Verification**: Pre-trade margin and liquidation price calculation
+- **Fee Capture**: Accurate commission tracking from Binance trade history
+- **Reconciliation**: Sync with Binance Position Risk every 30 seconds
+
+## 5. System Auditing & Data Flow
+
+### Request Auditing
+- All Binance API calls logged to `audit_log` table with request/response payloads
+- Internal HTTP requests captured in `endpoint_audit` table
+- Timestamp synchronization with `recvWindow=60000` safety buffer
+
+### Data Persistence
+- **SQLite Database**: `trading.db` with WAL mode for concurrency
+- **Trade Records**: Complete lifecycle from entry to exit with all metadata
+- **Audit Trail**: Immutable log of all system interactions
+- **Model Persistence**: Ollama models stored in Docker volumes
+
+### Safety Guards
+- **Time Sync**: Automatic clock synchronization with Binance server time
+- **Quantity Validation**: Floor rounding and balance verification
+- **Error Recovery**: Comprehensive rollback mechanisms for failed transactions
+- **Connection Resilience**: Retry logic with exponential backoff for API calls
+
+---
+
+*For architecture details, database schema, and API documentation, refer to [GEMINI.md](GEMINI.md).*

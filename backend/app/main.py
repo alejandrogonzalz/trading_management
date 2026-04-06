@@ -5,25 +5,19 @@ from apscheduler.triggers.interval import IntervalTrigger
 import logging
 import asyncio
 
-# Local imports
-from app.core.config import settings
-from app.db import database
-from app.services import binance_service, scanner_service, futures_service
-from app.utils import market_utils as market_service_utils
-from app.core.middleware import EndpointAuditMiddleware
 from app.routes import spot, market, lead
+from app.services import binance_service, llm_service
+from app.services.futures_service import futures_service
+from app.db import database
+from app.core.middleware import EndpointAuditMiddleware
 
-# Configure logging for APScheduler
-logging.basicConfig(level=logging.INFO)
-logging.getLogger('apscheduler').setLevel(logging.INFO)
-
+# Initialize FastAPI
 app = FastAPI(title="Trading Management API")
-scheduler = AsyncIOScheduler()
 
-# Setup Audit Middleware
+# Add Audit Middleware
 app.add_middleware(EndpointAuditMiddleware)
 
-# Setup CORS
+# Enable CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -33,41 +27,18 @@ app.add_middleware(
 )
 
 # Include Routers
-app.include_router(spot.router)
-app.include_router(market.router)
-app.include_router(lead.router, prefix="/lead")
+app.include_router(spot.router, tags=["Spot"])
+app.include_router(market.router, tags=["Market"])
+app.include_router(lead.router, prefix="/lead", tags=["Lead"])
 
-# --- Scheduler Jobs ---
-async def scheduled_scan_job():
-    """Background job to run the scanner for a predefined set of pairs."""
-    print("Running scheduled scan job...")
-    try:
-        # Dynamically find the top 20 opportunity pairs
-        top_pairs = await asyncio.to_thread(market_service_utils.get_top_opportunity_pairs, 20)
-        await asyncio.to_thread(scanner_service.run_scan, top_pairs)
-        print("Scheduled scan completed.")
-    except Exception as e:
-        print(f"Error during scheduled scan: {e}")
+# Setup Scheduler
+scheduler = AsyncIOScheduler()
 
-async def scheduled_reconcile_job():
-    """Background job to detect auto-closed trades."""
-    print("Checking for auto-closed trades...")
-    try:
-        await asyncio.to_thread(binance_service.reconcile_trades)
-    except Exception as e:
-        print(f"Error during reconciliation: {e}")
-
-async def scheduled_lead_reconcile_job():
-    """Background job to detect auto-closed Lead/Futures trades."""
-    print("Checking for auto-closed Lead trades...")
-    try:
-        await asyncio.to_thread(futures_service.futures_service.reconcile_lead_trades)
-    except Exception as e:
-        print(f"Error during lead reconciliation: {e}")
-
-# --- FastAPI Lifespan Events ---
 @app.on_event("startup")
 async def startup_event():
+    # 0. Initialize SQLite
+    database.init_db()
+    
     # 1. Sync Binance Time
     try:
         binance_service.sync_binance_time()
@@ -76,28 +47,26 @@ async def startup_event():
     # 2. Database connectivity check
     database.ping_db()
     
-    # 3. Start Scheduler
+    # 3. LLM Warm-up (Disabled for Cloud/Factory compatibility)
+    # asyncio.create_task(llm_service.warm_up_llm())
+
+    # 4. Schedule Reconcilers
+    scheduler.add_job(
+        binance_service.reconcile_trades,
+        trigger=IntervalTrigger(seconds=30),
+        id="scheduled_reconcile_job",
+        replace_existing=True
+    )
+    
+    scheduler.add_job(
+        futures_service.reconcile_lead_trades,
+        trigger=IntervalTrigger(seconds=30),
+        id="scheduled_lead_reconcile_job",
+        replace_existing=True
+    )
+
     scheduler.start()
-    scheduler.add_job(
-        scheduled_scan_job, 
-        IntervalTrigger(minutes=settings.SCANNER_INTERVAL_MINUTES),
-        id='scheduled_scanner',
-        replace_existing=True
-    )
-    # Reconcile every 30 seconds
-    scheduler.add_job(
-        scheduled_reconcile_job,
-        IntervalTrigger(seconds=30),
-        id='scheduled_reconciler',
-        replace_existing=True
-    )
-    scheduler.add_job(
-        scheduled_lead_reconcile_job,
-        IntervalTrigger(seconds=30),
-        id='scheduled_lead_reconciler',
-        replace_existing=True
-    )
-    print(f"Scheduler started. Reconcilers run every 30 seconds.")
+    print("Scheduler started. Reconcilers run every 30 seconds.")
 
 @app.on_event("shutdown")
 async def shutdown_event():

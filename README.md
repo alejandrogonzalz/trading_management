@@ -1,35 +1,78 @@
-# Trading Management System (V2)
+# Trading Management System
 
-Advanced crypto trading scanner and management system with GPU-accelerated AI ranking.
+Advanced crypto trading scanner and management system with GPU-accelerated AI ranking and autonomous workflows.
 
-## New Features (Turbo-Scan)
+## Quick Start
 
-- **Multithreaded Scanner**: Fetches and computes data for 20+ pairs across 7 timeframes (5m to 1M) in ~3 seconds using nested `ThreadPoolExecutor`.
-- **Opportunity Ranking**: Automatically discovers the "Top 20" most interesting USDC pairs based on a weighted multi-factor score:
-  - 30% Volume (>1M USDC)
-  - 25% Volatility (ATR)
-  - 20% Momentum (RSI)
-  - 15% Trend Strength (ADX)
-  - 10% Recent Move
-- **GPU AI Ranking**: Integrates with local Ollama (NVIDIA GPU) to rank setups and provide technical reasoning.
-- **Enhanced Heatmap**: 3-EMA (20/50/200) trend stack with Price Confirmation and ADX Strength filters.
-- **Interactive UI**: Fully sortable and filterable quant table with detailed hover tooltips for every indicator.
+```bash
+# 1. Configure environment
+cp backend/.env.example backend/.env  # Add your Binance API keys
 
-## Tech Stack
+# 2. Launch services
+docker-compose up -d --build
 
-- **Backend**: FastAPI, TA-Lib (C-Library), Pydantic V2, APScheduler.
-- **Frontend**: React (Vite), TailwindCSS, Lucide-React.
-- **AI**: Ollama (Qwen 2.5 7B) with NVIDIA GPU Passthrough.
-- **Infrastructure**: Docker Compose with GPU reservation.
+# 3. Access the dashboard
+# Frontend: http://localhost:5173
+# Backend API: http://localhost:8001
+# API Documentation: http://localhost:8001/docs
+```
 
-## Installation
+## Key Features
 
-1. Ensure [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) is installed.
-2. Configure `.env` in `backend/` with `BINANCE_API_KEY` and `BINANCE_API_SECRET`.
-3. Launch:
-   ```bash
-   docker-compose up -d --build
-   ```
+- **🚀 Turbo-Scanner**: Multithreaded analysis of 20+ pairs across 7 timeframes in ~3 seconds
+- **🤖 AI Ranking**: Local Qwen 2.5 14B model identifies top trading setups with technical reasoning
+- **🛡️ Smart Trading**: Set-and-forget OCO orders with fee-aware clipping and automatic reconciliation
+- **⚡ Lead (Futures) Trading**: Leveraged positions with panic-sell and atomic rollback safety
+- **📊 Professional Dashboard**: Real-time charts, portfolio monitoring, and comprehensive trade history
 
-## Development History
-Successfully restructured from a monolithic backend to a service-oriented architecture (Market, Indicator, Scoring, Scanner, and LLM services).
+## Architecture
+
+```
+├── backend/           # FastAPI with SQLite, TA-Lib, Binance SDK
+├── frontend/          # React 19, TypeScript, TailwindCSS
+├── langgraph/         # Autonomous agent workflows
+└── ollama/            # GPU-accelerated Qwen 2.5 14B model
+```
+
+## Documentation
+
+- **[GEMINI.md](GEMINI.md)** - Complete project documentation, features, and workflows
+- **[WORKFLOWS.md](WORKFLOWS.md)** - Detailed application workflows and architecture
+- **API Docs**: Available at `http://localhost:8001/docs` when backend is running
+
+## Prerequisites
+
+1. **NVIDIA GPU** with [Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
+2. **Binance API Keys** with trading permissions
+3. **Docker & Docker Compose** (latest versions)
+
+## Development
+
+```bash
+# Backend development
+cd backend
+pip install -r requirements.txt
+python -m app.main
+
+# Frontend development  
+cd frontend
+npm install
+npm run dev
+```
+
+## Services
+
+| Service | Port | Description |
+|---------|------|-------------|
+| Frontend | 5173 | React dashboard UI |
+| Backend API | 8001 | FastAPI trading engine |
+| LangGraph | 2024 | Autonomous agent workflows |
+| Ollama | 11434 | Local LLM for AI ranking |
+
+## License
+
+MIT License - see [LICENSE](LICENSE) for details.
+
+---
+
+*Production Ready • April 2026 • [Detailed Documentation](GEMINI.md)*

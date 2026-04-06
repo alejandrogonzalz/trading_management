@@ -13,7 +13,8 @@ class Settings(BaseSettings):
     LEAD_API_KEY: str = (os.getenv("LEAD_API_KEY") or os.getenv("BINANCE_COPY_TRADING_KEY") or "").strip().strip("'").strip('"')
     LEAD_API_SECRET: str = (os.getenv("LEAD_API_SECRET") or os.getenv("BINANCE_COPY_TRADING_SECRET") or "").strip().strip("'").strip('"')
     
-    OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434")
+    OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+    LANGGRAPH_URL: str = os.getenv("LANGGRAPH_URL", "http://localhost:2024")
     LLM_MODEL: str = os.getenv("LLM_MODEL", "qwen2.5:14b")
     SCANNER_INTERVAL_MINUTES: int = 5
 

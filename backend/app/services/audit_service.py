@@ -1,11 +1,12 @@
 import time
 import json
 from typing import Any, Dict
-from app.db.database import audit_collection
+from app.db.database import db_session
+from app.db.models import AuditLog
 from pydantic import BaseModel
 
 def log_api_call(method: str, endpoint: str, request_data: Any, response_data: Any, status_code: int = 200):
-    """Logs an API interaction to MongoDB audit collection."""
+    """Logs an API interaction to SQLite audit collection."""
     
     # Robust serialization for SDK/Pydantic objects
     def serialize(obj):
@@ -14,38 +15,57 @@ def log_api_call(method: str, endpoint: str, request_data: Any, response_data: A
         if hasattr(obj, 'to_dict'):
             return obj.to_dict()
         if hasattr(obj, '__dict__'):
-            return obj.__dict__
+            try:
+                return json.loads(json.dumps(obj, default=lambda o: o.__dict__))
+            except:
+                return str(obj)
         return str(obj)
 
     try:
-        # Pre-process request and response to ensure they are BSON-serializable
+        # Pre-process request and response to ensure they are serializable
         serializable_req = request_data
         if not isinstance(request_data, (dict, list, str, int, float, bool, type(None))):
             serializable_req = serialize(request_data)
-        elif isinstance(request_data, dict):
-            serializable_req = {k: (serialize(v) if not isinstance(v, (dict, list, str, int, float, bool, type(None))) else v) for k, v in request_data.items()}
 
         serializable_res = response_data
         if not isinstance(response_data, (dict, list, str, int, float, bool, type(None))):
             serializable_res = serialize(response_data)
-        elif isinstance(response_data, dict):
-            serializable_res = {k: (serialize(v) if not isinstance(v, (dict, list, str, int, float, bool, type(None))) else v) for k, v in response_data.items()}
 
-        entry = {
-            "timestamp_str": time.strftime("%Y-%m-%d %H:%M:%S"),
-            "timestamp": time.time(),
-            "method": method,
-            "endpoint": endpoint,
-            "request": serializable_req,
-            "response": serializable_res,
-            "status": status_code
-        }
+        entry = AuditLog(
+            timestamp_str=time.strftime("%Y-%m-%d %H:%M:%S"),
+            timestamp=time.time(),
+            method=method,
+            endpoint=endpoint,
+            request=serializable_req,
+            response=serializable_res,
+            status=status_code
+        )
         
-        audit_collection.insert_one(entry)
+        db_session.add(entry)
+        db_session.commit()
     except Exception as e:
-        print(f"FAILED TO AUDIT TO MONGO: {e}")
+        db_session.rollback()
+        print(f"FAILED TO AUDIT TO SQLITE: {e}")
+    finally:
+        db_session.remove()
 
 def get_recent_logs(limit: int = 100):
-    """Retrieves most recent logs from MongoDB."""
-    cursor = audit_collection.find({}).sort("timestamp", -1).limit(limit)
-    return list(cursor)
+    """Retrieves most recent logs from SQLite."""
+    try:
+        logs = db_session.query(AuditLog).order_by(AuditLog.timestamp.desc()).limit(limit).all()
+        # Convert to dict for API compatibility
+        result = []
+        for log in logs:
+            result.append({
+                "id": log.id,
+                "timestamp_str": log.timestamp_str,
+                "timestamp": log.timestamp,
+                "method": log.method,
+                "endpoint": log.endpoint,
+                "request": log.request,
+                "response": log.response,
+                "status": log.status
+            })
+        return result
+    finally:
+        db_session.remove()

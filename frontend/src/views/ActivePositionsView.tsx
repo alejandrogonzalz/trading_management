@@ -1,146 +1,8 @@
-import { useMemo, useState, useEffect } from 'react';
-import { LayoutDashboard, ShieldAlert, XCircle, ExternalLink, Activity, TrendingUp, TrendingDown, Shield, Zap, AlertTriangle, History as HistoryIcon, ArrowUpRight, ArrowDownRight, Wallet, Target as TargetIcon, ShieldCheck, Info } from 'lucide-react';
+﻿import { useMemo, useState, useEffect } from 'react';
+import { Activity, XCircle, TrendingUp, Zap, ArrowUpRight, ArrowDownRight, ShieldCheck, Target, AlertCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8001';
-
-const LeadPositionCard = ({ position, onSelectSymbol }) => {
-    const [isClosing, setIsClosing] = useState(false);
-    const navigate = useNavigate();
-
-    const symbol = position.symbol;
-    const amount = parseFloat(position.positionAmt); // Changed from position_amt
-    const entryPrice = parseFloat(position.entryPrice); // Changed from entry_price
-    const markPrice = parseFloat(position.markPrice); // Changed from mark_price
-    const liqPrice = parseFloat(position.liquidationPrice); // Changed from liquidation_price
-    const leverage = parseInt(position.leverage);
-    const side = amount > 0 ? 'LONG' : 'SHORT';
-    const unrealizedProfit = parseFloat(position.unRealizedProfit); // Changed from un_realized_profit
-    
-    const margin = Math.abs(amount * entryPrice) / leverage;
-    const roe = (unrealizedProfit / margin) * 100;
-
-    const handleSymbolClick = () => {
-        onSelectSymbol(symbol);
-        navigate('/');
-    };
-
-    const handleClose = async () => {
-        if (!window.confirm(`Close ${side} position for ${symbol}?`)) return;
-        setIsClosing(true);
-        try {
-            const res = await fetch(`${API_BASE}/lead/close-position`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ symbol, quantity: Math.abs(amount) })
-            });
-            if (!res.ok) alert("Failed to close position");
-        } catch (e) {
-            console.error(e);
-        } finally {
-            setIsClosing(false);
-        }
-    };
-
-    const getProgress = () => {
-        if (liqPrice === 0) return 50;
-        const totalRange = Math.abs(entryPrice - liqPrice);
-        const currentDiff = Math.abs(markPrice - liqPrice);
-        return Math.min(Math.max((currentDiff / totalRange) * 100, 0), 100);
-    };
-
-    const progress = getProgress();
-
-    return (
-        <div className="bg-slate-950 rounded-2xl border border-slate-800 shadow-2xl overflow-hidden hover:border-orange-500/30 transition-all group w-full mb-4">
-            <div className="flex flex-col xl:flex-row">
-                <div className="p-5 flex flex-col justify-center border-b xl:border-b-0 xl:border-r border-slate-800 min-w-[220px] bg-orange-900/5">
-                    <div className="flex items-center gap-3 mb-2">
-                        <div className="p-2 bg-orange-600/10 rounded-lg">
-                            <Activity size={18} className="text-orange-400" />
-                        </div>
-                        <button 
-                            onClick={handleSymbolClick}
-                            className="text-lg font-black text-white tracking-tighter uppercase hover:text-orange-400 transition-colors hover:underline"
-                        >
-                            {symbol}
-                        </button>
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <span className={`text-[9px] font-black px-2 py-0.5 rounded ${side === 'LONG' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
-                            {side} {leverage}x
-                        </span>
-                        <span className="text-[9px] text-slate-600 font-bold font-mono">Size: {Math.abs(amount).toFixed(3)}</span>
-                    </div>
-                </div>
-                <div className="flex-1 p-6 flex flex-col justify-center space-y-8">
-                    <div className="relative pt-2">
-                        <div className="h-1.5 w-full bg-slate-900 rounded-full overflow-hidden border border-slate-800/50 relative">
-                            <div 
-                                className={`absolute h-full transition-all duration-1000 ${roe >= 0 ? 'bg-emerald-500' : 'bg-rose-500'}`}
-                                style={{ 
-                                    left: side === 'LONG' ? '0%' : `${progress}%`, 
-                                    width: side === 'LONG' ? `${progress}%` : `${100-progress}%`,
-                                    opacity: 0.3
-                                }}
-                            ></div>
-                        </div>
-                        <div className="absolute top-[-12px] w-full text-[8px] font-black uppercase tracking-tighter text-slate-600">
-                            <span className="absolute left-0 text-rose-500">Liquidation: ${liqPrice.toFixed(2)}</span>
-                            <span className="absolute right-0 text-emerald-500">Entry: ${entryPrice.toFixed(2)}</span>
-                        </div>
-                        <div 
-                            className="absolute top-[-2px] transition-all duration-1000 flex flex-col items-center z-10"
-                            style={{ left: `${progress}%`, transform: 'translateX(-50%)' }}
-                        >
-                            <div className={`w-2.5 h-2.5 rounded-full border-2 border-slate-950 shadow-xl mb-1 ${roe >= 0 ? 'bg-emerald-400' : 'bg-rose-400'}`}></div>
-                            <span className="text-[10px] font-black text-white bg-slate-800 px-2 py-0.5 rounded border border-slate-700 shadow-2xl whitespace-nowrap">
-                                Mark: ${markPrice.toFixed(2)}
-                            </span>
-                        </div>
-                    </div>
-                    <div className="grid grid-cols-3 gap-6 text-center">
-                        <div className="flex flex-col">
-                            <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Margin</span>
-                            <span className="text-sm font-mono font-bold text-slate-400">${margin.toFixed(2)}</span>
-                        </div>
-                        <div className="flex flex-col">
-                            <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Notional</span>
-                            <span className="text-sm font-mono font-bold text-slate-200">${Math.abs(amount * markPrice).toFixed(2)}</span>
-                        </div>
-                        <div className="flex flex-col">
-                            <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Liq. Distance</span>
-                            <span className="text-sm font-mono font-bold text-rose-400/70">{Math.abs((markPrice - liqPrice) / markPrice * 100).toFixed(2)}%</span>
-                        </div>
-                    </div>
-                </div>
-                <div className="p-5 flex flex-col xl:flex-row items-center gap-6 border-t xl:border-t-0 xl:border-l border-slate-800 bg-slate-900/10 min-w-[320px]">
-                    <div className="text-right flex-1 w-full xl:w-auto">
-                        <p className={`text-3xl font-black font-mono tracking-tighter ${roe >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                            {roe >= 0 ? '+' : ''}{roe.toFixed(2)}%
-                        </p>
-                        <div className="flex items-center justify-end gap-2 mt-1">
-                            <span className="text-[10px] text-slate-500 font-black uppercase tracking-widest">Unrealized:</span>
-                            <span className={`text-lg font-mono font-black ${unrealizedProfit >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
-                                {unrealizedProfit >= 0 ? '+' : ''}${unrealizedProfit.toFixed(2)}
-                            </span>
-                        </div>
-                    </div>
-                    <div className="flex gap-2 w-full xl:w-auto">
-                        <button 
-                            onClick={handleClose}
-                            disabled={isClosing}
-                            className={`flex-1 xl:flex-none px-6 py-2.5 rounded-xl font-black uppercase tracking-widest text-[10px] transition-all flex items-center justify-center gap-2 ${isClosing ? 'bg-slate-800 text-slate-500' : 'bg-orange-600/10 hover:bg-orange-600 text-orange-500 hover:text-white border border-orange-500/20 hover:border-orange-600'}`}
-                        >
-                            {isClosing ? <div className="w-3 h-3 border-2 border-slate-600 border-t-orange-400 rounded-full animate-spin"></div> : <XCircle size={14} />}
-                            Market Close
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
-};
 
 const SmartTradeCard = ({ trade, onCancel, currentPrice, onSelectSymbol, leadPositions }) => {
     const [isClosing, setIsClosing] = useState(false);
@@ -151,29 +13,55 @@ const SmartTradeCard = ({ trade, onCancel, currentPrice, onSelectSymbol, leadPos
         navigate('/');
     };
     
+    // Futures identification
+    const leverage = trade.smart_meta?.leverage || trade.leverage;
+    const isFutures = !!leverage;
+    
     const livePos = leadPositions?.find(p => p.symbol === trade.symbol);
-    // 1. Try live position (Source of Truth)
-    // 2. Try entry_price directly on the trade object (populated by backend)
-    // 3. Fallback to smart_meta or order price
-    const entryPrice = livePos ? parseFloat(livePos.entry_price) : 
+    
+    // Metrics
+    const entryPrice = livePos ? parseFloat(livePos.entryPrice) : 
                        (parseFloat(trade.entry_price) || parseFloat(trade.smart_meta?.entry_price) || parseFloat(trade.price) || 0);
                        
-    const quantity = livePos ? Math.abs(parseFloat(livePos.position_amt)) : 
+    const quantity = livePos ? Math.abs(parseFloat(livePos.positionAmt)) : 
                      (parseFloat(trade.origQty) || trade.smart_meta?.quantity || 0);
+
+    const liqPrice = livePos ? parseFloat(livePos.liquidationPrice) : 0;
+    const markPrice = livePos ? parseFloat(livePos.markPrice) : currentPrice;
+    const unrealizedProfit = livePos ? parseFloat(livePos.unRealizedProfit) : null;
 
     const tradeSide = trade.smart_meta?.side || trade.side;
     const tpPrice = Number(trade.smart_meta?.tp || trade.tp) || 0;
     const slPrice = Number(trade.smart_meta?.sl || trade.sl) || 0;
+    const needsProtection = trade.needs_protection === true;
+    
+    // For progress bar when TP/SL are missing (raw position)
+    const isRawPosition = !tpPrice && !slPrice;
+    
     const isSyncing = !currentPrice || currentPrice === 0;
 
-    const grossProfit = entryPrice > 0 ? (currentPrice - entryPrice) * quantity * (tradeSide === 'BUY' ? 1 : -1) : 0;
+    // P&L Logic
+    let netProfit, netPnlPercent;
     
-    // Use stored entry fees and estimated exit fee (or 0 if not captured)
-    const entryFees = trade.smart_meta?.entry_fees || 0;
-    const estExitFee = Math.abs(grossProfit + (entryPrice * quantity)) * 0.001; 
-    
-    const netProfit = grossProfit - entryFees - estExitFee;
-    const netPnlPercent = (quantity * entryPrice) > 0 ? (netProfit / (quantity * entryPrice) * 100) : 0;
+    if (isFutures && unrealizedProfit !== null) {
+        // Use live futures data if available
+        netProfit = unrealizedProfit;
+        const margin = (quantity * entryPrice) / (leverage || 1);
+        netPnlPercent = margin > 0 ? (netProfit / margin) * 100 : 0;
+    } else {
+        // Fallback to manual calculation
+        const grossProfit = entryPrice > 0 ? (currentPrice - entryPrice) * quantity * (tradeSide === 'BUY' || tradeSide === 'LONG' ? 1 : -1) : 0;
+        const entryFees = trade.smart_meta?.entry_fees || 0;
+        const estExitFee = Math.abs(grossProfit + (entryPrice * quantity)) * 0.001; 
+        netProfit = grossProfit - entryFees - estExitFee;
+        
+        if (isFutures) {
+            const margin = (quantity * entryPrice) / (leverage || 1);
+            netPnlPercent = margin > 0 ? (netProfit / margin) * 100 : 0;
+        } else {
+            netPnlPercent = (quantity * entryPrice) > 0 ? (netProfit / (quantity * entryPrice) * 100) : 0;
+        }
+    }
     
     const getPos = (price, tp, sl) => {
         if (!price || !tp || !sl || tp === sl) return 50;
@@ -183,39 +71,112 @@ const SmartTradeCard = ({ trade, onCancel, currentPrice, onSelectSymbol, leadPos
         return Math.min(Math.max(pos, 0), 100);
     };
 
-    const entryMarkerPos = getPos(entryPrice, tpPrice, slPrice);
-    const currentMarkerPos = isSyncing ? entryMarkerPos : getPos(currentPrice, tpPrice, slPrice);
+    // Enhanced position calculation for raw futures positions
+    const getRawPosition = (currentPrice, entryPrice, liqPrice, side) => {
+        if (!liqPrice || !entryPrice || entryPrice === liqPrice) return 50;
+        
+        const isLong = side === 'BUY';
+        let minPrice, maxPrice;
+        
+        if (isLong) {
+            // LONG: liquidation is below entry, profit is above entry
+            // We show from liquidation (0%) to entry + (entry - liq) (100%)
+            // Entry is at 50%
+            minPrice = liqPrice;
+            maxPrice = entryPrice + (entryPrice - liqPrice); // Symmetrical range
+            if (currentPrice < minPrice) return 0;
+            if (currentPrice > maxPrice) return 100;
+            const range = maxPrice - minPrice;
+            return ((currentPrice - minPrice) / range) * 100;
+        } else {
+            // SHORT: liquidation is above entry, profit is below entry  
+            // We show from entry - (liq - entry) (0%) to liquidation (100%)
+            // Entry is at 50%
+            maxPrice = liqPrice;
+            minPrice = entryPrice - (liqPrice - entryPrice); // Symmetrical range
+            if (currentPrice < minPrice) return 100; // Beyond profit range (far left)
+            if (currentPrice > maxPrice) return 0;   // Beyond liquidation (far right)
+            const range = maxPrice - minPrice;
+            return ((maxPrice - currentPrice) / range) * 100; // Invert: profit is left
+        }
+    };
+
+    const getRawEntryPosition = (entryPrice, liqPrice, side) => {
+        if (!liqPrice || !entryPrice || entryPrice === liqPrice) return 50;
+        const isLong = side === 'BUY';
+        
+        if (isLong) {
+            const minPrice = liqPrice;
+            const maxPrice = entryPrice + (entryPrice - liqPrice);
+            const range = maxPrice - minPrice;
+            return ((entryPrice - minPrice) / range) * 100;
+        } else {
+            const maxPrice = liqPrice;
+            const minPrice = entryPrice - (liqPrice - entryPrice);
+            const range = maxPrice - minPrice;
+            return ((maxPrice - entryPrice) / range) * 100;
+        }
+    };
+
+    // For Raw Positions, use enhanced visualization
+    const entryMarkerPos = isRawPosition ? 
+        (liqPrice > 0 ? getRawEntryPosition(entryPrice, liqPrice, tradeSide) : 50) : 
+        getPos(entryPrice, tpPrice, slPrice);
+        
+    const currentMarkerPos = isSyncing ? entryMarkerPos : (
+        isRawPosition ? 
+            (liqPrice > 0 ? getRawPosition(markPrice, entryPrice, liqPrice, tradeSide) : 50) : 
+            getPos(currentPrice, tpPrice, slPrice)
+    );
 
     const fmt = (val) => Number(val).toLocaleString(undefined, { minimumFractionDigits: val < 1 ? 6 : 2, maximumFractionDigits: val < 1 ? 8 : 2 });
 
+    const theme = isFutures ? {
+        border: 'hover:border-orange-500/30',
+        icon: 'text-orange-400',
+        iconBg: 'bg-orange-600/10'
+    } : {
+        border: 'hover:border-blue-500/30',
+        icon: 'text-blue-400',
+        iconBg: 'bg-blue-600/10'
+    };
+
     return (
-        <div className="bg-slate-950 rounded-2xl border border-slate-800 shadow-2xl overflow-hidden hover:border-blue-500/30 transition-all group w-full mb-4">
+        <div className={`bg-slate-950 rounded-2xl border border-slate-800 shadow-2xl overflow-hidden ${theme.border} transition-all group w-full mb-4`}>
             <div className="flex flex-col xl:flex-row">
+                {/* Symbol Section */}
                 <div className="p-5 flex flex-col justify-center border-b xl:border-b-0 xl:border-r border-slate-800 min-w-[220px] bg-slate-900/20">
                     <div className="flex items-center gap-3 mb-2">
-                        <div className="p-2 bg-blue-600/10 rounded-lg">
-                            <Activity size={18} className="text-blue-400" />
+                        <div className={`p-2 ${theme.iconBg} rounded-lg`}>
+                            <Activity size={18} className={theme.icon} />
                         </div>
                         <button 
                             onClick={handleSymbolClick}
-                            className="text-lg font-black text-white tracking-tighter uppercase hover:text-blue-400 transition-colors hover:underline"
+                            className={`text-lg font-black text-white tracking-tighter uppercase hover:${theme.icon} transition-colors hover:underline`}
                         >
                             {trade.symbol}
                         </button>
                     </div>
                     <div className="flex items-center gap-2">
-                        <span className={`text-[9px] font-black px-2 py-0.5 rounded ${tradeSide === 'BUY' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
-                            {tradeSide === 'BUY' ? 'LONG' : 'SHORT'}
+                        <span className={`text-[9px] font-black px-2 py-0.5 rounded ${tradeSide === "BUY" || tradeSide === "LONG" ? "bg-emerald-500/10 text-emerald-400" : "bg-rose-500/10 text-rose-400"}`}>
+                            {tradeSide === "BUY" || tradeSide === "LONG" ? "LONG" : "SHORT"} {isFutures ? `${leverage}x` : ""}
                         </span>
-                        <span className="text-[9px] text-slate-600 font-bold font-mono">{trade.clientOrderId}</span>
+                        <span className="text-[9px] text-slate-600 font-bold font-mono">{isRawPosition ? "RAW POSITION" : (isFutures ? "SMART LEAD" : "SMART SPOT")}</span>
+                        {needsProtection && (
+                            <span className="text-[9px] font-black px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 flex items-center gap-1">
+                                <AlertCircle size={9} />
+                                Needs Protection
+                            </span>
+                        )}
                     </div>
                 </div>
 
+                {/* Progress Visualizer */}
                 <div className="flex-1 p-6 flex flex-col justify-center space-y-8">
                     <div className="relative pt-2">
                         <div className="h-1.5 w-full bg-slate-900 rounded-full overflow-hidden border border-slate-800/50 relative">
                             <div 
-                                className={`absolute h-full transition-all duration-1000 ${netPnlPercent >= 0 ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]' : 'bg-rose-500 shadow-[0_0_10px_rgba(244,63,94,0.5)]'}`}
+                                className={`absolute h-full transition-all duration-1000 ${netProfit >= 0 ? 'bg-emerald-500' : 'bg-rose-500'}`}
                                 style={{ 
                                     left: `${Math.min(entryMarkerPos, currentMarkerPos)}%`, 
                                     width: `${Math.abs(currentMarkerPos - entryMarkerPos)}%` 
@@ -223,9 +184,18 @@ const SmartTradeCard = ({ trade, onCancel, currentPrice, onSelectSymbol, leadPos
                             ></div>
                         </div>
                         <div className="absolute top-[-12px] w-full text-[8px] font-black uppercase tracking-tighter text-slate-600">
-                            <span className="absolute left-0 text-rose-500">Stop Loss</span>
-                            <span className="absolute" style={{ left: `${entryMarkerPos}%`, transform: 'translateX(-50%)' }}>Entry</span>
-                            <span className="absolute right-0 text-emerald-500">Take Profit</span>
+                            {isRawPosition ? (
+                                <>
+                                    <span className="absolute left-0 text-rose-500">Liquidation</span>
+                                    <span className="absolute right-0 text-emerald-500">Entry</span>
+                                </>
+                            ) : (
+                                <>
+                                    <span className="absolute left-0 text-rose-500">Stop Loss</span>
+                                    <span className="absolute" style={{ left: `${entryMarkerPos}%`, transform: 'translateX(-50%)' }}>Entry</span>
+                                    <span className="absolute right-0 text-emerald-500">Take Profit</span>
+                                </>
+                            )}
                         </div>
                         <div 
                             className={`absolute top-[-2px] transition-all duration-1000 flex flex-col items-center z-10 ${isSyncing ? 'animate-pulse opacity-50' : ''}`}
@@ -237,22 +207,35 @@ const SmartTradeCard = ({ trade, onCancel, currentPrice, onSelectSymbol, leadPos
                             </span>
                         </div>
                     </div>
-                    <div className="grid grid-cols-3 gap-6 text-center">
+                    
+                    {/* Metrics Grid - Consistent 3-column layout like Spot trades */}
+                    <div className="grid grid-cols-3 gap-4 text-center">
                         <div className="flex flex-col">
                             <span className="text-[10px] font-black text-rose-500/50 uppercase tracking-widest mb-1">SL Level</span>
-                            <span className="text-sm font-mono font-bold text-slate-400">${fmt(slPrice)}</span>
+                            <span className="text-sm font-mono font-bold text-slate-400">
+                                {slPrice > 0 ? `$${fmt(slPrice)}` : (isFutures && liqPrice > 0 ? `$${fmt(liqPrice)}` : 'N/A')}
+                                {isFutures && liqPrice > 0 && slPrice <= 0 && (
+                                    <span className="text-[8px] text-slate-500 block">Liquidation</span>
+                                )}
+                            </span>
                         </div>
-                        <div className="flex flex-col">
+                        <div className="flex flex-col border-x border-slate-800/50">
                             <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Avg Entry</span>
                             <span className="text-sm font-mono font-bold text-slate-200">${fmt(entryPrice)}</span>
                         </div>
                         <div className="flex flex-col">
                             <span className="text-[10px] font-black text-emerald-500/50 uppercase tracking-widest mb-1">TP Target</span>
-                            <span className="text-sm font-mono font-bold text-slate-400">${fmt(tpPrice)}</span>
+                            <span className="text-sm font-mono font-bold text-slate-400">
+                                {tpPrice > 0 ? `$${fmt(tpPrice)}` : 'N/A'}
+                                {isFutures && tpPrice <= 0 && !isRawPosition && (
+                                    <span className="text-[8px] text-slate-500 block">No TP set</span>
+                                )}
+                            </span>
                         </div>
                     </div>
                 </div>
 
+                {/* Action Section */}
                 <div className="p-5 flex flex-col xl:flex-row items-center gap-6 border-t xl:border-t-0 xl:border-l border-slate-800 bg-slate-900/10 min-w-[320px]">
                     <div className="text-right flex-1 w-full xl:w-auto">
                         {isSyncing ? (
@@ -262,24 +245,21 @@ const SmartTradeCard = ({ trade, onCancel, currentPrice, onSelectSymbol, leadPos
                             </div>
                         ) : (
                             <>
-                                <p className={`text-3xl font-black font-mono tracking-tighter ${netPnlPercent >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                                    {netPnlPercent >= 0 ? '+' : ''}{netPnlPercent.toFixed(2)}%
+                                <p className={`text-3xl font-black font-mono tracking-tighter ${netProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                    {netProfit >= 0 ? '+' : ''}{netPnlPercent.toFixed(2)}%
                                 </p>
                                 <div className="flex items-center justify-end gap-2 mt-1">
                                     <span className="text-[10px] text-slate-500 font-black uppercase tracking-widest">Net Profit:</span>
                                     <span className={`text-lg font-mono font-black ${netProfit >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
-                                        ${netProfit.toFixed(2)}
+                                        {netProfit >= 0 ? '+' : ''}${netProfit.toFixed(2)}
                                     </span>
                                 </div>
                             </>
                         )}
                     </div>
                     <div className="flex gap-2 w-full xl:w-auto">
-                        <button className="p-3 bg-slate-800 hover:bg-slate-700 text-blue-400 rounded-xl transition-all" title="Break-Even">
-                            <Zap size={16} />
-                        </button>
                         <button 
-                            onClick={async () => { setIsClosing(true); await onCancel(trade.orderId, trade.symbol, trade); setIsClosing(false); }}
+                            onClick={async () => { setIsClosing(true); await onCancel(trade.orderId || trade.id, trade.symbol, trade); setIsClosing(false); }}
                             disabled={isClosing}
                             className={`flex-1 xl:flex-none px-6 py-2.5 rounded-xl font-black uppercase tracking-widest text-[10px] transition-all flex items-center justify-center gap-2 ${isClosing ? 'bg-slate-800 text-slate-500' : 'bg-rose-600/10 hover:bg-rose-600 text-rose-500 hover:text-white border border-rose-500/20 hover:border-rose-600'}`}
                         >
@@ -326,12 +306,11 @@ const SmartHistoryTable = ({ history, onSelectSymbol, mode }) => {
                 <tbody className="font-mono text-xs text-slate-300">
                     {history.length > 0 ? history.map(h => {
                         if (isLead) {
-                            const pnl = ((h.exit_price - h.entry_price) / h.entry_price * 100 * (h.side === 'BUY' ? 1 : -1));
+                            const pnl = ((h.exit_price - h.entry_price) / h.entry_price * 100 * (h.side === 'BUY' || h.side === 'LONG' ? 1 : -1));
                             const grossPnl = pnl * (h.leverage || 1);
                             
-                            const exitFees = h.exit_fees || 0; 
+                            const totalFees = h.exit_fees || 0; 
                             const feeAsset = h.exit_fee_asset || 'USDT';
-                            const totalFees = exitFees; 
                             
                             const initialMargin = (h.quantity * h.entry_price) / (h.leverage || 1);
                             const grossProfitVal = (initialMargin * (grossPnl / 100));
@@ -347,8 +326,8 @@ const SmartHistoryTable = ({ history, onSelectSymbol, mode }) => {
                                     </td>
                                     <td className="p-6 text-center">
                                         <div className="flex flex-col items-center gap-1">
-                                            <span className={`px-2 py-0.5 rounded text-[10px] font-black ${h.side === 'BUY' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
-                                                {h.side === 'BUY' ? 'LONG' : 'SHORT'}
+                                            <span className={`px-2 py-0.5 rounded text-[10px] font-black ${h.side === 'BUY' || h.side === 'LONG' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
+                                                {h.side === 'BUY' || h.side === 'LONG' ? 'LONG' : 'SHORT'}
                                             </span>
                                             <span className="text-[9px] text-orange-400 font-bold">{h.leverage}x</span>
                                         </div>
@@ -370,14 +349,14 @@ const SmartHistoryTable = ({ history, onSelectSymbol, mode }) => {
                                         </div>
                                     </td>
                                     <td className="p-6 text-center text-slate-500 text-[10px]">
-                                        {new Date(h.timestamp * 1000).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
+                                        {new Date((h.timestamp || h.time/1000) * 1000).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
                                     </td>
                                     <td className="p-6 text-center text-slate-500 text-[10px]">
-                                        {new Date(h.close_time * 1000).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
+                                        {new Date((h.close_time || h.time) * (h.close_time < 10000000000 ? 1000 : 1)).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
                                     </td>
                                     <td className="p-6 text-center">
                                         <span className="bg-slate-900 px-2 py-1 rounded text-[10px] font-bold text-slate-400">
-                                            {getDuration(h.timestamp, h.close_time)}
+                                            {getDuration(h.timestamp || h.time/1000, (h.close_time < 10000000000 ? h.close_time : h.close_time/1000))}
                                         </span>
                                     </td>
                                 </tr>
@@ -454,8 +433,8 @@ const ActivePositionsView = ({ openOrders, handleCancelOrder, onSelectSymbol, tr
         
         const historyWithNet = smartHistory.map(h => {
             if (isLead) {
-                const pnl = ((h.exit_price - h.entry_price) / h.entry_price * (h.side === 'BUY' ? 1 : -1));
-                const netProfit = pnl * (h.quantity * h.entry_price) * (h.leverage || 1);
+                const pnl = ((h.exit_price - h.entry_price) / h.entry_price * (h.side === 'BUY' || h.side === 'LONG' ? 1 : -1));
+                const netProfit = pnl * (h.quantity * h.entry_price) * (h.leverage || 1) - (h.exit_fees || 0);
                 const netPnlPercent = pnl * 100 * (h.leverage || 1);
                 return { netProfit, netPnlPercent };
             }
@@ -491,32 +470,30 @@ const ActivePositionsView = ({ openOrders, handleCancelOrder, onSelectSymbol, tr
 
     const leadSmartTrades = useMemo(() => {
         if (!isLead) return [];
-        // Lead smart trades in MongoDB/FuturesService start with LEAD_
-        const rawTrades = openOrders.filter(o => 
-            (o as any).smart_meta && 
-            (o.orderId?.toString().startsWith('LEAD_') || o.clientOrderId?.startsWith('LEAD_'))
+        // Lead smart trades have leverage in smart_meta or ID starts with LEAD_
+        return openOrders.filter(o => 
+            (o as any).smart_meta?.leverage || 
+            o.orderId?.toString().startsWith('LEAD_') || 
+            o.clientOrderId?.startsWith('LEAD_')
         );
-
-        // Sync with live position data if available
-        return rawTrades.map(trade => {
-            const livePos = leadPositions.find(p => p.symbol === trade.symbol);
-            if (livePos) {
-                // Clone and override quantity/price with live reality
-                const updatedMeta = { ...trade.smart_meta, quantity: Math.abs(parseFloat(livePos.position_amt)), entry_price: parseFloat(livePos.entry_price) };
-                return { 
-                    ...trade, 
-                    origQty: Math.abs(parseFloat(livePos.position_amt)), 
-                    price: parseFloat(livePos.entry_price),
-                    smart_meta: updatedMeta 
-                };
-            }
-            return trade;
-        });
-    }, [openOrders, isLead, leadPositions]);
+    }, [openOrders, isLead]);
 
     const leadRawPositions = useMemo(() => {
         if (!isLead) return [];
-        return leadPositions.filter(p => !leadSmartTrades.some(t => t.symbol === p.symbol));
+        // Only show raw positions that aren't already covered by a Smart Trade
+        // We map them to look like trades so they can use SmartTradeCard
+        return leadPositions
+            .filter(p => !leadSmartTrades.some(t => t.symbol === p.symbol))
+            .map(p => ({
+                id: `POS_${p.symbol}`,
+                orderId: `POS_${p.symbol}`,
+                symbol: p.symbol,
+                side: parseFloat(p.positionAmt) > 0 ? 'LONG' : 'SHORT',
+                leverage: parseInt(p.leverage),
+                entry_price: parseFloat(p.entryPrice),
+                origQty: Math.abs(parseFloat(p.positionAmt)),
+                type: 'POSITION'
+            }));
     }, [leadPositions, leadSmartTrades, isLead]);
 
     const spotSmartTrades = useMemo(() => {
@@ -524,10 +501,7 @@ const ActivePositionsView = ({ openOrders, handleCancelOrder, onSelectSymbol, tr
         const tradesMap = new Map();
         openOrders.forEach(o => {
             const smartMeta = (o as any).smart_meta;
-            // Spot smart trades start with SMART_ or LIST_SMART_ and NOT LEAD_
-            const isSpotSmart = smartMeta && 
-                !o.orderId?.toString().startsWith('LEAD_') && 
-                !o.clientOrderId?.startsWith('LEAD_');
+            const isSpotSmart = smartMeta && !smartMeta.leverage;
 
             if (isSpotSmart) {
                 let masterId = null;
@@ -541,7 +515,7 @@ const ActivePositionsView = ({ openOrders, handleCancelOrder, onSelectSymbol, tr
     }, [openOrders, isLead]);
 
     useEffect(() => {
-        const setups = isLead ? leadSmartTrades : spotSmartTrades;
+        const setups = isLead ? [...leadSmartTrades, ...leadRawPositions] : spotSmartTrades;
         if (setups.length === 0) return;
 
         const fetchPrices = async () => {
@@ -557,12 +531,12 @@ const ActivePositionsView = ({ openOrders, handleCancelOrder, onSelectSymbol, tr
         fetchPrices();
         const interval = setInterval(fetchPrices, 3000);
         return () => clearInterval(interval);
-    }, [leadSmartTrades, spotSmartTrades, isLead]);
+    }, [leadSmartTrades, leadRawPositions, spotSmartTrades, isLead]);
 
     const onCancelClick = async (orderId: any, symbol: string, trade?: any) => {
-        const isLeadTrade = isLead || orderId.toString().startsWith('LEAD_') || (trade as any)?.smart_meta?.leverage;
+        const isLeadTrade = isLead || orderId.toString().startsWith('LEAD_') || (trade as any)?.smart_meta?.leverage || (trade as any)?.leverage;
 
-        if (orderId.toString().startsWith('POS_') || trade?.smart_meta) {
+        if (orderId.toString().startsWith('POS_') || trade?.smart_meta || trade?.type === 'POSITION') {
             const qty = trade?.origQty || trade?.smart_meta?.quantity || 0;
             if (window.confirm(`Market Sell the ${qty} ${symbol}?`)) {
                 try {
@@ -648,14 +622,11 @@ const ActivePositionsView = ({ openOrders, handleCancelOrder, onSelectSymbol, tr
                 <div className="max-w-[1400px] w-full pb-12">
                     {activeTab === 'active' ? (
                         <div className="flex flex-col gap-4 w-full">
-                            {isLead && leadSmartTrades.map(trade => (
-                                <SmartTradeCard key={trade.orderId} trade={trade} onCancel={onCancelClick} currentPrice={prices[trade.symbol] || 0} onSelectSymbol={onSelectSymbol} leadPositions={leadPositions} />
-                            ))}
-                            {isLead && leadRawPositions.map(pos => (
-                                <LeadPositionCard key={pos.symbol} position={pos} onSelectSymbol={onSelectSymbol} />
+                            {isLead && [...leadSmartTrades, ...leadRawPositions].map(trade => (
+                                <SmartTradeCard key={trade.orderId || trade.id} trade={trade} onCancel={onCancelClick} currentPrice={prices[trade.symbol] || 0} onSelectSymbol={onSelectSymbol} leadPositions={leadPositions} />
                             ))}
                             {!isLead && spotSmartTrades.map(trade => (
-                                <SmartTradeCard key={trade.orderId} trade={trade} onCancel={onCancelClick} currentPrice={prices[trade.symbol] || 0} onSelectSymbol={onSelectSymbol} />
+                                <SmartTradeCard key={trade.orderId || trade.id} trade={trade} onCancel={onCancelClick} currentPrice={prices[trade.symbol] || 0} onSelectSymbol={onSelectSymbol} />
                             ))}
 
                             {isLead && leadSmartTrades.length === 0 && leadRawPositions.length === 0 && (

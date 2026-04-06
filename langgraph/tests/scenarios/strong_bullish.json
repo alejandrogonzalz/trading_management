@@ -1,0 +1,13 @@
+{
+    "symbol": "BTCUSDT",
+    "mode": "FUTURES",
+    "indicators": {
+        "1M": { "price": 65000, "heatmap": "STRONG_BULLISH", "structure": "BULLISH", "rsi": 62, "adx": 35, "atr_ratio": 1.0 },
+        "1w": { "price": 65000, "heatmap": "STRONG_BULLISH", "structure": "BULLISH", "rsi": 65, "adx": 38, "atr_ratio": 1.0 },
+        "1d": { "price": 65000, "heatmap": "BULLISH", "structure": "BREAKOUT", "rsi": 68, "adx": 42, "atr_ratio": 1.1 },
+        "4h": { "price": 65000, "heatmap": "BULLISH", "structure": "BULLISH", "rsi": 58, "adx": 30, "atr_ratio": 1.0 },
+        "1h": { "price": 65000, "heatmap": "BULLISH", "structure": "BULLISH", "rsi": 55, "adx": 28, "atr_ratio": 1.0 },
+        "15m": { "price": 65000, "heatmap": "NEUTRAL", "structure": "RANGE", "rsi": 52, "adx": 22, "atr_ratio": 1.0 },
+        "5m": { "price": 65000, "heatmap": "NEUTRAL", "structure": "RANGE", "rsi": 48, "adx": 20, "atr_ratio": 1.0 }
+    }
+}

@@ -9,7 +9,7 @@ TA-Lib
 APScheduler
 pandas
 numpy
-motor
-pymongo
+sqlalchemy
 binance-sdk-copy-trading
 binance-sdk-derivatives-trading-usds-futures
+pymongo  # For maintenance scripts only (legacy MongoDB tools)

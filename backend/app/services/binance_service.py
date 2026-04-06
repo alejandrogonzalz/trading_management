@@ -98,6 +98,8 @@ def reconcile_trades():
     try:
         sync_binance_time()
         all_meta = trade_tracker._load_trades()
+        # We only reconcile ACTIVE trades. 
+        # MANUAL_CONTROL trades need manual intervention or a script to force close.
         active_trades = {tid: m for tid, m in all_meta.items() if m.get('status') == 'ACTIVE'}
         if not active_trades: return
         
@@ -109,35 +111,67 @@ def reconcile_trades():
             strategy_legs = [o for o in meta.get('orders', []) if o['role'] in ['TP', 'SL']]
             if not strategy_legs: continue
             
+            # A trade is "missing legs" if ANY of its protection orders are not in the open orders list
             missing_legs = [leg for leg in strategy_legs if leg['id'] not in open_ids]
             
             if missing_legs:
-                print(f"🔍 Reconciler: Detected missing order for {tid}. Checking history...")
-                found_fill = False
-                exit_price, exit_fees, actual_close_time, exit_fee_asset = 0, 0, None, None
+                print(f"🔍 Reconciler: Detected missing order for {tid} ({meta['symbol']}). Checking leg history...")
                 
+                final_exit_price = 0
+                final_exit_fees = 0
+                final_close_time = None
+                final_fee_asset = None
+                trade_was_filled = False
+                
+                # Check ALL legs. If ANY leg is FILLED, the whole trade is CLOSED.
                 for leg in strategy_legs:
                     try:
                         order_info = binance_client.get_order(symbol=meta['symbol'], orderId=leg['id'], recvWindow=60000)
-                        if order_info.get('status') == 'FILLED':
-                            found_fill = True
+                        status = order_info.get('status')
+                        
+                        if status == 'FILLED':
+                            trade_was_filled = True
                             exec_qty = float(order_info['executedQty'])
-                            actual_close_time = order_info.get('updateTime', 0) / 1000.0 # Convert ms to seconds
+                            final_close_time = order_info.get('updateTime', 0) / 1000.0
+                            
                             if exec_qty > 0:
-                                exit_price = float(order_info['cummulativeQuoteQty']) / exec_qty
-                                trades = binance_client.get_my_trades(symbol=meta['symbol'], limit=10)
-                                leg_trades = [t for t in trades if t['orderId'] == leg['id']]
-                                exit_fees = sum(float(t['commission']) for t in leg_trades)
+                                # Weighted average exit price
+                                final_exit_price = float(order_info['cummulativeQuoteQty']) / exec_qty
+                                # Fetch exact trades for fees
+                                my_trades = binance_client.get_my_trades(symbol=meta['symbol'], limit=20)
+                                leg_trades = [t for t in my_trades if t['orderId'] == leg['id']]
+                                final_exit_fees = sum(float(t['commission']) for t in leg_trades)
                                 if leg_trades:
-                                    exit_fee_asset = leg_trades[0].get('commissionAsset')
-                            break
-                    except: continue
+                                    final_fee_asset = leg_trades[0].get('commissionAsset')
+                            break # Found the fill, no need to check other legs
+                    except Exception as e:
+                        print(f"  ! Error checking leg {leg['id']}: {e}")
+                        continue
                 
-                if found_fill:
-                    _mark_trade_closed(meta['symbol'], None, tid, meta['quantity'], exit_price, exit_fees, actual_close_time, exit_fee_asset)
+                if trade_was_filled:
+                    print(f"  ✅ Leg Fill Found! Archiving trade {tid}")
+                    _mark_trade_closed(
+                        meta['symbol'], 
+                        meta.get('orderListId'), 
+                        tid, 
+                        meta['quantity'], 
+                        final_exit_price, 
+                        final_exit_fees, 
+                        final_close_time, 
+                        final_fee_asset
+                    )
                 else:
-                    from app.db.database import trades_collection
-                    trades_collection.update_one({"_id": tid}, {"$set": {"status": "MANUAL_CONTROL"}})
+                    # If legs are missing but NONE were filled, it means they were CANCELLED manually
+                    print(f"  ⚠️ No fill found for missing legs of {tid}. Moving to MANUAL_CONTROL.")
+                    from app.db.database import db_session
+                    from app.db.models import SpotTrade
+                    try:
+                        db_session.query(SpotTrade).filter(SpotTrade.id == tid).update({"status": "MANUAL_CONTROL"})
+                        db_session.commit()
+                    except:
+                        db_session.rollback()
+                    finally:
+                        db_session.remove()
     except Exception as e:
         print(f"Reconciler Error: {e}")
 
@@ -207,8 +241,18 @@ def create_smart_trade(symbol: str, quantity: float, buy_price: Optional[float],
                 exit_order = binance_client.create_order(symbol=symbol, side=SIDE_SELL if side == "BUY" else SIDE_BUY, type=ORDER_TYPE_STOP_LOSS_LIMIT, timeInForce=TIME_IN_FORCE_GTC, quantity=oco_qty, stopPrice=format_price(symbol, stop_loss_price), price=format_price(symbol, stop_loss_price), newClientOrderId=f"SL_{client_order_id}", recvWindow=60000)
                 trade_tracker.add_order_to_trade(client_order_id, exit_order['orderId'], "STOP_LOSS_LIMIT", "SL")
         except Exception as e:
-            from app.db.database import trades_collection
-            trades_collection.update_one({"_id": client_order_id}, {"$set": {"status": "PROTECTION_FAILED", "error_msg": str(e)}})
+            from app.db.database import db_session
+            from app.db.models import SpotTrade
+            try:
+                db_session.query(SpotTrade).filter(SpotTrade.id == client_order_id).update({
+                    "status": "PROTECTION_FAILED", 
+                    "error_msg": str(e)
+                })
+                db_session.commit()
+            except:
+                db_session.rollback()
+            finally:
+                db_session.remove()
             return {"entry": entry_order, "status": "PROTECTION_FAILED", "error": str(e)}
             
         return {"entry": entry_order, "status": "ACTIVE"}
@@ -269,20 +313,24 @@ def _mark_trade_closed(symbol: str, order_list_id: Optional[int] = None, client_
             elif not order_list_id and not client_order_id and abs(tmeta.get('quantity', 0) - quantity) < (quantity * 0.1): match = True
             
             if match:
-                from app.db.database import trades_collection
-                update_data = {
-                    "status": "CLOSED", 
-                    "exit_price": exit_price, 
-                    "exit_fees": exit_fees, 
-                    "close_time": final_close_time
-                }
-                if exit_fee_asset:
-                    update_data["exit_fee_asset"] = exit_fee_asset
-                
-                trades_collection.update_one(
-                    {"_id": tid}, 
-                    {"$set": update_data}
-                )
+                from app.db.database import db_session
+                from app.db.models import SpotTrade
+                try:
+                    update_data = {
+                        "status": "CLOSED", 
+                        "exit_price": exit_price, 
+                        "exit_fees": exit_fees, 
+                        "close_time": final_close_time
+                    }
+                    if exit_fee_asset:
+                        update_data["exit_fee_asset"] = exit_fee_asset
+                    
+                    db_session.query(SpotTrade).filter(SpotTrade.id == tid).update(update_data)
+                    db_session.commit()
+                except:
+                    db_session.rollback()
+                finally:
+                    db_session.remove()
                 print(f"✅ Trade {tid} archived successfully with close_time {final_close_time}")
                 break # Only close one match per call
 

@@ -21,3 +21,16 @@ volumes/
 # OS
 .DS_Store
 Thumbs.db
+
+# SQLite database files
+*.db
+*.db-shm
+*.db-wal
+backend/data/
+
+# Miscellaneous
+null
+strong_bullish_test.json
+
+# LangGraph cache
+langgraph/.langgraph_api/

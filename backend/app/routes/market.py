@@ -44,6 +44,13 @@ def get_score(symbol: str, interval: str):
 
 @router.post("/scanner/run")
 async def run_scanner_api(req: RunScannerRequest):
+    # JIT WARMUP: Start loading the LLM immediately
+    try:
+        asyncio.create_task(llm_service.warm_up_llm())
+        print("✅ Warmup task scheduled from API route.")
+    except Exception as e:
+        print(f"Warmup Trigger Error: {e}")
+
     pairs = req.pairs
     base_tf = req.timeframe or "1h"
     if not pairs:
@@ -64,9 +71,9 @@ async def rank_llm_setups():
     return await llm_service.rank_setups(scanner_table)
 
 @router.get("/llm/analyze_row/{symbol}")
-async def analyze_llm_row(symbol: str):
+async def analyze_llm_row(symbol: str, mode: str = "SPOT", use_langgraph: bool = True):
     # Perform a fresh, targeted scan for this specific pair across all TFs
-    print(f"Performing fresh multi-TF scan for {symbol} deep analysis...")
+    print(f"Performing fresh multi-TF scan for {symbol} deep analysis ({mode})...")
     multi_timeframe_candles = await asyncio.to_thread(market_service.get_multi_timeframe_candles, symbol)
     
     multi_timeframe_indicators = {}
@@ -74,4 +81,8 @@ async def analyze_llm_row(symbol: str):
         if candles:
             multi_timeframe_indicators[interval] = indicator_service.calculate_indicators(candles)
     
-    return await llm_service.analyze_row({"symbol": symbol, "indicators": multi_timeframe_indicators})
+    if use_langgraph:
+        return await llm_service.get_deep_langgraph_analysis(symbol, multi_timeframe_indicators, mode)
+    
+    # Fallback to legacy single-node analysis
+    return await llm_service.analyze_row({"symbol": symbol, "indicators": multi_timeframe_indicators, "mode": mode})

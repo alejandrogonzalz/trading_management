@@ -1,0 +1,15 @@
+{
+    "symbol": "BTCUSDT",
+    "mode": "FUTURES",
+    "indicators": {
+        "price": 62000.0,
+        "heatmap": "STRONG_BEARISH",
+        "structure": "BEARISH",
+        "rsi": 38.0,
+        "macd_hist": -15.2,
+        "adx": 35.0,
+        "volume_ratio": 2.1,
+        "atr_ratio": 1.0,
+        "bb_pos": 0.15
+    }
+}

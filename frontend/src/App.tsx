@@ -12,6 +12,20 @@ import { ScanSearch, Zap, CheckCircle2, AlertCircle } from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8001';
 
+interface TradeData {
+  quantity: number;
+  tpPrice: number;
+  slPrice: number;
+  side: string;
+  mode: string;
+  leverage?: number;
+}
+
+interface GlobalPrice {
+  symbol: string;
+  price: string;
+}
+
 const NotificationToast = ({ message, type, onClose }) => {
   useEffect(() => {
     const timer = setTimeout(onClose, 5000);
@@ -44,11 +58,10 @@ function App() {
   const [symbol, setSymbol] = useState('BTCUSDT');
   const [tradingMode, setTradingMode] = useState('SPOT'); // 'SPOT' or 'LEAD'
   const [symbolSearch, setSymbolSearch] = useState('BTCUSDT');
-  const [globalPrices, setGlobalPrices] = useState<any[]>([]);
+  const [globalPrices, setGlobalPrices] = useState<GlobalPrice[]>([]);
   const [currentPrice, setCurrentPrice] = useState(0);
   const [price24hAgo, setPrice24hAgo] = useState(0);
   const [isTrading, setIsTrading] = useState(false);
-  const [error, setError] = useState(null);
 
   // ISOLATED DATA STATE
   const [spotBalances, setSpotBalances] = useState([]);
@@ -151,7 +164,7 @@ function App() {
       try {
         const res = await fetch('https://api.binance.com/api/v3/ticker/price');
         if (res.ok) setGlobalPrices(await res.json());
-      } catch (e) {}
+      } catch (e) { console.error('Failed to fetch global prices:', e); }
     };
     fetchGlobalPrices();
     const interval = setInterval(fetchGlobalPrices, 30000);
@@ -167,8 +180,14 @@ function App() {
           const lRes = await fetch(`${API_BASE}/lead/symbols`);
           if (lRes.ok) {
             const raw = await lRes.json();
-            const list = Array.isArray(raw.data) 
-                ? raw.data.map((item: any) => typeof item === 'string' ? item : item.symbol)
+             const list = Array.isArray(raw.data) 
+                ? raw.data.map((item: unknown) => {
+                    if (typeof item === 'string') return item;
+                    if (item && typeof item === 'object' && 'symbol' in item && typeof item.symbol === 'string') {
+                      return item.symbol;
+                    }
+                    return '';
+                  }).filter(Boolean)
                 : (Array.isArray(raw) ? raw : []);
             setLeadWhitelist(list);
           }
@@ -197,20 +216,20 @@ function App() {
     return () => clearInterval(intervalId);
   }, [symbol]);
 
-  const handleSmartTrade = async (tradeData) => {
+  const handleSmartTrade = async (tradeData: TradeData) => {
     setIsTrading(true);
     try {
       const isLead = tradingMode === 'LEAD';
       const endpoint = isLead ? 'lead/smart-order' : 'trades/smart-trade';
       
-      const payload: any = {
-        symbol,
-        quantity: tradeData.quantity,
-        take_profit_price: tradeData.tpPrice,
-        stop_loss_price: tradeData.slPrice,
-        side: tradeData.side,
-        mode: tradeData.mode
-      };
+       const payload = {
+         symbol,
+         quantity: tradeData.quantity,
+         take_profit_price: tradeData.tpPrice,
+         stop_loss_price: tradeData.slPrice,
+         side: tradeData.side,
+         mode: tradeData.mode
+       };
 
       if (isLead) {
           payload.leverage = tradeData.leverage || 10;
@@ -229,8 +248,9 @@ function App() {
         const err = await response.json();
         setNotification({ message: err.detail || 'Trade execution failed', type: 'error' });
       }
-    } catch (err) { 
+     } catch (networkErr) { 
       setNotification({ message: 'Failed to connect to exchange gateway', type: 'error' });
+      console.error('Network error in handleSmartTrade:', networkErr);
     }
     finally { setIsTrading(false); }
   };
@@ -289,7 +309,7 @@ function App() {
     
     // Determine side from AI bias
     const bias = setup.bias?.toLowerCase() || 'bullish';
-    const side = bias === 'bearish' ? 'SELL' : 'BUY';
+    const side = (bias === 'bearish' || bias === 'short') ? 'SELL' : 'BUY';
     setTradeSide(side);
 
     // Apply recommended leverage if available
@@ -303,17 +323,24 @@ function App() {
     }
 
     const entry = setup.entry || currentPrice;
+    let precision = 2;
+    if (entry < 0.001) precision = 8;
+    else if (entry < 0.1) precision = 6;
+    else if (entry < 1) precision = 4;
+
     if (setup.tp) { 
-      setTpPrice(setup.tp); setTpEnabled(true);
+      const roundedTp = parseFloat(setup.tp.toFixed(precision));
+      setTpPrice(roundedTp); setTpEnabled(true);
       if (entry > 0) {
-        const percent = Math.abs((setup.tp - entry) / entry * 100);
+        const percent = Math.abs((roundedTp - entry) / entry * 100);
         setTpPercent(parseFloat(percent.toFixed(4)));
       }
     }
     if (setup.sl) { 
-      setSlPrice(setup.sl); setSlEnabled(true);
+      const roundedSl = parseFloat(setup.sl.toFixed(precision));
+      setSlPrice(roundedSl); setSlEnabled(true);
       if (entry > 0) {
-        const percent = Math.abs((setup.sl - entry) / entry * 100);
+        const percent = Math.abs((roundedSl - entry) / entry * 100);
         setSlPercent(parseFloat(percent.toFixed(4)));
       }
     }
@@ -463,7 +490,7 @@ function App() {
                      </div>
                  </div>
              } />
-             <Route path="/scanner" element={<div className="h-full overflow-hidden bg-slate-900"><ScannerView symbols={symbols} onAutoTrade={onAutoTrade} onSelectSymbol={handleSelectSymbol} /></div>} />
+             <Route path="/scanner" element={<div className="h-full overflow-hidden bg-slate-900"><ScannerView symbols={symbols} onAutoTrade={onAutoTrade} onSelectSymbol={handleSelectSymbol} tradingMode={tradingMode} /></div>} />
              <Route path="/trades" element={<ActivePositionsView openOrders={activeOrders} handleCancelOrder={handleCancelOrder} quoteBalance={quoteBalance} onSelectSymbol={handleSelectSymbol} balances={activeBalances} globalPrices={globalPrices} tradingMode={tradingMode} leadPositions={leadPositions} smartHistory={activeHistory} />} />
              <Route path="/orders" element={<ActiveOrdersView openOrders={activeOrders} handleCancelOrder={handleCancelOrder} quoteBalance={quoteBalance} onSelectSymbol={handleSelectSymbol} tradingMode={tradingMode} leadPositions={leadPositions} />} />
            </Routes>

@@ -1,15 +1,4 @@
 services:
-  mongodb:
-    image: mongo:latest
-    container_name: trading_management-db
-    ports:
-      - "27017:27017"
-    volumes:
-      - ./volumes/mongodb_data:/data/db
-    networks:
-      - trading-network
-    restart: unless-stopped
-
   ollama:
     image: ollama/ollama:latest
     container_name: trading_management-ollama
@@ -34,25 +23,33 @@ services:
       - ./backend/.env
     volumes:
       - ./backend:/app
+      - ./backend/data:/app/data
     environment:
       - OLLAMA_BASE_URL=http://ollama:11434 
-      - MONGO_URL=mongodb://mongodb:27017
+      - DATABASE_URL=sqlite:////app/data/trading.db
+      - LANGGRAPH_URL=http://langgraph:2024
       - PYTHONPATH=/app 
     depends_on:
       - ollama
-      - mongodb
     networks:
       - trading-network
 
-  mongodb-mcp:
-    image: node:20-slim
-    container_name: trading_management-mongodb-mcp
+  langgraph:
+    build: ./langgraph
+    container_name: trading_management-langgraph
+    ports:
+      - "2024:2024"
     environment:
-      - MDB_MCP_CONNECTION_STRING=mongodb://mongodb:27017
-    command: >
-      npx -y @mongodb-js/mongodb-mcp-server --readOnly
+      - BACKEND_URL=http://backend:8001
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - LLM_PROVIDER=ollama
+      - LLM_MODEL=qwen2.5:14b
+      - LLM_TEMPERATURE=0.1
+    volumes:
+      - ./langgraph:/app
     depends_on:
-      - mongodb
+      - backend
+      - ollama
     networks:
       - trading-network
     restart: unless-stopped

@@ -1,0 +1,15 @@
+{
+    "symbol": "ETHUSDT",
+    "mode": "SPOT",
+    "indicators": {
+        "price": 3500.0,
+        "heatmap": "BULLISH",
+        "structure": "BULLISH",
+        "rsi": 82.0,
+        "macd_hist": 5.0,
+        "adx": 30.0,
+        "volume_ratio": 1.2,
+        "atr_ratio": 1.1,
+        "bb_pos": 1.05
+    }
+}

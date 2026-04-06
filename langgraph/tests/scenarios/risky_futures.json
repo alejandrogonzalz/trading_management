@@ -1,0 +1,8 @@
+{
+    "symbol": "SOLUSDT",
+    "mode": "FUTURES",
+    "indicators": {
+        "1d": { "price": 140.0, "heatmap": "BULLISH", "structure": "BULLISH", "rsi": 65, "adx": 30, "atr_ratio": 1.2 },
+        "1h": { "price": 140.0, "heatmap": "NEUTRAL", "structure": "RANGE", "rsi": 55, "adx": 20, "atr_ratio": 1.5 }
+    }
+}

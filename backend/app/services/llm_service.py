@@ -2,120 +2,209 @@ import os
 import json
 import re
 import asyncio
+import httpx
 from ollama import AsyncClient
 from typing import List, Dict, Any, Optional
 from app.core.config import settings
 from app.services import scanner_service
 
 OLLAMA_BASE_URL = settings.OLLAMA_BASE_URL
+LANGGRAPH_URL = settings.LANGGRAPH_URL
 LLM_MODEL = settings.LLM_MODEL
 
 client = AsyncClient(host=OLLAMA_BASE_URL)
 
-def clean_llm_json(content: str) -> str:
-    content = re.sub(r'```json\s*|\s*```', '', content)
-    s = content.find('{')
-    e = content.rfind('}')
-    if s != -1 and e != -1: return content[s:e+1]
-    return content.strip()
 
-async def analyze_row(pair_data: Dict[str, Any]) -> Dict[str, Any]:
+async def get_deep_langgraph_analysis(
+    symbol: str, indicators: Dict[str, Any], mode: str = "SPOT"
+) -> Dict[str, Any]:
     """
-    Highly structured technical analysis with robust key mapping.
-    """
-    prompt = f"""
-    Analyze technical setup for {pair_data.get('symbol')}.
-    Data: {json.dumps(pair_data)}
-
-    Return ONLY JSON with:
-    - bias: Bullish/Bearish/Neutral
-    - confidence: 0-10
-    - entry: float
-    - tp: float
-    - sl: float
-    - leverage: integer (1-50, recommend based on volatility/ATR)
-    - risk_reward: string
-    - trade_setup: title
-    - reasoning: 2 sentences (mention volume and volatility impact)
+    Routes analysis to the LangGraph container for deep multi-node validation.
     """
     try:
-        response = await client.chat(
-            model=LLM_MODEL,
-            messages=[
-                {'role': 'system', 'content': 'You are an Expert Quant Analyst. Output JSON only. Use exact keys: bias, confidence, entry, tp, sl, leverage, risk_reward, trade_setup, reasoning.'},
-                {'role': 'user', 'content': prompt}
-            ],
-            options={'temperature': 0.2},
-            format='json'
-        )
-        
-        raw_json = json.loads(clean_llm_json(response['message']['content']))
-        
-        # Robust Mapping: Map variations to standard keys
-        mapping = {
-            "entry_price": "entry", "suggested_entry": "entry",
-            "take_profit": "tp", "target_price": "tp", "exit_target": "tp",
-            "stop_loss": "sl", "stop_price": "sl",
-            "suggested_leverage": "leverage", "recommended_leverage": "leverage",
-            "rr": "risk_reward", "risk_to_reward": "risk_reward",
-            "setup": "trade_setup", "title": "trade_setup",
-            "analysis": "reasoning", "reason": "reasoning"
+        # Limit indicator data size to avoid oversized payloads
+        # Keep only essential fields for each timeframe
+        essential_keys = {
+            "close",
+            "price",
+            "heatmap",
+            "structure",
+            "rsi",
+            "adx",
+            "atr_ratio",
+            "volume_ratio",
+            "macd_hist",
+            "bb_pos",
         }
-        
-        final_data = {}
-        for key, val in raw_json.items():
-            standard_key = mapping.get(key.lower(), key.lower())
-            final_data[standard_key] = val
-            
-        # Ensure numeric values are actually floats
-        for num_key in ['entry', 'tp', 'sl', 'leverage']:
-            if num_key in final_data and final_data[num_key] is not None:
-                try:
-                    final_data[num_key] = float(str(final_data[num_key]).replace(',', ''))
-                except ValueError:
-                    final_data[num_key] = None
+        filtered_indicators = {}
+        for tf, tf_data in indicators.items():
+            if isinstance(tf_data, dict):
+                filtered_indicators[tf] = {
+                    k: v for k, v in tf_data.items() if k in essential_keys
+                }
+                # Ensure there's at least a price field
+                if (
+                    "close" not in filtered_indicators[tf]
+                    and "price" not in filtered_indicators[tf]
+                ):
+                    # Try to find any numeric value that could be price
+                    for k, v in tf_data.items():
+                        if isinstance(v, (int, float)) and v > 0:
+                            filtered_indicators[tf]["close"] = v
+                            break
+            else:
+                filtered_indicators[tf] = tf_data
 
-        return final_data
-    except Exception as e:
-        print(f"Deep Analysis Parse Error: {e}")
-        return {"error": str(e), "bias": "Neutral", "reasoning": "Failed to generate technical targets."}
+        import json as json_module
 
-# Rest of the functions stay the same...
-async def get_individual_opinion(p: Dict[str, Any]) -> Dict[str, Any]:
-    prompt = f"Technical setup for {p['pair']}: Score {p['score']}, Heatmap {p.get('heatmap')}, Struct {p['structure']}. Return JSON: {{'bias': 'Bullish/Bearish', 'reason': '...'}}"
-    try:
-        response = await client.chat(
-            model=LLM_MODEL,
-            messages=[
-                {'role': 'system', 'content': 'You are a quant analyst. Output JSON only. 1 sentence max.'},
-                {'role': 'user', 'content': prompt}
-            ],
-            options={'temperature': 0.1, 'num_predict': 150},
-            format='json'
+        payload_size = len(json_module.dumps(filtered_indicators))
+        print(
+            f"LangGraph request payload size: {payload_size} bytes, timeframes: {list(filtered_indicators.keys())}"
         )
-        return json.loads(clean_llm_json(response['message']['content']))
-    except Exception:
-        return {"bias": "Neutral", "reason": "Quant confluence analysis."}
 
-async def rank_setups(scanner_table_data: List[Dict[str, Any]]) -> Dict[str, Any]:
-    if not scanner_table_data: return {}
-    sorted_pairs = sorted(scanner_table_data, key=lambda x: x.get('score', 0), reverse=True)[:20]
-    semaphore = asyncio.Semaphore(10)
-    async def task_wrapper(pair):
-        async with semaphore:
-            opinion = await get_individual_opinion(pair)
-            return pair['pair'], opinion
-    enrichment_results = await asyncio.gather(*[task_wrapper(p) for p in sorted_pairs])
-    results = {}
-    opinions_map = dict(enrichment_results)
-    for i, p in enumerate(sorted_pairs):
-        pair_name = p['pair']
-        opinion = opinions_map.get(pair_name, {"bias": "Neutral", "reason": "Technical analysis."})
-        entry = { "pair": pair_name, "rank": i + 1, "bias": opinion.get('bias', 'Neutral'), "reason": opinion.get('reason', 'Technical analysis.') }
-        results[pair_name] = entry
-        for main_row in scanner_service.latest_scan_results.get("results", []):
-            if main_row['pair'] == pair_name:
-                main_row['ai_rank'] = entry['rank']
-                main_row['ai_bias'] = entry['bias']
-                main_row['ai_reason'] = entry['reason']
-    return results
+        async with httpx.AsyncClient(timeout=60.0) as http_client:
+            payload = {
+                "symbol": symbol,
+                "mode": mode.upper(),
+                "indicators": filtered_indicators,
+            }
+
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    response = await http_client.post(
+                        f"{LANGGRAPH_URL}/analyze", json=payload, timeout=60.0
+                    )
+                    if response.status_code == 200:
+                        try:
+                            result = response.json()
+                            print(
+                                f"LangGraph Raw Response (JSON) attempt {attempt + 1}: {result}"
+                            )
+                        except json.JSONDecodeError:
+                            print(
+                                f"LangGraph returned non-JSON response: {response.text}"
+                            )
+                            if attempt < max_retries - 1:
+                                await asyncio.sleep(2**attempt)
+                                continue
+                            return {"error": "Invalid JSON response from LangGraph"}
+
+                        # Format to match the legacy frontend structure
+                        setup = result.get("optimized") or result.get("original", {})
+                        eval_data = result.get("evaluation", {})
+
+                        # Validate that we have at least some meaningful data
+                        has_critical_data = (
+                            setup.get("entry")
+                            or setup.get("tp")
+                            or setup.get("sl")
+                            or setup.get("bias")
+                            or eval_data.get("confidence")
+                        )
+
+                        if not has_critical_data:
+                            print(
+                                f"Empty response from LangGraph (attempt {attempt + 1}/{max_retries})"
+                            )
+                            if attempt < max_retries - 1:
+                                await asyncio.sleep(2**attempt)
+                                continue
+                            return {
+                                "error": "LangGraph returned empty analysis after retries"
+                            }
+
+                        # Helper to flatten lists/strings to float
+                        def to_float(val):
+                            if isinstance(val, list):
+                                return float(val[0]) if val else 0.0
+                            try:
+                                return float(val)
+                            except:
+                                return 0.0
+
+                        # FORCE FLATTEN: Ensure top-level keys match what the frontend/terminal expects
+                        final_entry = to_float(setup.get("entry"))
+                        final_tp = to_float(setup.get("tp"))
+                        final_sl = to_float(setup.get("sl"))
+                        final_lev = (
+                            int(setup.get("leverage"))
+                            if setup.get("leverage")
+                            else None
+                        )
+
+                        return {
+                            "symbol": symbol,
+                            "bias": setup.get("bias", "Neutral"),
+                            # CORE TERMINAL DATA
+                            "entry": final_entry,
+                            "tp": final_tp,
+                            "sl": final_sl,
+                            "leverage": final_lev,
+                            "pair": symbol,  # Legacy compat
+                            # METRICS
+                            "confidence": eval_data.get("confidence", 5),
+                            "quant_confidence": eval_data.get("quant_confidence", 5),
+                            "llm_adjustment": eval_data.get("llm_adjustment", 0),
+                            "risk_reward": f"1:{eval_data.get('rr', 'N/A')}",
+                            "safety_margin": eval_data.get("safety_margin"),
+                            "liquidation_safe": eval_data.get("liquidation_safe", True),
+                            "risk_pct": eval_data.get("risk_pct"),
+                            "liq_pct": eval_data.get("liq_pct"),
+                            # UI TEXT
+                            "trade_setup": f"LANGGRAPH {mode} SETUP",
+                            "reasoning": setup.get(
+                                "reasoning",
+                                "Validated through LangGraph node workflow.",
+                            ),
+                            "issues": result.get("issues", []),
+                            "changes": setup.get("changes", []),
+                        }
+                    else:  # Non-200 status code
+                        print(
+                            f"LangGraph Error: {response.status_code} - {response.text}"
+                        )
+                        if attempt < max_retries - 1:
+                            await asyncio.sleep(2**attempt)
+                            continue
+                        return {
+                            "error": f"LangGraph service returned status {response.status_code}"
+                        }
+                except httpx.RequestError as exc:
+                    print(
+                        f"LangGraph Connection Error (attempt {attempt + 1}): {type(exc).__name__}: {exc}"
+                    )
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(2**attempt)
+                        continue
+                    return {"error": f"LangGraph connection failed: {exc}"}
+                except Exception as e:
+                    print(
+                        f"Unexpected error in LangGraph call (attempt {attempt + 1}): {e}"
+                    )
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(2**attempt)
+                        continue
+                    return {"error": f"Unexpected error: {e}"}
+
+            # Should not reach here, but just in case
+            return {"error": "Max retries exceeded without success"}
+    except httpx.RequestError as exc:  # Catch specific httpx errors
+        print(f"LangGraph Connection Error: {type(exc).__name__}: {exc}")
+        import traceback
+
+        traceback.print_exc()
+        return {"error": f"LangGraph connection failed: {exc}"}
+    except Exception as e:  # Catch other unexpected errors
+        print(f"An unexpected error occurred: {e}")
+        # Ensure error message is not empty for clarity
+        return {"error": str(e) or "An unknown error occurred"}
+
+
+def clean_llm_json(content: str) -> str:
+    content = re.sub(r"```json\s*|\s*```", "", content)
+    s = content.find("{")
+    e = content.rfind("}")
+    if s != -1 and e != -1:
+        return content[s : e + 1]
+    return content.strip()

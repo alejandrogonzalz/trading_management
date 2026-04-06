@@ -64,13 +64,20 @@ const SmartTerminalView = ({
   }, [currentPrice, leverage]);
 
   // Price/Percent Sync Logic
+  const dynamicPrecision = (price) => {
+    if (price < 0.001) return 8;
+    if (price < 0.1) return 6;
+    if (price < 1) return 4;
+    return 2;
+  };
+  const formatPrice = (price) => price.toLocaleString(undefined, { minimumFractionDigits: dynamicPrecision(price), maximumFractionDigits: dynamicPrecision(price) });
   const handleTpPercentChange = (val: number) => {
     const fixedVal = Math.abs(Number(val.toFixed(4)));
     setTpPercent(fixedVal);
     if (currentPrice > 0) {
       // TP: Long goes UP (+), Short goes DOWN (-)
       const multiplier = side === 'BUY' ? (1 + fixedVal / 100) : (1 - fixedVal / 100);
-      setTpPrice(Number((currentPrice * multiplier).toFixed(8)));
+      setTpPrice(Number((currentPrice * multiplier).toFixed(dynamicPrecision(currentPrice))));
     }
   };
 
@@ -80,7 +87,7 @@ const SmartTerminalView = ({
     if (currentPrice > 0) {
       // SL: Long goes DOWN (-), Short goes UP (+)
       const multiplier = side === 'BUY' ? (1 - fixedVal / 100) : (1 + fixedVal / 100);
-      setSlPrice(Number((currentPrice * multiplier).toFixed(8)));
+      setSlPrice(Number((currentPrice * multiplier).toFixed(dynamicPrecision(currentPrice))));
     }
   };
 
@@ -241,7 +248,7 @@ const SmartTerminalView = ({
             <div className="flex gap-2">
                 <div className="flex-1 bg-rose-500/5 border border-rose-500/20 p-2.5 rounded-xl flex flex-col items-center group relative cursor-help min-w-0">
                     <span className="text-[7px] xl:text-[8px] font-black text-rose-500 uppercase mb-0.5 truncate w-full text-center">Liquidation</span>
-                    <span className="text-[10px] xl:text-xs font-mono font-black text-white truncate w-full text-center">${liqPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}</span>
+                    <span className="text-[10px] xl:text-xs font-mono font-black text-white truncate w-full text-center">${formatPrice(liqPrice)}</span>
                     
                     <div className="absolute left-0 right-0 bottom-full mb-4 w-56 p-3 bg-slate-900 border border-slate-800 rounded-xl shadow-2xl opacity-0 group-hover:opacity-100 pointer-events-none transition-all duration-300 z-50 mx-auto">
                         <div className="flex items-center gap-2 mb-2 border-b border-slate-800 pb-2">
@@ -249,7 +256,7 @@ const SmartTerminalView = ({
                             <p className="text-[9px] font-black text-rose-500 uppercase tracking-widest">Safety Warning</p>
                         </div>
                         <p className="text-[8px] text-slate-400 leading-tight font-medium">
-                            If price hits <span className="text-white font-black">${liqPrice.toFixed(4)}</span>, position will be liquidated.
+                            If price hits <span className="text-white font-black">${formatPrice(liqPrice)}</span>, position will be liquidated.
                         </p>
                     </div>
                 </div>

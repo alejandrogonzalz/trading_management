@@ -1,0 +1,15 @@
+{
+    "symbol": "LINKUSDT",
+    "mode": "FUTURES",
+    "indicators": {
+        "price": 18.50,
+        "heatmap": "STRONG_BULLISH",
+        "structure": "BREAKOUT",
+        "rsi": 68.0,
+        "macd_hist": 0.45,
+        "adx": 42.0,
+        "volume_ratio": 4.5,
+        "atr_ratio": 2.2,
+        "bb_pos": 0.95
+    }
+}
