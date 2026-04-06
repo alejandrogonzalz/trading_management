@@ -48,6 +48,36 @@ const ActiveOrdersView = ({ openOrders, handleCancelOrder, quoteBalance, onSelec
         btn: 'hover:text-blue-400'
     };
 
+    const formatQuantity = (qty) => {
+        if (typeof qty === 'string' && qty === 'CLOSE ALL') return qty;
+        const num = parseFloat(qty);
+        if (num === 0) return 'CLOSE ALL';
+        const dynamicPrecision = (q) => {
+            if (q >= 1000) return 0;
+            if (q >= 1) return 2;
+            if (q >= 0.001) return 6;
+            return 8;
+        };
+        const precision = dynamicPrecision(num);
+        return num.toLocaleString(undefined, { 
+            minimumFractionDigits: precision, 
+            maximumFractionDigits: precision 
+        });
+    };
+
+    const formatPrice = (price) => {
+        const dynamicPrecision = (p) => {
+            if (p < 0.001) return 8;
+            if (p < 0.1) return 6;
+            if (p < 1) return 4;
+            return 2;
+        };
+        return price.toLocaleString(undefined, { 
+            minimumFractionDigits: dynamicPrecision(price), 
+            maximumFractionDigits: dynamicPrecision(price) 
+        });
+    };
+
     return (
         <div className="h-full flex flex-col bg-slate-900 overflow-hidden">
             <header className="px-6 pt-8 pb-4 shrink-0">
@@ -102,10 +132,10 @@ const ActiveOrdersView = ({ openOrders, handleCancelOrder, quoteBalance, onSelec
                                         </span>
                                     </td>
                                     <td className="p-6 text-center text-white font-black">
-                                        ${parseFloat(o.stopPrice || o.price || '0').toLocaleString()}
+                                        ${formatPrice(parseFloat(o.stopPrice || o.price || '0'))}
                                     </td>
                                     <td className="p-6 text-center text-slate-400">
-                                        {parseFloat(o.origQty || o.qty) === 0 ? 'CLOSE ALL' : o.origQty}
+                                        {formatQuantity(parseFloat(o.origQty || o.qty) === 0 ? 'CLOSE ALL' : (o.origQty || o.qty))}
                                     </td>
                                     {isLead && <td className="p-6 text-center text-orange-400">{o.leverage || '--'}x</td>}
                                     <td className="p-6 text-right">

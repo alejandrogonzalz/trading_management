@@ -306,15 +306,16 @@ const SmartHistoryTable = ({ history, onSelectSymbol, mode }) => {
                 <tbody className="font-mono text-xs text-slate-300">
                     {history.length > 0 ? history.map(h => {
                         if (isLead) {
-                            const pnl = ((h.exit_price - h.entry_price) / h.entry_price * 100 * (h.side === 'BUY' || h.side === 'LONG' ? 1 : -1));
+                            const hasExit = h.exit_price > 0;
+                            const pnl = hasExit ? ((h.exit_price - h.entry_price) / h.entry_price * 100 * (h.side === 'BUY' || h.side === 'LONG' ? 1 : -1)) : 0;
                             const grossPnl = pnl * (h.leverage || 1);
                             
                             const totalFees = h.exit_fees || 0; 
                             const feeAsset = h.exit_fee_asset || 'USDT';
                             
+                            // quantity is already leveraged notional size
                             const initialMargin = (h.quantity * h.entry_price) / (h.leverage || 1);
-                            const grossProfitVal = (initialMargin * (grossPnl / 100));
-                            const netProfitVal = grossProfitVal - totalFees;
+                            const netProfitVal = hasExit ? ((h.exit_price - h.entry_price) * h.quantity * (h.side === 'BUY' || h.side === 'LONG' ? 1 : -1) - totalFees) : 0;
                             const netPnlPercent = initialMargin > 0 ? (netProfitVal / initialMargin * 100) : 0;
 
                             return (
@@ -333,7 +334,7 @@ const SmartHistoryTable = ({ history, onSelectSymbol, mode }) => {
                                         </div>
                                     </td>
                                     <td className="p-6 text-center">${fmt(h.entry_price)}</td>
-                                    <td className="p-6 text-center">${fmt(h.exit_price)}</td>
+                                    <td className="p-6 text-center">{hasExit ? `$${fmt(h.exit_price)}` : <span className="text-slate-600 italic">Syncing...</span>}</td>
                                     <td className="p-6 text-center">
                                         <span className="text-slate-500 text-[10px] font-bold">
                                             -{totalFees.toFixed(4)} <span className="text-[8px] opacity-70">{feeAsset}</span>
@@ -433,38 +434,50 @@ const ActivePositionsView = ({ openOrders, handleCancelOrder, onSelectSymbol, tr
         
         const historyWithNet = smartHistory.map(h => {
             if (isLead) {
-                const pnl = ((h.exit_price - h.entry_price) / h.entry_price * (h.side === 'BUY' || h.side === 'LONG' ? 1 : -1));
-                const netProfit = pnl * (h.quantity * h.entry_price) * (h.leverage || 1) - (h.exit_fees || 0);
+                const hasExit = h.exit_price > 0;
+                const pnl = hasExit ? ((h.exit_price - h.entry_price) / h.entry_price * (h.side === 'BUY' || h.side === 'LONG' ? 1 : -1)) : 0;
+                const totalFees = h.exit_fees || 0;
+                
+                // Dollar Profit = (Exit - Entry) * Qty (since Qty is notional size)
+                const netProfit = hasExit ? ((h.exit_price - h.entry_price) * h.quantity * (h.side === 'BUY' || h.side === 'LONG' ? 1 : -1) - totalFees) : 0;
                 const netPnlPercent = pnl * 100 * (h.leverage || 1);
-                return { netProfit, netPnlPercent };
+                return { netProfit, netPnlPercent, hasExit };
             }
 
             const assetName = h.symbol.replace('USDT','').replace('USDC','');
-            let entryFeeValue = h.fee_asset === assetName ? (h.entry_fees * h.entry_price) : (h.fee_asset === 'BNB' ? h.entry_fees * 600 : (h.entry_fees || 0));
-            let exitFeeValue = h.exit_fee_asset === assetName ? (h.exit_fees * h.exit_price) : (h.exit_fee_asset === 'BNB' ? h.exit_fees * 600 : (h.exit_fees || 0));
+            // Simplified BNB fee estimate (approximate)
+            const bnbPrice = 600; 
+            let entryFeeValue = h.fee_asset === assetName ? (h.entry_fees * h.entry_price) : (h.fee_asset === 'BNB' ? h.entry_fees * bnbPrice : (h.entry_fees || 0));
+            let exitFeeValue = h.exit_fee_asset === assetName ? (h.exit_fees * h.exit_price) : (h.exit_fee_asset === 'BNB' ? h.exit_fees * bnbPrice : (h.exit_fees || 0));
             
             const tradeValue = h.quantity * h.entry_price;
             const totalFees = entryFeeValue + exitFeeValue;
 
             const grossProfit = (h.exit_price - h.entry_price) * h.quantity * (h.side === 'BUY' ? 1 : -1);
-            const netProfit = grossProfit - totalFees;
+            const netProfit = h.exit_price > 0 ? (grossProfit - totalFees) : 0;
             const netPnlPercent = tradeValue > 0 ? (netProfit / tradeValue) * 100 : 0;
             
-            return { netProfit, netPnlPercent };
+            return { netProfit, netPnlPercent, hasExit: h.exit_price > 0 };
         });
 
+        let validCount = 0;
         historyWithNet.forEach(h => {
-            totalNetProfit += h.netProfit;
-            if (h.netProfit > 0) wins++;
-            if (h.netPnlPercent > bestTrade) bestTrade = h.netPnlPercent;
+            if (h.hasExit) {
+                totalNetProfit += h.netProfit;
+                if (h.netProfit > 0) wins++;
+                if (h.netPnlPercent > bestTrade) bestTrade = h.netPnlPercent;
+                validCount++;
+            }
         });
+
+        if (validCount === 0) return null;
 
         return {
             totalProfit: totalNetProfit,
-            winRate: (wins / smartHistory.length) * 100,
-            avgProfit: totalNetProfit / smartHistory.length,
+            winRate: (wins / validCount) * 100,
+            avgProfit: totalNetProfit / validCount,
             bestTrade: bestTrade === -Infinity ? 0 : bestTrade,
-            count: smartHistory.length
+            count: validCount
         };
     }, [smartHistory, isLead]);
 

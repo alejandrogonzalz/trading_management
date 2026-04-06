@@ -834,6 +834,16 @@ class FuturesService:
                             avg_price = float(order.get("avgPrice", 0))
                             trade.status = "ENTRY_FILLED"
                             trade.entry_price = avg_price
+                            
+                            # Capture Entry Fees
+                            try:
+                                history = self.std_client.futures_account_trades(symbol=symbol, limit=10)
+                                fill = next((h for h in history if h.get('clientOrderId') == f"ENT_{tid}"), None)
+                                if fill:
+                                    trade.entry_fees = float(fill.get('commission', 0))
+                                    trade.entry_fee_asset = fill.get('commissionAsset', 'USDT')
+                            except: pass
+                            
                             db_session.commit()
                     except Exception as e:
                         print(f"Error checking entry for {tid}: {e}")

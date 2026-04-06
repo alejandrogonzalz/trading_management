@@ -88,6 +88,35 @@ const BottomPanel = ({
         accent: 'text-blue-400'
     };
 
+    const formatPrice = (price) => {
+        const dynamicPrecision = (p) => {
+            if (p < 0.001) return 8;
+            if (p < 0.1) return 6;
+            if (p < 1) return 4;
+            return 2;
+        };
+        return price.toLocaleString(undefined, { 
+            minimumFractionDigits: dynamicPrecision(price), 
+            maximumFractionDigits: dynamicPrecision(price) 
+        });
+    };
+
+    const formatQuantity = (qty) => {
+        if (typeof qty === 'string' && qty === 'CLOSE ALL') return qty;
+        const num = parseFloat(qty);
+        const dynamicPrecision = (q) => {
+            if (q >= 1000) return 0;
+            if (q >= 1) return 2;
+            if (q >= 0.001) return 6;
+            return 8;
+        };
+        const precision = dynamicPrecision(num);
+        return num.toLocaleString(undefined, { 
+            minimumFractionDigits: precision, 
+            maximumFractionDigits: precision 
+        });
+    };
+
     return (
         <div className="bg-slate-950 h-full rounded-2xl border border-slate-800 shadow-xl flex flex-col overflow-hidden min-h-[200px]" style={{ border: '2px solid #1e293b' }}>
             {/* Header Tabs */}
@@ -193,9 +222,9 @@ const BottomPanel = ({
                                             {side}
                                         </td>
                                         <td className="p-3 text-center text-slate-400">
-                                            ${p.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                            ${formatPrice(p)}
                                         </td>
-                                        <td className="p-3 text-center text-slate-500">{displayQty}</td>
+                                        <td className="p-3 text-center text-slate-500">{formatQuantity(displayQty)}</td>
                                         <td className="p-3 text-center">
                                             {isHistory && pnl !== null ? (
                                                 <span className={`font-black ${pnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
