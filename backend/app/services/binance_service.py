@@ -611,7 +611,15 @@ def format_price(symbol: str, price: float) -> str:
         precision = (
             len(str(tick_size).split(".")[-1].rstrip("0")) if tick_size < 1.0 else 0
         )
-        return "{:0.{}f}".format(price, precision)
+        formatted = "{:0.{}f}".format(price, precision)
+        # Ensure formatted price is not zero for non-zero input
+        if float(formatted) == 0 and price != 0:
+            # Use tick size as minimum increment
+            if price > 0:
+                formatted = "{:0.{}f}".format(tick_size, precision)
+            else:
+                formatted = "{:0.{}f}".format(-tick_size, precision)
+        return formatted
     except:
         return "{:0.2f}".format(price)
 
