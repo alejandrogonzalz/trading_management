@@ -591,10 +591,13 @@ def format_quantity(symbol: str, quantity: float) -> str:
         lot_size_filter = next(
             f for f in info["filters"] if f["filterType"] == "LOT_SIZE"
         )
-        step_size = float(lot_size_filter["stepSize"])
-        precision = (
-            len(str(step_size).split(".")[-1].rstrip("0")) if step_size < 1.0 else 0
-        )
+        step_size_str = lot_size_filter["stepSize"]
+        step_size = float(step_size_str)
+        # Calculate precision from string representation
+        if "." in step_size_str:
+            precision = len(step_size_str.split(".")[-1].rstrip("0"))
+        else:
+            precision = 0
         factor = 10**precision
         return "{:0.{}f}".format(math.floor(quantity * factor) / factor, precision)
     except:
@@ -607,10 +610,13 @@ def format_price(symbol: str, price: float) -> str:
         price_filter = next(
             f for f in info["filters"] if f["filterType"] == "PRICE_FILTER"
         )
-        tick_size = float(price_filter["tickSize"])
-        precision = (
-            len(str(tick_size).split(".")[-1].rstrip("0")) if tick_size < 1.0 else 0
-        )
+        tick_size_str = price_filter["tickSize"]
+        tick_size = float(tick_size_str)
+        # Calculate precision from string representation
+        if "." in tick_size_str:
+            precision = len(tick_size_str.split(".")[-1].rstrip("0"))
+        else:
+            precision = 0
         formatted = "{:0.{}f}".format(price, precision)
         # Ensure formatted price is not zero for non-zero input
         if float(formatted) == 0 and price != 0:

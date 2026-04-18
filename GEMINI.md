@@ -213,7 +213,8 @@ In this environment, the `&&` operator often fails:
 
 ### 🛡️ Smart Trade Safety
 - **Floor Rounding**: Applied to all quantities for consistency
-- **ID-Strict Reconciliation**: Never delete trades from database while Binance orders are active
+- **ID-Strict Reconciliation**: Never delete trades from database while Binance orders are active.
+- **Downtime Accuracy (KNOWN LIMITATION)**: If the app is offline for an extended period, the Lead/Futures reconciler may use the *current* ticker price as the `exit_price` if it can't find a matching protection order fill. This will be improved in a future update to scan historical fills.
 - **Fee-Aware Clipping**: Commissions auto-deducted from sell quantities
 - **Time Synchronization**: `recvWindow=60000` with automatic clock sync
 

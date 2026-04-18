@@ -834,16 +834,28 @@ class FuturesService:
                             avg_price = float(order.get("avgPrice", 0))
                             trade.status = "ENTRY_FILLED"
                             trade.entry_price = avg_price
-                            
+
                             # Capture Entry Fees
                             try:
-                                history = self.std_client.futures_account_trades(symbol=symbol, limit=10)
-                                fill = next((h for h in history if h.get('clientOrderId') == f"ENT_{tid}"), None)
+                                history = self.std_client.futures_account_trades(
+                                    symbol=symbol, limit=10
+                                )
+                                fill = next(
+                                    (
+                                        h
+                                        for h in history
+                                        if h.get("clientOrderId") == f"ENT_{tid}"
+                                    ),
+                                    None,
+                                )
                                 if fill:
-                                    trade.entry_fees = float(fill.get('commission', 0))
-                                    trade.entry_fee_asset = fill.get('commissionAsset', 'USDT')
-                            except: pass
-                            
+                                    trade.entry_fees = float(fill.get("commission", 0))
+                                    trade.entry_fee_asset = fill.get(
+                                        "commissionAsset", "USDT"
+                                    )
+                            except:
+                                pass
+
                             db_session.commit()
                     except Exception as e:
                         print(f"Error checking entry for {tid}: {e}")
@@ -855,6 +867,18 @@ class FuturesService:
                     if not pos or float(pos.position_amt or 0) == 0:
                         trade.status = "CLOSED"
                         trade.close_reason = "SYNC_POSITION_GONE"
+                        # TODO: REVIEW - Using current ticker price as exit price is inaccurate if the app was down.
+                        # Should query futures_account_trades for the actual historical fill that closed the position.
+                        try:
+                            ticker = self.std_client.futures_symbol_ticker(
+                                symbol=symbol
+                            )
+                            trade.exit_price = float(ticker.get("price", 0))
+                        except:
+                            trade.exit_price = 0
+                        trade.exit_fees = 0
+                        trade.exit_fee_asset = "USDT"
+                        trade.close_time = time.time()
                         db_session.commit()
 
                 # C. Handle ACTIVE
