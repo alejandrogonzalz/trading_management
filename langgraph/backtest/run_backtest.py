@@ -5,6 +5,7 @@ import json
 import os
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
@@ -107,6 +108,11 @@ def simulate_trade(prediction: Dict, future_candles: List[Dict], max_hold: int =
     return {"outcome": "TIMEOUT", "pnl_pct": pnl, "hold_bars": min(max_hold, len(future_candles))}
 
 
+def _truncate(s: str, max_len: int = 150) -> str:
+    """Truncate string with ellipsis."""
+    return s if len(s) <= max_len else s[:max_len] + "…"
+
+
 async def run_backtest(
     dataset_path: str,
     candles_dir: str,
@@ -114,6 +120,7 @@ async def run_backtest(
     max_samples: Optional[int] = None,
     provider: Optional[str] = None,
     model: Optional[str] = None,
+    verbose: bool = False,
 ) -> Dict[str, Any]:
     """Run a full backtest: load data, call LLM, simulate trades, compute metrics."""
     # Override provider/model if specified
@@ -163,6 +170,10 @@ async def run_backtest(
 
         sys_prompt, user_prompt = _build_prompts(sample)
 
+        # Print system prompt once
+        if verbose and i == 0:
+            print(f"\n📋 SYSTEM PROMPT:\n{sys_prompt.strip()}\n")
+
         # Call LLM with retry
         prediction = None
         for attempt in range(2):
@@ -199,6 +210,21 @@ async def run_backtest(
             result = {"outcome": "ERROR", "pnl_pct": 0, "hold_bars": 0}
 
         trade_results.append(result)
+
+        if verbose:
+            ts = sample.get("timestamp", "")
+            ts_str = f" @ {datetime.fromtimestamp(ts / 1000).strftime('%Y-%m-%d %H:%M')}" if ts else ""
+            print(f"─── Sample {i + 1}/{len(samples)} ── {symbol}{ts_str} ───")
+            print(f"📤 PROMPT (user): {_truncate(user_prompt.strip())}")
+            print(f"📥 RESPONSE: {json.dumps(prediction, default=str)}")
+            label_bias = label.get("bias", "?")
+            label_tp = label.get("tp", "?")
+            label_sl = label.get("sl", "?")
+            print(f"🏷️  ACTUAL: {label_bias} (tp: {label_tp}, sl: {label_sl})")
+            outcome = result["outcome"]
+            pnl = result["pnl_pct"]
+            icon = "✅" if outcome == "WIN" else "❌" if outcome == "LOSS" else "⏱️"
+            print(f"📊 RESULT: {icon} {outcome} ({pnl:+.2f}%)\n")
 
         # Progress
         if (i + 1) % 10 == 0 or i == len(samples) - 1:

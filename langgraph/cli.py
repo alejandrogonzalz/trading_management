@@ -105,6 +105,7 @@ def cmd_run_backtest(args):
             max_samples=args.max_samples,
             provider=args.provider,
             model=args.model,
+            verbose=args.verbose,
         )
     )
     print_report(result)
@@ -147,6 +148,7 @@ def main():
     p.add_argument("--model", help="LLM model name")
     p.add_argument("--tag", default="backtest", help="Tag for this run")
     p.add_argument("--max-samples", type=int, help="Limit number of samples")
+    p.add_argument("--verbose", "-v", action="store_true", help="Show prompts, responses, and trade results per sample")
 
     # compare
     p = sub.add_parser("compare", help="Compare two backtest runs")
