@@ -13,5 +13,9 @@ loguru
 python-dotenv
 fastapi
 uvicorn
+tabulate
+pandas
+numpy
+TA-Lib
 pytest
 pytest-asyncio
