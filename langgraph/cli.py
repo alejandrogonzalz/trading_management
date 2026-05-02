@@ -20,6 +20,7 @@ from backtest.label_data import generate_labeled_dataset, save_labeled_dataset  
 from backtest.run_backtest import run_backtest  # noqa: E402
 from backtest.compare import compare  # noqa: E402
 from backtest.report import print_report, print_comparison  # noqa: E402
+from backtest.export_training_data import export_training_data  # noqa: E402
 
 
 def cmd_fetch_candles(args):
@@ -98,6 +99,14 @@ def cmd_compare(args):
     print_comparison(comparison)
 
 
+def cmd_export_training_data(args):
+    export_training_data(
+        dataset_path=args.dataset,
+        output_dir=args.output,
+        mode=args.mode,
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(description="Backtest Framework CLI")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -126,6 +135,12 @@ def main():
     p.add_argument("--baseline", required=True, help="Path to baseline results JSON")
     p.add_argument("--candidate", required=True, help="Path to candidate results JSON")
 
+    # export-training-data
+    p = sub.add_parser("export-training-data", help="Export labeled dataset as chat-format JSONL for fine-tuning")
+    p.add_argument("--dataset", required=True, help="Path to labeled JSONL dataset")
+    p.add_argument("--output", required=True, help="Output directory for train/val/test JSONL files")
+    p.add_argument("--mode", default="FUTURES", choices=["SPOT", "FUTURES"], help="Trading mode (default: FUTURES)")
+
     args = parser.parse_args()
 
     commands = {
@@ -133,6 +148,7 @@ def main():
         "prepare-dataset": cmd_prepare_dataset,
         "run-backtest": cmd_run_backtest,
         "compare": cmd_compare,
+        "export-training-data": cmd_export_training_data,
     }
     commands[args.command](args)
 
