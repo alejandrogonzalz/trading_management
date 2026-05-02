@@ -89,14 +89,20 @@ def build_training_example(sample: Dict[str, Any], mode: Literal["SPOT", "FUTURE
     indicators = sample["indicators"]
     label = sample["label"]
 
-    # Wrap indicators as multi-timeframe dict (matching generator_node input)
-    multi_tf_indicators = {"1h": indicators}
+    # If indicators are already multi-TF ({"1h": {...}, "4h": {...}}), use as-is.
+    # If flat ({"price": ..., "rsi": ...}), wrap in {"1h": ...} for backward compat.
+    if indicators and isinstance(next(iter(indicators.values())), dict):
+        multi_tf_indicators = indicators
+        base_ind = indicators.get("1h", next(iter(indicators.values())))
+    else:
+        multi_tf_indicators = {"1h": indicators}
+        base_ind = indicators
 
     system_prompt = _build_system_prompt(mode)
     user_prompt = _build_user_prompt(symbol, multi_tf_indicators)
 
     # Build assistant response
-    reasoning = _generate_reasoning(label["bias"], indicators)
+    reasoning = _generate_reasoning(label["bias"], base_ind)
     assistant_response = {
         "bias": label["bias"],
         "entry": label["entry"],

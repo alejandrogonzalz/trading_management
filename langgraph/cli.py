@@ -14,8 +14,8 @@ load_dotenv()
 # Ensure the langgraph dir is on the path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from backtest.fetch_candles import fetch_candles, save_candles  # noqa: E402
-from backtest.calculate_indicators import calculate_indicators_batch  # noqa: E402
+from backtest.fetch_candles import fetch_multi_tf_candles, save_candles  # noqa: E402
+from backtest.calculate_indicators import calculate_indicators_batch, calculate_multi_tf_indicators  # noqa: E402
 from backtest.label_data import generate_labeled_dataset, save_labeled_dataset  # noqa: E402
 from backtest.run_backtest import run_backtest  # noqa: E402
 from backtest.compare import compare  # noqa: E402
@@ -25,6 +25,7 @@ from backtest.export_training_data import export_training_data  # noqa: E402
 
 def cmd_fetch_candles(args):
     symbols = [s.strip() for s in args.symbols.split(",")]
+    timeframes = [t.strip() for t in args.timeframes.split(",")]
     end = datetime.now(timezone.utc)
     start = end - timedelta(days=args.months * 30)
     start_str = start.strftime("%Y-%m-%d")
@@ -32,38 +33,53 @@ def cmd_fetch_candles(args):
 
     async def _fetch():
         for sym in symbols:
-            print(f"Fetching {sym} {args.interval} from {start_str} to {end_str}...")
-            candles = await fetch_candles(sym, args.interval, start_str, end_str)
-            path = save_candles(candles, sym, args.interval)
-            print(f"  Saved {len(candles)} candles to {path}")
+            print(f"Fetching {sym} timeframes={timeframes} from {start_str} to {end_str}...")
+            candles_by_tf = await fetch_multi_tf_candles(sym, timeframes, start_str, end_str)
+            for tf, candles in candles_by_tf.items():
+                path = save_candles(candles, sym, tf)
+                print(f"  Saved {len(candles)} {tf} candles to {path}")
 
     asyncio.run(_fetch())
 
 
 def cmd_prepare_dataset(args):
     symbols = [s.strip() for s in args.symbols.split(",")]
+    timeframes = [t.strip() for t in args.timeframes.split(",")]
     candles_dir = Path(__file__).parent / "backtest" / "data" / "candles"
     labeled_dir = Path(__file__).parent / "backtest" / "data" / "labeled"
+    base_tf = args.interval
 
     all_labeled = []
     for sym in symbols:
-        candle_file = candles_dir / f"{sym}_{args.interval}.json"
-        if not candle_file.exists():
-            print(f"No candle data for {sym}_{args.interval}. Run fetch-candles first.")
+        # Check which TF files exist
+        available_tfs = {}
+        for tf in timeframes:
+            candle_file = candles_dir / f"{sym}_{tf}.json"
+            if candle_file.exists():
+                with open(candle_file) as f:
+                    available_tfs[tf] = json.load(f)
+
+        if base_tf not in available_tfs:
+            print(f"No candle data for {sym}_{base_tf}. Run fetch-candles first.")
             continue
 
-        with open(candle_file) as f:
-            candles = json.load(f)
+        use_multi_tf = len(available_tfs) > 1
+        print(f"{'Multi-TF' if use_multi_tf else 'Single-TF'} mode for {sym}: {list(available_tfs.keys())}")
 
-        print(f"Calculating indicators for {sym} ({len(candles)} candles)...")
-        indicators = calculate_indicators_batch(candles)
+        if use_multi_tf:
+            print(f"Calculating multi-TF indicators for {sym}...")
+            indicators = calculate_multi_tf_indicators(available_tfs, base_tf=base_tf)
+        else:
+            candles = available_tfs[base_tf]
+            print(f"Calculating indicators for {sym} ({len(candles)} candles)...")
+            indicators = calculate_indicators_batch(candles)
+
         print(f"  Got {len(indicators)} indicator points")
 
         print(f"Labeling {sym}...")
-        labeled = generate_labeled_dataset(candles, indicators, sym)
+        labeled = generate_labeled_dataset(available_tfs[base_tf], indicators, sym)
         print(f"  Got {len(labeled)} labeled samples (LONG/SHORT only, ambiguous discarded)")
 
-        # Count distribution
         longs = sum(1 for s in labeled if s["label"]["bias"] == "LONG")
         shorts = len(labeled) - longs
         print(f"  Distribution: {longs} LONG, {shorts} SHORT")
@@ -114,13 +130,15 @@ def main():
     # fetch-candles
     p = sub.add_parser("fetch-candles", help="Download historical candles from Binance")
     p.add_argument("--symbols", required=True, help="Comma-separated symbols (e.g. BTCUSDT,ETHUSDT)")
-    p.add_argument("--interval", default="1h", help="Candle interval (default: 1h)")
+    p.add_argument("--interval", default="1h", help="Base candle interval (default: 1h)")
     p.add_argument("--months", type=int, default=6, help="Months of history (default: 6)")
+    p.add_argument("--timeframes", default="1h,4h,1d", help="Comma-separated timeframes to fetch (default: 1h,4h,1d)")
 
     # prepare-dataset
     p = sub.add_parser("prepare-dataset", help="Calculate indicators and generate labeled dataset")
     p.add_argument("--symbols", required=True, help="Comma-separated symbols")
-    p.add_argument("--interval", default="1h", help="Candle interval (default: 1h)")
+    p.add_argument("--interval", default="1h", help="Base candle interval (default: 1h)")
+    p.add_argument("--timeframes", default="1h,4h,1d", help="Comma-separated timeframes to use (default: 1h,4h,1d)")
 
     # run-backtest
     p = sub.add_parser("run-backtest", help="Run backtest with LLM predictions")

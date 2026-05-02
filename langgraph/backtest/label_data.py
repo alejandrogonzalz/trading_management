@@ -14,10 +14,23 @@ def label_candle(
 ) -> Optional[Dict[str, Any]]:
     """Label a single candle using hindsight.
 
+    indicator_point["indicators"] can be either:
+    - flat dict: {"price": ..., "rsi": ...} (single-TF, backward compat)
+    - multi-TF dict: {"1h": {...}, "4h": {...}, ...}
+
     Returns a labeled dict or None if the candle is ambiguous/filtered.
     """
     atr = indicator_point["atr_raw"]
-    ind = indicator_point["indicators"]
+    raw_ind = indicator_point["indicators"]
+
+    # Detect multi-TF vs flat format — use base TF for labeling decisions
+    if raw_ind and isinstance(next(iter(raw_ind.values())), dict):
+        # Multi-TF: pick the base TF for labeling logic
+        base_tf = "1h" if "1h" in raw_ind else next(iter(raw_ind.keys()))
+        ind = raw_ind[base_tf]
+    else:
+        ind = raw_ind
+
     entry = ind["price"]
 
     if candle_index + lookahead >= len(candles):
@@ -85,7 +98,7 @@ def label_candle(
 
     return {
         "timestamp": indicator_point["timestamp"],
-        "indicators": ind,
+        "indicators": raw_ind,
         "atr_raw": atr,
         "label": {
             "bias": bias,

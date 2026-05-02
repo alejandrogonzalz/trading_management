@@ -11,6 +11,8 @@ import httpx
 BINANCE_KLINES_URL = "https://api.binance.com/api/v3/klines"
 DATA_DIR = Path(__file__).parent / "data" / "candles"
 
+DEFAULT_TIMEFRAMES = ["1h", "4h", "1d"]
+
 
 def _ms(dt_str: str) -> int:
     """Convert 'YYYY-MM-DD' to milliseconds since epoch."""
@@ -45,14 +47,16 @@ async def fetch_candles(
                 break
 
             for k in raw:
-                all_candles.append({
-                    "timestamp": k[0],
-                    "open": float(k[1]),
-                    "high": float(k[2]),
-                    "low": float(k[3]),
-                    "close": float(k[4]),
-                    "volume": float(k[5]),
-                })
+                all_candles.append(
+                    {
+                        "timestamp": k[0],
+                        "open": float(k[1]),
+                        "high": float(k[2]),
+                        "low": float(k[3]),
+                        "close": float(k[4]),
+                        "volume": float(k[5]),
+                    }
+                )
 
             # Advance past the last candle's open time
             current_ms = raw[-1][0] + 1
@@ -60,6 +64,22 @@ async def fetch_candles(
             await asyncio.sleep(0.1)
 
     return all_candles
+
+
+async def fetch_multi_tf_candles(
+    symbol: str,
+    timeframes: List[str] = DEFAULT_TIMEFRAMES,
+    start_date: str = "2025-11-01",
+    end_date: str = "2026-05-01",
+) -> Dict[str, List[Dict[str, Any]]]:
+    """Fetch candles for multiple timeframes. Returns {tf: [candles]}."""
+    result: Dict[str, List[Dict[str, Any]]] = {}
+    for tf in timeframes:
+        print(f"  Fetching {symbol} {tf}...")
+        candles = await fetch_candles(symbol, tf, start_date, end_date)
+        result[tf] = candles
+        print(f"    {len(candles)} candles")
+    return result
 
 
 def save_candles(candles: List[Dict[str, Any]], symbol: str, interval: str) -> Path:

@@ -22,6 +22,13 @@ def _build_prompts(sample: Dict[str, Any]) -> tuple[str, str]:
     symbol = sample.get("symbol", "BTCUSDT")
     indicators = sample["indicators"]
 
+    # If indicators are already multi-TF ({"1h": {...}, "4h": {...}}), use as-is.
+    # If flat ({"price": ..., "rsi": ...}), wrap in {"1h": ...} for backward compat.
+    if indicators and isinstance(next(iter(indicators.values())), dict):
+        multi_tf = indicators
+    else:
+        multi_tf = {"1h": indicators}
+
     system_prompt = """
     You are a Senior Technical Analyst for a FUTURES (Long/Short, Leverage 1-50x) trading system.
     Analyze the provided multi-timeframe indicators and generate a high-confluence trade setup.
@@ -34,7 +41,7 @@ def _build_prompts(sample: Dict[str, Any]) -> tuple[str, str]:
 
     user_prompt = f"""
     Symbol: {symbol}
-    Indicators: {json.dumps({"1h": indicators})}
+    Indicators: {json.dumps(multi_tf)}
     
     Return valid JSON with these exact fields:
     {{
@@ -55,6 +62,7 @@ def _parse_prediction(response_text: str) -> Optional[Dict[str, Any]]:
     """Parse LLM response into a prediction dict."""
     text = response_text.strip().replace("```json", "").replace("```", "").strip()
     import re
+
     match = re.search(r"\{.*\}", text, re.DOTALL)
     if not match:
         return None
@@ -164,12 +172,12 @@ async def run_backtest(
                 if prediction:
                     break
             except Exception as e:
-                print(f"  Sample {i+1}: LLM error (attempt {attempt+1}): {e}")
+                print(f"  Sample {i + 1}: LLM error (attempt {attempt + 1}): {e}")
                 await asyncio.sleep(1)
 
         if not prediction:
             errors += 1
-            print(f"  Sample {i+1}: Failed to get prediction, skipping")
+            print(f"  Sample {i + 1}: Failed to get prediction, skipping")
             continue
 
         # Add confidence if missing
@@ -195,7 +203,7 @@ async def run_backtest(
         # Progress
         if (i + 1) % 10 == 0 or i == len(samples) - 1:
             elapsed = time.time() - start_time
-            print(f"  Progress: {i+1}/{len(samples)} ({elapsed:.1f}s, {errors} errors)")
+            print(f"  Progress: {i + 1}/{len(samples)} ({elapsed:.1f}s, {errors} errors)")
 
     elapsed = time.time() - start_time
 
