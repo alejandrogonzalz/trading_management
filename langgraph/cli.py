@@ -14,6 +14,7 @@ load_dotenv()
 # Ensure the langgraph dir is on the path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from backtest.config import DEFAULT_MONTHS, DEFAULT_SYMBOLS, DEFAULT_TIMEFRAMES  # noqa: E402
 from backtest.fetch_candles import fetch_multi_tf_candles, save_candles  # noqa: E402
 from backtest.calculate_indicators import calculate_indicators_batch, calculate_multi_tf_indicators  # noqa: E402
 from backtest.label_data import generate_labeled_dataset, save_labeled_dataset  # noqa: E402
@@ -21,6 +22,9 @@ from backtest.run_backtest import run_backtest  # noqa: E402
 from backtest.compare import compare  # noqa: E402
 from backtest.report import print_report, print_comparison  # noqa: E402
 from backtest.export_training_data import export_training_data  # noqa: E402
+
+_DEFAULT_SYMBOLS_STR = ",".join(DEFAULT_SYMBOLS)
+_DEFAULT_TIMEFRAMES_STR = ",".join(DEFAULT_TIMEFRAMES)
 
 
 def cmd_fetch_candles(args):
@@ -130,16 +134,32 @@ def main():
 
     # fetch-candles
     p = sub.add_parser("fetch-candles", help="Download historical candles from Binance")
-    p.add_argument("--symbols", required=True, help="Comma-separated symbols (e.g. BTCUSDT,ETHUSDT)")
+    p.add_argument(
+        "--symbols",
+        default=_DEFAULT_SYMBOLS_STR,
+        help=f"Comma-separated symbols (default: {len(DEFAULT_SYMBOLS)} from config)",
+    )
     p.add_argument("--interval", default="1h", help="Base candle interval (default: 1h)")
-    p.add_argument("--months", type=int, default=6, help="Months of history (default: 6)")
-    p.add_argument("--timeframes", default="1h,4h,1d", help="Comma-separated timeframes to fetch (default: 1h,4h,1d)")
+    p.add_argument("--months", type=int, default=DEFAULT_MONTHS, help=f"Months of history (default: {DEFAULT_MONTHS})")
+    p.add_argument(
+        "--timeframes",
+        default=_DEFAULT_TIMEFRAMES_STR,
+        help=f"Comma-separated timeframes (default: {_DEFAULT_TIMEFRAMES_STR})",
+    )
 
     # prepare-dataset
     p = sub.add_parser("prepare-dataset", help="Calculate indicators and generate labeled dataset")
-    p.add_argument("--symbols", required=True, help="Comma-separated symbols")
+    p.add_argument(
+        "--symbols",
+        default=_DEFAULT_SYMBOLS_STR,
+        help=f"Comma-separated symbols (default: {len(DEFAULT_SYMBOLS)} from config)",
+    )
     p.add_argument("--interval", default="1h", help="Base candle interval (default: 1h)")
-    p.add_argument("--timeframes", default="1h,4h,1d", help="Comma-separated timeframes to use (default: 1h,4h,1d)")
+    p.add_argument(
+        "--timeframes",
+        default=_DEFAULT_TIMEFRAMES_STR,
+        help=f"Comma-separated timeframes (default: {_DEFAULT_TIMEFRAMES_STR})",
+    )
 
     # run-backtest
     p = sub.add_parser("run-backtest", help="Run backtest with LLM predictions")
