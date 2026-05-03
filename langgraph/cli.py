@@ -196,7 +196,7 @@ def main():
     # train-ml
     p = sub.add_parser("train-ml", help="Train and backtest a traditional ML model (XGBoost, Random Forest)")
     p.add_argument("--dataset", required=True, help="Path to labeled JSONL dataset")
-    p.add_argument("--model", default="xgboost", choices=["xgboost", "random-forest"], help="ML model type")
+    p.add_argument("--model", default="xgboost", choices=["xgboost", "random-forest", "lstm"], help="ML model type")
     p.add_argument("--tag", help="Tag for this run (default: ml-<model>)")
     p.add_argument("--max-samples", type=int, help="Limit test samples")
     p.add_argument("--verbose", "-v", action="store_true", help="Show per-sample predictions")

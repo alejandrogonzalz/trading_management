@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 
 from backtest.metrics import compute_all_metrics
-from backtest.ml_models import get_predictor, _load_dataset, _temporal_split
+from backtest.ml_models import get_predictor, extract_features, _load_dataset, _temporal_split
 from backtest.run_backtest import simulate_trade
 
 RESULTS_DIR = Path(__file__).parent / "data" / "results"
@@ -69,12 +69,38 @@ def run_ml_backtest(
     trade_results = []
     errors = 0
 
+    # For LSTM: pre-build sequences over the full dataset so each test sample
+    # gets the correct historical context window.
+    lstm_sequences = None
+    if model_type == "lstm":
+        import numpy as _np
+        import torch
+
+        all_features = _np.array([extract_features(s["indicators"]) for s in all_samples], dtype=_np.float32)
+        # Normalize with the same stats used during training
+        all_features = (all_features - predictor._mean) / predictor._std
+        seq_len = predictor.sequence_length
+        n, d = all_features.shape
+        seqs = _np.zeros((n, seq_len, d), dtype=_np.float32)
+        for i in range(n):
+            start = max(0, i - seq_len + 1)
+            chunk = all_features[start : i + 1]
+            seqs[i, seq_len - len(chunk) :] = chunk
+        lstm_sequences = torch.tensor(seqs)
+
+    # Index where test split starts in the full dataset
+    test_offset = len(_train) + len(_val)
+
     for i, sample in enumerate(test):
         symbol = sample.get("symbol", "BTCUSDT")
         label = sample["label"]
         atr = sample.get("atr_raw", 0)
 
-        pred = predictor.predict(sample["indicators"])
+        pred = (
+            predictor.predict(sample["indicators"])
+            if lstm_sequences is None
+            else predictor.predict_sequence(lstm_sequences[test_offset + i].unsqueeze(0))
+        )
 
         # Generate TP/SL from ATR (ML only predicts direction)
         entry = label["entry"]  # Use actual entry price

@@ -21,3 +21,4 @@ pytest
 pytest-asyncio
 xgboost
 scikit-learn
+torch
