@@ -19,3 +19,5 @@ numpy
 TA-Lib
 pytest
 pytest-asyncio
+xgboost
+scikit-learn

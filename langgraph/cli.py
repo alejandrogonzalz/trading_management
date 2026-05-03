@@ -22,6 +22,7 @@ from backtest.run_backtest import run_backtest  # noqa: E402
 from backtest.compare import compare  # noqa: E402
 from backtest.report import print_report, print_comparison  # noqa: E402
 from backtest.export_training_data import export_training_data  # noqa: E402
+from backtest.run_ml_backtest import run_ml_backtest  # noqa: E402
 
 _DEFAULT_SYMBOLS_STR = ",".join(DEFAULT_SYMBOLS)
 _DEFAULT_TIMEFRAMES_STR = ",".join(DEFAULT_TIMEFRAMES)
@@ -128,6 +129,17 @@ def cmd_export_training_data(args):
     )
 
 
+def cmd_train_ml(args):
+    result = run_ml_backtest(
+        dataset_path=args.dataset,
+        model_type=args.model,
+        tag=args.tag,
+        max_samples=args.max_samples,
+        verbose=args.verbose,
+    )
+    print_report(result)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Backtest Framework CLI")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -181,6 +193,14 @@ def main():
     p.add_argument("--output", required=True, help="Output directory for train/val/test JSONL files")
     p.add_argument("--mode", default="FUTURES", choices=["SPOT", "FUTURES"], help="Trading mode (default: FUTURES)")
 
+    # train-ml
+    p = sub.add_parser("train-ml", help="Train and backtest a traditional ML model (XGBoost, Random Forest)")
+    p.add_argument("--dataset", required=True, help="Path to labeled JSONL dataset")
+    p.add_argument("--model", default="xgboost", choices=["xgboost", "random-forest"], help="ML model type")
+    p.add_argument("--tag", help="Tag for this run (default: ml-<model>)")
+    p.add_argument("--max-samples", type=int, help="Limit test samples")
+    p.add_argument("--verbose", "-v", action="store_true", help="Show per-sample predictions")
+
     args = parser.parse_args()
 
     commands = {
@@ -189,6 +209,7 @@ def main():
         "run-backtest": cmd_run_backtest,
         "compare": cmd_compare,
         "export-training-data": cmd_export_training_data,
+        "train-ml": cmd_train_ml,
     }
     commands[args.command](args)
 
