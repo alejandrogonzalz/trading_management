@@ -183,6 +183,84 @@ class OpenAIProvider(LLMProvider):
         return response.content
 
 
+class OpenAICompatibleProvider(LLMProvider):
+    """Works with any OpenAI-compatible API: Groq, DeepSeek, Together, Fireworks, etc."""
+
+    KNOWN_BASE_URLS = {
+        "groq": "https://api.groq.com/openai/v1",
+        "deepseek": "https://api.deepseek.com/v1",
+        "together": "https://api.together.xyz/v1",
+        "fireworks": "https://api.fireworks.ai/inference/v1",
+    }
+
+    def __init__(self, provider_type: str, model_name: str, api_key: str, temperature: float):
+        from langchain_openai import ChatOpenAI
+
+        base_url = os.getenv("LLM_BASE_URL") or self.KNOWN_BASE_URLS.get(provider_type)
+        if not base_url:
+            raise ValueError(
+                f"Unknown provider '{provider_type}' and LLM_BASE_URL not set. "
+                f"Known providers: {list(self.KNOWN_BASE_URLS.keys())}"
+            )
+
+        self.client = ChatOpenAI(
+            model=model_name,
+            api_key=api_key,
+            base_url=base_url,
+            temperature=temperature,
+        )
+
+    async def generate_setup(self, system_prompt: str, user_prompt: str) -> str:
+        max_retries = 3
+        last_exception = None
+
+        for attempt in range(max_retries):
+            try:
+                response = await self.client.ainvoke(
+                    [
+                        SystemMessage(content=system_prompt),
+                        HumanMessage(content=user_prompt),
+                    ]
+                )
+
+                content = (
+                    response.content
+                    if response and hasattr(response, "content")
+                    else ""
+                )
+
+                if not content or content.strip() == "":
+                    raise ValueError("Empty response from LLM")
+
+                return content
+
+            except Exception as e:
+                last_exception = e
+                print(
+                    f"OpenAI-compatible API error (attempt {attempt + 1}/{max_retries}): {type(e).__name__}: {e}"
+                )
+
+                if attempt < max_retries - 1:
+                    wait_time = 2**attempt
+                    print(f"Retrying in {wait_time} seconds...")
+                    await asyncio.sleep(wait_time)
+                    continue
+
+        error_msg = f"Failed after {max_retries} attempts: {last_exception}"
+        print(error_msg)
+
+        fallback_response = {
+            "error": error_msg,
+            "bias": "NEUTRAL",
+            "entry": 0,
+            "tp": 0,
+            "sl": 0,
+            "leverage": None,
+            "reasoning": f"LLM service unavailable: {last_exception}",
+        }
+        return json.dumps(fallback_response)
+
+
 class MockProvider(LLMProvider):
     async def generate_setup(self, system_prompt: str, user_prompt: str) -> str:
         """Returns mock trade setups based on the symbol and scenario indicators."""
@@ -368,8 +446,27 @@ def get_llm_provider() -> LLMProvider:
             temperature=temperature,
         )
 
-    elif provider_type == "openai":
+    elif provider_type == "openai" and not os.getenv("LLM_BASE_URL"):
         return OpenAIProvider(model_name=model_name, temperature=temperature)
+
+    elif provider_type in ("groq", "deepseek", "together", "fireworks", "openai"):
+        api_key = os.getenv("LLM_API_KEY")
+        if not api_key:
+            provider_key_map = {
+                "groq": "GROQ_API_KEY",
+                "deepseek": "DEEPSEEK_API_KEY",
+                "together": "TOGETHER_API_KEY",
+                "openai": "OPENAI_API_KEY",
+            }
+            env_var = provider_key_map.get(provider_type)
+            if env_var:
+                api_key = os.getenv(env_var)
+        return OpenAICompatibleProvider(
+            provider_type=provider_type,
+            model_name=model_name,
+            api_key=api_key or "",
+            temperature=temperature,
+        )
 
     else:  # Default to Ollama
         return OllamaProvider(
