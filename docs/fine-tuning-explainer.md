@@ -58,10 +58,10 @@ flowchart TD
     C --> D[Quality Filters<br/>Remove noise, whipsaws, low-volume]
     D --> E[JSONL Dataset<br/>3,000–5,000 examples]
     E --> F[Fine-Tuning<br/>QLoRA on Qwen 2.5 7B]
-    F --> G[Trained Model<br/>GGUF format for Ollama]
+    F --> G[Trained Model<br/>GGUF for Ollama or<br/>hosted on Together AI]
     G --> H[Backtest<br/>100+ unseen examples]
     H --> I{Better than<br/>baseline?}
-    I -->|Yes| J[Deploy to Production<br/>Replace model in Ollama]
+    I -->|Yes| J[Deploy to Production<br/>Local Ollama or cloud provider]
     I -->|No| K[Adjust & Retrain<br/>More data, different hyperparams]
     K --> F
 
@@ -88,9 +88,10 @@ Fine-tuning is a **surgical upgrade** — it replaces one component (the LLM wei
 | **Optimizer** | ❌ No | Same corrective layer (uses the same model weights though) |
 | **LangGraph pipeline** | ❌ No | Same nodes, same flow, same architecture |
 | **Risk management** | ❌ No | Same position sizing, max exposure, portfolio limits |
+| **SQLite database** | ❌ No | Backend only — stores trades, orders, audit logs. Not used by LLM or backtest |
 | **LLM weights** | ✅ Yes | The only thing that changes — a better "brain" in the same body |
 
-The model is a **swappable component**. Switching from zero-shot to fine-tuned is literally changing one model name in the Ollama configuration.
+The model is a **swappable component**. Switching from zero-shot to fine-tuned is changing one model name in the provider configuration. The system supports multiple LLM providers (Ollama, Groq, DeepSeek, Together AI) via `llm_factory.py` — the same interface regardless of backend.
 
 ---
 
@@ -133,18 +134,27 @@ flowchart LR
         M1 -.->|replaced by| M2
     end
 
+    subgraph Provider["LLM Provider (swappable)"]
+        P1[Ollama - local]
+        P2[Groq]
+        P3[DeepSeek]
+        P4[Together AI]
+    end
+
     S3 --> G
-    M2 --> G
-    M2 --> O
+    M2 --> Provider
+    Provider --> G
+    Provider --> O
     O --> R[Risk Manager]
     R --> X[Execute / Paper Trade]
 
     style M1 fill:#ffcdd2,stroke:#E91E63
     style M2 fill:#c8e6c9,stroke:#4CAF50
     style Model fill:#fff9c4,stroke:#FFC107
+    style Provider fill:#e3f2fd,stroke:#2196F3
 ```
 
-The fine-tuned model is a drop-in replacement. The Generator and Optimizer nodes call the same Ollama API — only the model name changes. Everything upstream (scanner, indicators) and downstream (evaluator, risk manager) remains identical.
+The fine-tuned model is a drop-in replacement. The Generator and Optimizer nodes call the LLM through `llm_factory.py`, which supports Ollama (local), Groq, DeepSeek, and Together AI via a unified interface. Everything upstream (scanner, indicators) and downstream (evaluator, risk manager) remains identical.
 
 ---
 
