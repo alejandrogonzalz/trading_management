@@ -1,260 +1,243 @@
-# Backtest & Comparison Framework
+# Backtest Framework
 
-**Date**: April 30, 2026
-**Project**: Trading Management System — Maestría en IA Aplicada, Tec de Monterrey
-**Author**: Alejandro González Almazán
+**The shared evaluation pipeline that all 3 approaches use.**
 
----
-
-## Overview
-
-A framework to evaluate LLM-generated trade setups against historical market data. Compares a zero-shot baseline (Qwen 2.5 via Groq/DeepSeek) against a fine-tuned model (Together AI) using classification metrics and simulated P&L.
-
-**Related docs**:
-- [Fine-Tuning Strategy](./fine-tuning-strategy.md) — training data pipeline and model training
-- [Action Plan](./action-plan.md) — implementation timeline and dependencies
+For a high-level overview of the approaches, see [three-approaches.md](./three-approaches.md).
 
 ---
 
-## 1. Provider Changes
+## What This Framework Does
 
-### OpenAICompatibleProvider
+Every approach — zero-shot LLM, fine-tuned LLM, and traditional ML — feeds into the same backtest pipeline. This ensures a fair, apples-to-apples comparison.
 
-The existing `llm_factory.py` has 5 providers. DeepSeek, Groq, Together, and Fireworks are all OpenAI-compatible — one unified provider replaces the current `OpenAIProvider`:
-
-```python
-class OpenAICompatibleProvider(LLMProvider):
-    """Works with OpenAI, DeepSeek, Groq, Together, Fireworks."""
-    def __init__(self, model_name: str, temperature: float,
-                 base_url: Optional[str] = None, api_key: Optional[str] = None):
-        from langchain_openai import ChatOpenAI
-        kwargs = {"model": model_name, "temperature": temperature}
-        if base_url:
-            kwargs["base_url"] = base_url
-        if api_key:
-            kwargs["api_key"] = api_key
-        self.client = ChatOpenAI(**kwargs)
+```mermaid
+flowchart LR
+    A[Fetch Candles] --> B[Calculate Indicators]
+    B --> C[Generate Labels]
+    C --> D[Predict<br/>LLM or ML]
+    D --> E[Simulate Trades]
+    E --> F[Compute Metrics]
 ```
-
-### Factory Update
-
-The factory auto-resolves base URLs by provider name:
-
-| LLM_PROVIDER | LLM_MODEL | LLM_BASE_URL (auto) |
-|---|---|---|
-| `deepseek` | `deepseek-chat` | `https://api.deepseek.com/v1` |
-| `groq` | `llama-3.3-70b-versatile` | `https://api.groq.com/openai/v1` |
-| `together` | `Qwen/Qwen2.5-7B-Instruct` or fine-tuned ID | `https://api.together.xyz/v1` |
-| `fireworks` | any supported model | `https://api.fireworks.ai/inference/v1` |
-| `openai` | `gpt-4o-mini` | (default OpenAI) |
-
-### Recommended Models for Backtest
-
-- **Baseline (cheap, fast)**: Groq `llama-3.3-70b-versatile` — free tier, ~6000 req/day
-- **Baseline (quality)**: DeepSeek `deepseek-chat` — $0.14/M input tokens
-- **Fine-tuned**: Together `alexglz/Qwen2.5-7B-Instruct-trading-v1`
-
-### Files Changed
-
-| File | Change |
-|---|---|
-| `langgraph/agent/llm_factory.py` | Replace `OpenAIProvider` with `OpenAICompatibleProvider`, update factory |
-| `.env.example` | Add `LLM_BASE_URL`, `LLM_API_KEY` examples |
 
 ---
 
-## 2. Data Pipeline
-
-```
-1. FETCH CANDLES        Binance public API → raw OHLCV (no API key needed)
-2. CALCULATE INDICATORS Sliding window over candles using indicator_service
-3. GENERATE LABELS      Hindsight labeling — look ahead N candles for ground truth
-4. FEED TO LLM          Send indicators to LangGraph or direct LLM call
-5. SIMULATE TRADES      Compare predictions vs actual price movement
-```
+## 1. Data Pipeline
 
 ### Fetching Candles
 
-Binance public klines endpoint — no API key required:
+Historical OHLCV (Open, High, Low, Close, Volume) data from Binance's public API. No API key required.
 
+```bash
+python -m cli fetch-candles --symbols BTCUSDT,ETHUSDT --interval 1h --months 6
 ```
-GET https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1h&limit=1000&startTime=...
+
+This downloads up to 1,000 candles per request, auto-paginating to cover the full time range. Data is saved as JSON in `backtest/data/candles/`.
+
+### Calculating Indicators
+
+Nine technical indicators computed per candle using TA-Lib:
+
+| Indicator | What It Measures |
+|-----------|-----------------|
+| **Heatmap** | EMA alignment across timeframes (STRONG_BULLISH → STRONG_BEARISH) |
+| **Structure** | Market structure (BREAKOUT, UPTREND, DOWNTREND, RANGE) |
+| **RSI** | Momentum oscillator (0–100; <30 oversold, >70 overbought) |
+| **MACD Histogram** | Trend momentum (positive = bullish, negative = bearish) |
+| **ADX** | Trend strength (>25 = trending, <15 = no trend) |
+| **Volume Ratio** | Current volume vs 20-period average (>1.5 = high activity) |
+| **ATR Ratio** | Current volatility vs 14-period average |
+| **BB Position** | Price position within Bollinger Bands (0 = lower, 1 = upper) |
+| **ATR Raw** | Absolute ATR value in price units (used for thresholds) |
+
+Requires 200 candles of lookback before the first valid indicator.
+
+```bash
+python -m cli prepare-dataset --symbols BTCUSDT,ETHUSDT --interval 1h
 ```
 
-Up to 1000 candles per request. Paginate by advancing `startTime`. Rate limit: 1200 req/min.
+### Generating Labels (Hindsight Labeling)
 
-### Labeling Logic
+For each candle at time T, we look ahead 24 candles to determine what *actually happened*. This creates ground-truth labels that the model tries to predict.
 
-For each candle at time T, look ahead to determine the correct trade direction. Uses ATR-based dynamic thresholds (not fixed percentages) and checks drawdown-before-profit (path dependency).
+**How it works**:
 
-Key design decisions:
-- **Dynamic threshold**: 1.5× ATR minimum move (adapts to each pair's volatility)
-- **Directional clarity**: Up must be > 1.5× Down (or vice versa) to avoid ambiguous labels
-- **Whipsaw filter**: Skip if direction reverses within 4 candles
-- **No NEUTRAL class**: Ambiguous examples are discarded, not labeled — see [Fine-Tuning Strategy](./fine-tuning-strategy.md#the-neutral-class-decision) for rationale
+1. Calculate the ATR-based threshold: `threshold = 1.5 × ATR / entry_price`
+2. Measure the maximum upward and downward moves in the next 24 candles
+3. If the upward move exceeds the threshold AND is 1.5× larger than the downward move → **LONG**
+4. If the downward move exceeds the threshold AND is 1.5× larger than the upward move → **SHORT**
+5. Otherwise → **discard** (ambiguous — not included in the dataset)
 
-```python
-def label_candle(candles, index, lookahead=24, atr_multiplier=1.5):
-    entry = candles[index]["close"]
-    future = candles[index + 1 : index + 1 + lookahead]
-    atr = indicators[index]["atr_raw"]
-    threshold_pct = (atr * atr_multiplier) / entry
+**Why ATR-based thresholds?** A 1% move on BTC is noise; a 1% move on a low-cap altcoin is significant. ATR adapts to each pair's volatility automatically.
 
-    max_up = (max(c["high"] for c in future) - entry) / entry
-    max_down = (entry - min(c["low"] for c in future)) / entry
-
-    if max_up > threshold_pct and max_up > max_down * 1.5:
-        return "LONG", calculate_tp_sl(...)
-    elif max_down > threshold_pct and max_down > max_up * 1.5:
-        return "SHORT", calculate_tp_sl(...)
-    else:
-        return None  # Discard — ambiguous
-```
+**Why no NEUTRAL class?** Markets are neutral 60–70% of the time. Including NEUTRAL would create massive class imbalance and teach the model to default to "no trade" — the safe but useless answer. Instead, ambiguous candles are simply excluded.
 
 ### Quality Filters
 
-| Filter | Threshold | Rationale |
-|---|---|---|
-| Minimum move | 1.5× ATR | Below this is noise |
-| Directional clarity | Up > 1.5× Down (or vice versa) | Ambiguous moves teach nothing |
-| Volume ratio | > 0.5 | Low volume = unreliable |
-| ADX | > 15 | Below 15 = random walk |
-| Risk:Reward | > 1:1 | Not worth trading even if correct |
-| Whipsaw | No reversal > threshold in first 4 candles | False signals |
+Candles are discarded if any of these conditions are true:
+
+| Filter | Threshold | Why |
+|--------|-----------|-----|
+| Movement too small | < 1.5× ATR | Below this is noise, not a tradeable signal |
+| Direction unclear | Up < 1.5× Down (or vice versa) | Ambiguous moves teach nothing useful |
+| Low volume | Volume ratio < 0.5 | Low-volume moves are unreliable |
+| No trend | ADX < 15 | Random walk — no pattern to learn |
+| Bad risk/reward | R:R < 1:1 | Not worth trading even if direction is correct |
+| Whipsaw | Direction reverses within 4 candles | False signal that would stop out |
+
+After filtering, the current dataset has **17,353 labeled samples** (45.5% LONG, 54.5% SHORT) from 20 pairs over 6 months.
 
 ---
 
-## 3. Backtest Simulation
+## 2. How Each Approach Uses the Framework
 
-### Trade Simulation
+### LLM Backtest (Approaches 1 & 2)
 
-```python
-def simulate_trade(prediction, future_candles, max_hold=24):
-    entry, tp, sl, bias = prediction["entry"], prediction["tp"], prediction["sl"], prediction["bias"]
-
-    for i, candle in enumerate(future_candles[:max_hold]):
-        if bias == "LONG":
-            if candle["low"] <= sl:
-                return {"outcome": "LOSS", "pnl_pct": (sl - entry) / entry * 100}
-            if candle["high"] >= tp:
-                return {"outcome": "WIN", "pnl_pct": (tp - entry) / entry * 100}
-        elif bias == "SHORT":
-            if candle["high"] >= sl:
-                return {"outcome": "LOSS", "pnl_pct": (entry - sl) / entry * 100}
-            if candle["low"] <= tp:
-                return {"outcome": "WIN", "pnl_pct": (entry - tp) / entry * 100}
-
-    # Timeout — close at last candle
-    last = future_candles[min(max_hold - 1, len(future_candles) - 1)]["close"]
-    pnl = ((last - entry) / entry * 100) if bias == "LONG" else ((entry - last) / entry * 100)
-    return {"outcome": "TIMEOUT", "pnl_pct": pnl}
-```
-
-### Metrics
-
-| Metric | Formula | What It Measures |
-|---|---|---|
-| Direction Accuracy | correct / total | Did the model predict LONG/SHORT correctly? |
-| Precision (per class) | TP / (TP + FP) | When it says LONG, how often is it right? |
-| Recall (per class) | TP / (TP + FN) | Of all actual LONGs, how many did it catch? |
-| F1 Score | 2 × P × R / (P + R) | Harmonic mean of precision and recall |
-| Win Rate | wins / total_trades | % of trades that hit TP before SL |
-| Profit Factor | gross_profit / gross_loss | >1 = profitable system |
-| Sharpe Ratio | mean(returns) / std(returns) × √N | Risk-adjusted return |
-| Max Drawdown | max peak-to-trough in equity curve | Worst losing streak |
-| Confidence Calibration | bin by confidence, compare to actual accuracy | Is confidence=80 really 80% accurate? |
-
----
-
-## 4. File Structure
-
-```
-langgraph/
-├── agent/
-│   └── llm_factory.py              ← MODIFY: add OpenAICompatibleProvider
-├── backtest/
-│   ├── __init__.py
-│   ├── fetch_candles.py            ← Download historical OHLCV from Binance
-│   ├── calculate_indicators.py     ← Batch indicator calculation
-│   ├── label_data.py               ← Hindsight labeling (LONG/SHORT)
-│   ├── run_backtest.py             ← Feed data to LLM, simulate trades
-│   ├── compare.py                  ← Side-by-side comparison of two runs
-│   ├── metrics.py                  ← All metric calculations
-│   └── report.py                   ← Terminal table + matplotlib charts
-├── backtest/data/                  ← gitignored, generated at runtime
-│   ├── candles/                    ← Raw OHLCV CSVs per symbol
-│   ├── labeled/                    ← Labeled datasets (JSONL)
-│   └── results/                    ← Backtest output JSONs per model run
-└── cli.py                          ← CLI entry point
-```
-
----
-
-## 5. CLI Interface
+The indicators are formatted as text and sent to the LLM with a prompt asking for a JSON trade setup. The LLM returns `{bias, entry, tp, sl, leverage, reasoning, quality}`. The trade is then simulated against actual future candles.
 
 ```bash
-# Download historical candles
-python -m langgraph.cli fetch-candles --symbols BTCUSDT,ETHUSDT --interval 1h --months 6
+# Zero-shot baseline
+python -m cli run-backtest --tag baseline --max-samples 200
 
-# Calculate indicators and generate labeled dataset
-python -m langgraph.cli prepare-dataset --symbols BTCUSDT,ETHUSDT
+# Fine-tuned model (after training)
+python -m cli run-backtest --provider together --model your-model --tag finetuned
+```
 
-# Run backtest with a specific provider
-python -m langgraph.cli run-backtest \
-    --dataset backtest/data/labeled/dataset.jsonl \
-    --provider groq --model llama-3.3-70b-versatile --tag baseline-groq
+### ML Backtest (Approach 3)
 
-# Compare two backtest runs
-python -m langgraph.cli compare \
-    --baseline results/baseline-groq.json \
-    --candidate results/finetuned-v1.json
+The indicators are converted to a flat numerical vector. The ML model outputs only a direction (LONG/SHORT). TP and SL are calculated from ATR after the fact (TP = 2× ATR, SL = 1.5× ATR). The trade is simulated the same way.
+
+```bash
+python -m cli train-ml --model xgboost --tag ml-xgboost
+python -m cli train-ml --model random_forest --tag ml-rf
+python -m cli train-ml --model lstm --tag ml-lstm
+```
+
+The `train-ml` command trains the model on the training split and automatically runs the backtest on the test split.
+
+---
+
+## 3. Trade Simulation
+
+For each prediction, the simulator replays future candles to determine the outcome:
+
+1. **Entry** at the predicted price
+2. Check each subsequent candle (up to 24):
+   - If price hits **TP** first → **WIN** (profit = TP − entry)
+   - If price hits **SL** first → **LOSS** (loss = entry − SL)
+3. If neither TP nor SL is hit within 24 candles → **TIMEOUT** (close at last candle's price)
+
+For LONG trades, SL is below entry and TP is above. For SHORT trades, the reverse. The simulator checks both high and low of each candle to detect hits.
+
+---
+
+## 4. Metrics
+
+### Classification Metrics
+
+| Metric | Formula | What It Tells You |
+|--------|---------|-------------------|
+| **Direction Accuracy** | correct / total | How often LONG/SHORT was right |
+| **Precision** (per class) | TP / (TP + FP) | When it says LONG, how often is it actually LONG? |
+| **Recall** (per class) | TP / (TP + FN) | Of all actual LONGs, how many did it catch? |
+| **F1 Score** | 2 × Precision × Recall / (P + R) | Balanced measure of precision and recall |
+
+### Trading Metrics
+
+| Metric | Formula | What's Good |
+|--------|---------|-------------|
+| **Win Rate** | wins / total trades | > 50% |
+| **Profit Factor** | gross profit / gross loss | > 1.5 (>1 = profitable) |
+| **Avg Win / Avg Loss** | mean win PnL / mean loss PnL | Win > \|Loss\| |
+| **Sharpe Ratio** | mean(returns) / std(returns) × √N | > 1.0 (risk-adjusted return) |
+| **Max Drawdown** | largest peak-to-trough equity drop | < 20% (worst losing streak) |
+
+### Confidence Calibration
+
+Bins predictions by confidence level and compares predicted confidence to actual accuracy. A well-calibrated model's "80% confidence" predictions should be correct ~80% of the time.
+
+---
+
+## 5. Comparing Two Runs
+
+```bash
+python -m cli compare \
+  --baseline backtest/data/results/baseline-groq.json \
+  --candidate backtest/data/results/finetuned-v1.json
+```
+
+Produces a side-by-side table with deltas and ✅/❌ indicators for every metric. Both runs must use the same dataset for the comparison to be valid.
+
+---
+
+## 6. Dataset Splits
+
+The dataset uses a **temporal split** (not random) to prevent data leakage:
+
+| Split | Portion | Samples | Purpose |
+|-------|---------|---------|---------|
+| Train | First 70% | 12,147 | Model training (fine-tuned LLM and ML) |
+| Validation | Next 15% | 2,603 | Hyperparameter tuning, early stopping |
+| Test | Final 15% | 2,603 | Final evaluation (never seen during training) |
+
+Random splits would leak future market patterns into training data through autocorrelated market regimes. Temporal splits prevent this.
+
+---
+
+## 7. CLI Reference
+
+All commands run from the `langgraph/` directory:
+
+```bash
+# Download candles
+python -m cli fetch-candles --symbols BTCUSDT,ETHUSDT --interval 1h --months 6
+
+# Generate labeled dataset
+python -m cli prepare-dataset --symbols BTCUSDT,ETHUSDT --interval 1h
+
+# Run LLM backtest
+python -m cli run-backtest --tag my-test --max-samples 100
+python -m cli run-backtest --provider deepseek --model deepseek-chat --tag deepseek-baseline
+
+# Train and backtest ML model
+python -m cli train-ml --model xgboost --tag ml-xgboost
+python -m cli train-ml --model lstm --tag ml-lstm
+python -m cli train-ml --model random_forest --tag ml-rf
+
+# Compare two runs
+python -m cli compare --baseline results/A.json --candidate results/B.json
+
+# Export training data for fine-tuning (chat-format JSONL)
+python -m cli export-training-data
 ```
 
 ---
 
-## 6. Comparison Report Format
+## 8. File Structure
 
 ```
-╔══════════════════════════════════════════════════════════════╗
-║          BACKTEST COMPARISON — BTCUSDT 1h (6 months)        ║
-╠══════════════════════════════════════════════════════════════╣
-║ Metric                │ Baseline (Groq)  │ Fine-tuned (v1)  ║
-╠═══════════════════════╪══════════════════╪══════════════════╣
-║ Direction Accuracy    │ 52.3%            │ 67.8%            ║
-║ LONG Precision        │ 55.1%            │ 71.2%            ║
-║ SHORT Precision       │ 48.7%            │ 63.4%            ║
-║ F1 Score              │ 0.51             │ 0.68             ║
-║ Win Rate              │ 45.2%            │ 58.9%            ║
-║ Profit Factor         │ 0.87             │ 1.42             ║
-║ Sharpe Ratio          │ -0.12            │ 0.85             ║
-║ Max Drawdown          │ -18.3%           │ -9.7%            ║
-║ Avg Latency           │ 320ms            │ 450ms            ║
-╚═══════════════════════╧══════════════════╧══════════════════╝
+langgraph/backtest/
+├── fetch_candles.py            ← Download OHLCV from Binance
+├── calculate_indicators.py     ← Batch indicator calculation (TA-Lib)
+├── label_data.py               ← Hindsight labeling with quality filters
+├── run_backtest.py             ← LLM backtest: send to LLM, simulate trades
+├── run_ml_backtest.py          ← ML backtest: train model, simulate trades
+├── ml_models.py                ← XGBoost, Random Forest, LSTM implementations
+├── export_training_data.py     ← Convert labeled data to chat-format JSONL
+├── metrics.py                  ← All metric calculations
+├── compare.py                  ← Side-by-side comparison of two runs
+├── report.py                   ← Terminal tables + matplotlib charts
+├── config.py                   ← Shared configuration
+└── data/
+    ├── candles/                ← Raw OHLCV JSON files
+    ├── labeled/                ← JSONL datasets with indicators + labels
+    │   └── training/           ← Train/val/test splits for fine-tuning
+    └── results/                ← Backtest output JSON per model run
 ```
-
-Plus matplotlib charts: equity curve, confusion matrix, confidence calibration diagram.
 
 ---
 
-## 7. Implementation Phases
+## Related Docs
 
-| Phase | What | Depends On | Can Start Now? |
-|---|---|---|---|
-| **1. Provider changes** | `OpenAICompatibleProvider` in `llm_factory.py` | Nothing | ✅ Yes |
-| **2. Data pipeline** | `fetch_candles.py`, `calculate_indicators.py`, `label_data.py` | Nothing | ✅ Yes |
-| **3. Backtest runner** | `run_backtest.py`, `metrics.py`, `report.py` | Phase 2 | ✅ After Phase 2 |
-| **4. Comparison framework** | `compare.py`, CLI `compare` command | Phase 3 | ✅ After Phase 3 |
-| **5. Fine-tuned evaluation** | Run backtest with fine-tuned model | Fine-tuning done | ❌ After training |
-
-Phases 1-4 can be built and tested with baseline models (Groq free tier, DeepSeek). Phase 5 only needs the fine-tuned model.
-
-### Dependencies to Add
-
-```
-# langgraph/requirements.txt — add:
-matplotlib     # charts
-pandas         # data manipulation
-tabulate       # terminal tables
-```
-
-No new LangChain dependencies — `langchain-openai` already handles all OpenAI-compatible APIs.
+- [The 3 Approaches](./three-approaches.md) — What each approach is and how they compare
+- [Fine-Tuning Strategy](./fine-tuning-strategy.md) — Training plan for Approach 2
+- [Action Plan](./action-plan.md) — Implementation timeline
