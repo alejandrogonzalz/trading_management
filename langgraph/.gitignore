@@ -6,3 +6,7 @@ __pycache__/
 # Large data files — do not commit
 backtest/data/labeled/dataset.jsonl
 backtest/data/labeled/training/
+
+# Optimization outputs — generated at runtime
+optimization/results/
+optimization/logs/
