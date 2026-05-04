@@ -91,11 +91,13 @@ def confidence_calibration(predictions: List[Dict], results: List[Dict], bins: i
         items = buckets.get(b, [])
         lo = b * (10 // bins)
         hi = lo + (10 // bins)
-        calibration.append({
-            "confidence_range": f"{lo}-{hi}",
-            "count": len(items),
-            "actual_accuracy": sum(items) / len(items) if items else 0.0,
-        })
+        calibration.append(
+            {
+                "confidence_range": f"{lo}-{hi}",
+                "count": len(items),
+                "actual_accuracy": sum(items) / len(items) if items else 0.0,
+            }
+        )
     return calibration
 
 

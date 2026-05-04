@@ -73,7 +73,11 @@ def cmd_prepare_dataset(args):
 
         if use_multi_tf:
             print(f"Calculating multi-TF indicators for {sym}...")
-            indicators = calculate_multi_tf_indicators(available_tfs, base_tf=base_tf)
+            try:
+                indicators = calculate_multi_tf_indicators(available_tfs, base_tf=base_tf)
+            except ValueError as e:
+                print(f"  Skipping {sym}: {e}")
+                continue
         else:
             candles = available_tfs[base_tf]
             print(f"Calculating indicators for {sym} ({len(candles)} candles)...")
