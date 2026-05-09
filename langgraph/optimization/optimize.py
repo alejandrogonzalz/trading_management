@@ -55,7 +55,6 @@ def optimize_sklearn(model_name: str, cfg: dict, X: np.ndarray, y: np.ndarray) -
         base = xgb.XGBClassifier(
             eval_metric=cfg.get("fixed_params", {}).get("eval_metric", "logloss"),
             random_state=cfg.get("fixed_params", {}).get("random_state", 42),
-            use_label_encoder=False,
         )
     elif model_name == "random_forest":
         from sklearn.ensemble import RandomForestClassifier
@@ -166,6 +165,15 @@ def optimize_lstm(cfg: dict, dataset_path: str) -> dict:
     best_params = None
     t0 = time.time()
 
+    def build_seq(features, labels, sl):
+        n, d = features.shape
+        seqs = np.zeros((n, sl, d), dtype=np.float32)
+        for i in range(n):
+            start = max(0, i - sl + 1)
+            s = features[start:i + 1]
+            seqs[i, sl - len(s):] = s
+        return torch.tensor(seqs, device=device), torch.tensor(labels, dtype=torch.long, device=device)
+
     for combo in tqdm(all_combos, desc="LSTM configs"):
         params = dict(zip(keys, combo))
         seq_len = params.get("sequence_length", 10)
@@ -174,15 +182,6 @@ def optimize_lstm(cfg: dict, dataset_path: str) -> dict:
         lr = params.get("learning_rate", 0.001)
         drop = params.get("dropout", 0.2)
         bs = params.get("batch_size", 32)
-
-        def build_seq(features, labels, sl):
-            n, d = features.shape
-            seqs = np.zeros((n, sl, d), dtype=np.float32)
-            for i in range(n):
-                start = max(0, i - sl + 1)
-                s = features[start:i + 1]
-                seqs[i, sl - len(s):] = s
-            return torch.tensor(seqs, device=device), torch.tensor(labels, dtype=torch.long, device=device)
 
         X_tr, y_tr = build_seq(X_all[:n_train], y_all[:n_train], seq_len)
         X_va, y_va = build_seq(X_all[:n_train + n_val], y_all[:n_train + n_val], seq_len)
@@ -239,6 +238,13 @@ def optimize_lstm(cfg: dict, dataset_path: str) -> dict:
             best_score = acc
             best_params = params
             log.info(f"  Nuevo mejor: {acc:.4f} con {params}")
+
+        # Free GPU memory between configs
+        del model, optimizer, X_tr, y_tr, X_va, y_va
+        if device.type == "mps":
+            torch.mps.empty_cache()
+        elif device.type == "cuda":
+            torch.cuda.empty_cache()
 
     elapsed = time.time() - t0
     results.sort(key=lambda r: r["mean_score"], reverse=True)
