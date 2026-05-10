@@ -11,6 +11,20 @@ from backtest.ml_models import get_predictor, extract_features, _load_dataset, _
 from backtest.run_backtest import simulate_trade
 
 RESULTS_DIR = Path(__file__).parent / "data" / "results"
+OPTIMIZATION_RESULTS_DIR = Path(__file__).parent.parent / "optimization" / "results"
+
+
+def _load_best_params(model_type: str) -> Optional[Dict[str, Any]]:
+    """Load best hyperparameters from optimization results JSON, if available."""
+    name_map = {"lstm": "lstm", "xgboost": "xgboost", "random-forest": "random_forest"}
+    fname = OPTIMIZATION_RESULTS_DIR / f"{name_map.get(model_type, model_type)}_optimization.json"
+    if fname.exists():
+        with open(fname) as f:
+            data = json.load(f)
+        params = data.get("best_params", {})
+        print(f"  Loaded best params from {fname.name}: {params}")
+        return params
+    return None
 
 
 def run_ml_backtest(
@@ -19,6 +33,7 @@ def run_ml_backtest(
     tag: Optional[str] = None,
     max_samples: Optional[int] = None,
     verbose: bool = False,
+    serialize: bool = False,
 ) -> Dict[str, Any]:
     """Train ML model and backtest on the test split.
 
@@ -46,9 +61,12 @@ def run_ml_backtest(
     for sym, clist in candles_map.items():
         ts_idx_map[sym] = {c["timestamp"]: i for i, c in enumerate(clist)}
 
+    # Load best params from optimization results if available
+    best_params = _load_best_params(model_type)
+
     # Train
-    predictor = get_predictor(model_type)
-    print(f"Training {model_type}...")
+    predictor = get_predictor(model_type, params=best_params)
+    print(f"Training {model_type} with params: {best_params or 'defaults'}...")
     start_time = time.time()
     train_info = predictor.train(dataset_path)
     train_elapsed = time.time() - start_time
@@ -177,5 +195,12 @@ def run_ml_backtest(
     with open(out_path, "w") as f:
         json.dump(result, f, indent=2, default=str)
     print(f"\nResults saved to {out_path}")
+
+    if serialize:
+        ext = "pt" if model_type == "lstm" else "pkl"
+        model_path = OPTIMIZATION_RESULTS_DIR / f"{model_type.replace('-', '_')}_final.{ext}"
+        predictor.save(str(model_path))
+        print(f"Model serialized to {model_path}")
+        result["model_path"] = str(model_path)
 
     return result

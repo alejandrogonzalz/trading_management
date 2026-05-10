@@ -1,0 +1,6 @@
+outs:
+- md5: 58f980d875e54d216bd682d4cf512067.dir
+  size: 21102170
+  nfiles: 37
+  hash: md5
+  path: candles
