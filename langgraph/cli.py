@@ -140,6 +140,7 @@ def cmd_train_ml(args):
         tag=args.tag,
         max_samples=args.max_samples,
         verbose=args.verbose,
+        serialize=args.serialize,
     )
     print_report(result)
 
@@ -204,6 +205,7 @@ def main():
     p.add_argument("--tag", help="Tag for this run (default: ml-<model>)")
     p.add_argument("--max-samples", type=int, help="Limit test samples")
     p.add_argument("--verbose", "-v", action="store_true", help="Show per-sample predictions")
+    p.add_argument("--serialize", action="store_true", help="Save trained model to optimization/results/ after evaluation")
 
     args = parser.parse_args()
 

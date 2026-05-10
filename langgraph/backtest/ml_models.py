@@ -377,13 +377,17 @@ class _LSTMNet:
         return Net()
 
 
-def get_predictor(model_type: str):
-    """Factory for model predictors."""
-    models = {
-        "xgboost": XGBoostPredictor,
-        "random-forest": RandomForestPredictor,
-        "lstm": LSTMPredictor,
-    }
-    if model_type not in models:
-        raise ValueError(f"Unknown model: {model_type}. Choose from: {list(models.keys())}")
-    return models[model_type]()
+def get_predictor(model_type: str, params: dict = None):
+    """Factory for model predictors. Pass params to override defaults (e.g. best params from optimization)."""
+    if model_type not in ("xgboost", "random-forest", "lstm"):
+        raise ValueError(f"Unknown model: {model_type}. Choose from: xgboost, random-forest, lstm")
+    if model_type == "lstm":
+        p = params or {}
+        return LSTMPredictor(
+            hidden_size=p.get("hidden_size", 64),
+            num_layers=p.get("num_layers", 2),
+            sequence_length=p.get("sequence_length", 10),
+        )
+    if model_type == "xgboost":
+        return XGBoostPredictor()
+    return RandomForestPredictor()
