@@ -1,5 +1,4 @@
 [core]
-    remote = gdrive
-['remote "gdrive"']
-    url = gdrive://1rNRzXeedILJxi6j8KeYdjPrcun-kYIEq
-    gdrive_acknowledge_abuse = true
+    remote = s3remote
+['remote "s3remote"']
+    url = s3://trading-management-dvc/dvc
