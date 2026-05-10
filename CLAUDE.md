@@ -58,7 +58,6 @@ Full-stack crypto trading platform with GPU-accelerated AI, LangGraph agents, ba
 
 ## Steerings (Detailed Context Files)
 
-@.claude/steering-protocols.md
 @.claude/steering-backend.md
 @.claude/steering-frontend.md
 @.claude/steering-langgraph.md
