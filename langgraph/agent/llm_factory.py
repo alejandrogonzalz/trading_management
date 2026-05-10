@@ -1,8 +1,6 @@
 import os
 import json
 import asyncio
-import time
-from typing import Optional
 from abc import ABC, abstractmethod
 from langchain_core.messages import SystemMessage, HumanMessage
 
@@ -20,9 +18,7 @@ class OllamaProvider(LLMProvider):
     def __init__(self, model_name: str, base_url: str, temperature: float):
         from langchain_ollama import ChatOllama
 
-        self.client = ChatOllama(
-            model=model_name, base_url=base_url, temperature=temperature
-        )
+        self.client = ChatOllama(model=model_name, base_url=base_url, temperature=temperature)
 
     async def generate_setup(self, system_prompt: str, user_prompt: str) -> str:
         max_retries = 3
@@ -37,11 +33,7 @@ class OllamaProvider(LLMProvider):
                     ]
                 )
 
-                content = (
-                    response.content
-                    if response and hasattr(response, "content")
-                    else ""
-                )
+                content = response.content if response and hasattr(response, "content") else ""
 
                 # Validate response is not empty
                 if not content or content.strip() == "":
@@ -50,17 +42,13 @@ class OllamaProvider(LLMProvider):
                 # Basic validation - should contain JSON structure
                 if "{" not in content and "[" not in content:
                     # Might still be valid if it's a simple value, but warn
-                    print(
-                        f"Warning: LLM response may not be JSON (attempt {attempt + 1}/{max_retries})"
-                    )
+                    print(f"Warning: LLM response may not be JSON (attempt {attempt + 1}/{max_retries})")
 
                 return content
 
             except Exception as e:
                 last_exception = e
-                print(
-                    f"Ollama API error (attempt {attempt + 1}/{max_retries}): {type(e).__name__}: {e}"
-                )
+                print(f"Ollama API error (attempt {attempt + 1}/{max_retries}): {type(e).__name__}: {e}")
 
                 if attempt < max_retries - 1:
                     wait_time = 2**attempt  # Exponential backoff: 1, 2, 4 seconds
@@ -89,9 +77,7 @@ class GoogleProvider(LLMProvider):
     def __init__(self, model_name: str, api_key: str, temperature: float):
         from langchain_google_genai import ChatGoogleGenerativeAI
 
-        self.client = ChatGoogleGenerativeAI(
-            model=model_name, google_api_key=api_key, temperature=temperature
-        )
+        self.client = ChatGoogleGenerativeAI(model=model_name, google_api_key=api_key, temperature=temperature)
 
     async def generate_setup(self, system_prompt: str, user_prompt: str) -> str:
         max_retries = 3
@@ -106,11 +92,7 @@ class GoogleProvider(LLMProvider):
                     ]
                 )
 
-                content = (
-                    response.content
-                    if response and hasattr(response, "content")
-                    else ""
-                )
+                content = response.content if response and hasattr(response, "content") else ""
 
                 # Validate response is not empty
                 if not content or content.strip() == "":
@@ -118,17 +100,13 @@ class GoogleProvider(LLMProvider):
 
                 # Basic validation - should contain JSON structure
                 if "{" not in content and "[" not in content:
-                    print(
-                        f"Warning: LLM response may not be JSON (attempt {attempt + 1}/{max_retries})"
-                    )
+                    print(f"Warning: LLM response may not be JSON (attempt {attempt + 1}/{max_retries})")
 
                 return content
 
             except Exception as e:
                 last_exception = e
-                print(
-                    f"Google AI API error (attempt {attempt + 1}/{max_retries}): {type(e).__name__}: {e}"
-                )
+                print(f"Google AI API error (attempt {attempt + 1}/{max_retries}): {type(e).__name__}: {e}")
 
                 if attempt < max_retries - 1:
                     wait_time = 2**attempt
@@ -164,9 +142,7 @@ class BedrockProvider(LLMProvider):
         )
 
     async def generate_setup(self, system_prompt: str, user_prompt: str) -> str:
-        response = await self.client.ainvoke(
-            [SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)]
-        )
+        response = await self.client.ainvoke([SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)])
         return response.content
 
 
@@ -177,9 +153,7 @@ class OpenAIProvider(LLMProvider):
         self.client = ChatOpenAI(model=model_name, temperature=temperature)
 
     async def generate_setup(self, system_prompt: str, user_prompt: str) -> str:
-        response = await self.client.ainvoke(
-            [SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)]
-        )
+        response = await self.client.ainvoke([SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)])
         return response.content
 
 
@@ -223,11 +197,7 @@ class OpenAICompatibleProvider(LLMProvider):
                     ]
                 )
 
-                content = (
-                    response.content
-                    if response and hasattr(response, "content")
-                    else ""
-                )
+                content = response.content if response and hasattr(response, "content") else ""
 
                 if not content or content.strip() == "":
                     raise ValueError("Empty response from LLM")
@@ -236,9 +206,7 @@ class OpenAICompatibleProvider(LLMProvider):
 
             except Exception as e:
                 last_exception = e
-                print(
-                    f"OpenAI-compatible API error (attempt {attempt + 1}/{max_retries}): {type(e).__name__}: {e}"
-                )
+                print(f"OpenAI-compatible API error (attempt {attempt + 1}/{max_retries}): {type(e).__name__}: {e}")
 
                 if attempt < max_retries - 1:
                     wait_time = 2**attempt
@@ -265,9 +233,7 @@ class MockProvider(LLMProvider):
     async def generate_setup(self, system_prompt: str, user_prompt: str) -> str:
         """Returns mock trade setups based on the symbol and scenario indicators."""
         # Detect if we are in optimizer mode
-        is_optimizer = (
-            "optimizer" in system_prompt.lower() or "Risk Manager" in system_prompt
-        )
+        is_optimizer = "optimizer" in system_prompt.lower() or "Risk Manager" in system_prompt
 
         # Simple detection of symbol and scenario from prompt
         if "BTCUSDT" in user_prompt:
@@ -316,9 +282,7 @@ class MockProvider(LLMProvider):
                 "confidence": 6,
             }
         elif "SOLUSDT" in user_prompt:
-            if (
-                "RANGE" in user_prompt or "NEUTRAL" in user_prompt
-            ):  # range_market or risky_futures
+            if "RANGE" in user_prompt or "NEUTRAL" in user_prompt:  # range_market or risky_futures
                 setup = {
                     "bias": "LONG",
                     "entry": 146.0,
@@ -356,12 +320,7 @@ class MockProvider(LLMProvider):
                     # Get first timeframe's data
                     first_tf = next(iter(indicators.values())) if indicators else {}
                     # Try to find price in various fields
-                    price = (
-                        first_tf.get("close")
-                        or first_tf.get("price")
-                        or first_tf.get("last")
-                        or 100.0
-                    )
+                    price = first_tf.get("close") or first_tf.get("price") or first_tf.get("last") or 100.0
                     if price <= 0:
                         price = 100.0
                     # Adjust for volatility

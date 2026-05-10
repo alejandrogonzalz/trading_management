@@ -1,0 +1,14 @@
+model: lstm
+search_method: random  # random sample from grid
+n_random_iter: 30
+scoring: accuracy
+max_epochs: 50
+patience: 10
+
+param_grid:
+  hidden_size: [32, 64, 128]
+  num_layers: [1, 2, 3]
+  sequence_length: [5, 10, 20]
+  learning_rate: [0.0005, 0.001, 0.005]
+  dropout: [0.1, 0.2, 0.3]
+  batch_size: [16, 32, 64]
