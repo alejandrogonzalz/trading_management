@@ -1,151 +1,91 @@
-# Optimización de Hiperparámetros — Predicción de Señales de Trading
+# Hyperparameter Optimization
 
-Infraestructura para optimizar los hiperparámetros de los 4 modelos de predicción de señales de trading crypto.
+Optimization infrastructure for the four trading signal prediction models.
 
-## Modelos
+## Structure
 
-| Modelo | Método | Tiempo estimado | Infraestructura |
-|--------|--------|-----------------|-----------------|
-| XGBoost | Grid/Random Search | 30-90 min | CPU local |
-| Random Forest | Grid/Random Search | 20-60 min | CPU local |
-| LSTM | Loop manual + early stopping | 2-6 horas | GPU recomendado |
-| QLoRA (Qwen 2.5 7B) | Manual (Unsloth) | 4-12 horas | GPU (16GB+ VRAM) |
-
-**Dataset**: ~56K muestras, split temporal 70/15/15.
-
-## Prerrequisitos
-
-```bash
-pip install tqdm pyyaml matplotlib scikit-learn numpy
-# Para XGBoost:
-pip install xgboost
-# Para LSTM:
-pip install torch
+```
+optimization/
+├── pipeline.py            ← OptimizerPipeline orchestrator
+├── searchers/
+│   ├── base.py            ← BaseSearcher ABC
+│   ├── sklearn_searcher.py ← GridSearchCV/RandomizedSearchCV (XGBoost, RF)
+│   ├── lstm_searcher.py   ← Manual loop with early stopping
+│   └── qlora_searcher.py  ← Config printer for Unsloth manual training
+├── io/
+│   ├── results.py         ← save_result / load_all_results
+│   └── plots.py           ← save_optimization_plot / save_comparison_plot
+├── configs/
+│   ├── xgboost.yaml       ← Round 2: reg_alpha, reg_lambda, max_depth ≤ 6
+│   ├── random_forest.yaml ← Round 2: max_depth ≤ 10, min_samples_leaf ≥ 10
+│   ├── lstm.yaml
+│   └── qlora.yaml
+├── optimize.py            ← CLI entry point
+└── analyze_results.py     ← Cross-model comparison
 ```
 
-## Cómo ejecutar
+## Models
 
-### Optimización individual
+| Model | Searcher | Time estimate | Infrastructure |
+|-------|----------|---------------|----------------|
+| XGBoost | RandomizedSearchCV | 15-30 min | CPU |
+| Random Forest | RandomizedSearchCV | 10-20 min | CPU |
+| LSTM | Manual loop + early stopping | 2-6 h | GPU recommended |
+| QLoRA (Qwen 2.5 7B) | Manual (Unsloth) | 4-12 h | GPU 16GB+ VRAM |
+
+**Dataset**: ~56K samples, 70/15/15 temporal split.
+
+## Usage
 
 ```bash
 cd langgraph/optimization
 
-# XGBoost — grid search completo (~30-90 min)
+# XGBoost — round 2 random search
 python optimize.py --model xgboost --config configs/xgboost.yaml
 
-# Random Forest — random search 100 iters (~20-60 min)
+# Random Forest — round 2 random search
 python optimize.py --model random_forest --config configs/random_forest.yaml
 
-# LSTM — loop manual 30 configs (~2-6 horas)
+# LSTM — manual loop, 30 configs
 python optimize.py --model lstm --config configs/lstm.yaml
 
-# QLoRA — imprime configs para entrenamiento manual con Unsloth
+# QLoRA — prints configs for manual Unsloth training
 python optimize.py --model qlora --config configs/qlora.yaml
-```
 
-### Dataset personalizado
-
-```bash
-python optimize.py --model xgboost --config configs/xgboost.yaml --dataset /ruta/a/mi/dataset.jsonl
-```
-
-Por defecto usa `../backtest/data/labeled/dataset.jsonl`.
-
-### Ejecución en segundo plano (sesiones largas)
-
-```bash
-# Con nohup — sigue corriendo al cerrar la terminal
-nohup python optimize.py --model xgboost --config configs/xgboost.yaml > logs/xgboost.log 2>&1 &
-
+# Background (long runs)
 nohup python optimize.py --model lstm --config configs/lstm.yaml > logs/lstm.log 2>&1 &
+tail -f logs/lstm.log
 
-# Monitorear progreso
-tail -f logs/xgboost.log
-```
-
-### Análisis de resultados
-
-```bash
-# Después de que terminen las optimizaciones
+# Compare all results
 python analyze_results.py
 ```
 
-Genera:
-- Tabla comparativa en terminal
-- `results/comparison.png` — gráfica de barras + heatmaps
+## Output format
 
-## Salida esperada
-
-Cada optimización genera en `results/`:
-
-- `{modelo}_optimization.json` — Resultados completos (mejores params, todos los scores, metadata)
-- `{modelo}_optimization.png` — Gráfica de barras con top 30 configuraciones
-
-Formato del JSON:
+Each run writes `results/{model}_optimization.json`:
 
 ```json
 {
   "model": "xgboost",
-  "best_params": {"n_estimators": 300, "max_depth": 8, "...": "..."},
-  "best_score": 0.623,
-  "all_results": [{"params": {}, "mean_score": 0.61, "rank": 2}],
-  "elapsed_seconds": 1234,
-  "dataset_size": 47661
+  "best_params": {"n_estimators": 300, "max_depth": 4, "...": "..."},
+  "best_score": 0.768,
+  "all_results": [{"params": {}, "mean_score": 0.75, "rank": 2}],
+  "elapsed_seconds": 900,
+  "dataset_size": 47737
 }
 ```
 
-## Flujo de trabajo completo
+`run_ml_backtest.py` auto-loads `best_params` from this file when `--serialize` is used.
 
-```bash
-# 1. Optimizar cada modelo (pueden correr en paralelo con nohup)
-nohup python optimize.py --model xgboost --config configs/xgboost.yaml > logs/xgboost.log 2>&1 &
-nohup python optimize.py --model random_forest --config configs/random_forest.yaml > logs/rf.log 2>&1 &
-nohup python optimize.py --model lstm --config configs/lstm.yaml > logs/lstm.log 2>&1 &
-python optimize.py --model qlora --config configs/qlora.yaml
+## Programmatic use
 
-# 2. Esperar a que terminen (revisar logs)
-tail -f logs/xgboost.log
+```python
+from optimization.pipeline import OptimizerPipeline
 
-# 3. Comparar resultados
-python analyze_results.py
-
-# 4. Usar los mejores params en backtest/ml_models.py
-cat results/xgboost_optimization.json | python -c "import sys,json; print(json.load(sys.stdin)['best_params'])"
-```
-
-## Tiempos estimados por modelo
-
-| Modelo | Grid completo | Random 100 iters | Random 30 iters |
-|--------|--------------|-------------------|-----------------|
-| XGBoost | ~90 min (576 combos) | ~15-20 min | ~5-10 min |
-| Random Forest | ~60 min (720 combos) | ~10-15 min | ~5 min |
-| LSTM (CPU) | N/A | N/A | ~3-6 horas |
-| LSTM (GPU/MPS) | N/A | N/A | ~30-90 min |
-
-## Configuración
-
-Los archivos YAML en `configs/` definen los grids de búsqueda. Editar para ajustar rangos:
-
-- `configs/xgboost.yaml` — n_estimators, max_depth, learning_rate, subsample, colsample_bytree
-- `configs/random_forest.yaml` — n_estimators, max_depth, min_samples_split/leaf, max_features
-- `configs/lstm.yaml` — hidden_size, num_layers, sequence_length, learning_rate, dropout, batch_size
-- `configs/qlora.yaml` — learning_rate, lora_rank, lora_alpha, epochs, batch_size
-
-## Estructura
-
-```
-optimization/
-├── README.md              ← Este archivo
-├── __init__.py
-├── optimize.py            ← Script principal de optimización
-├── analyze_results.py     ← Comparación entre modelos
-├── configs/
-│   ├── xgboost.yaml
-│   ├── random_forest.yaml
-│   ├── lstm.yaml
-│   └── qlora.yaml
-├── results/               ← JSON + PNG generados
-│   └── .gitkeep
-└── logs/                  ← Logs de nohup
-    └── .gitkeep
+pipeline = OptimizerPipeline(
+    model="xgboost",
+    config_path="configs/xgboost.yaml",
+    dataset_path="../backtest/data/labeled/dataset.jsonl",
+)
+result = pipeline.run()
 ```
