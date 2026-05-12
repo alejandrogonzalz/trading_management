@@ -6,7 +6,7 @@ from datetime import datetime
 
 import numpy as np
 
-from backtest.ml_models import _load_dataset, extract_features, _temporal_split
+from backtest.models.features import _load_dataset, extract_features, _temporal_split
 from .base import BaseSearcher
 
 log = logging.getLogger(__name__)

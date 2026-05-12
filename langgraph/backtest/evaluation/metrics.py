@@ -6,7 +6,6 @@ from collections import defaultdict
 
 
 def direction_accuracy(predictions: List[Dict], actuals: List[Dict]) -> float:
-    """Fraction of correct LONG/SHORT predictions."""
     if not predictions:
         return 0.0
     correct = sum(1 for p, a in zip(predictions, actuals) if p["bias"] == a["bias"])
@@ -14,7 +13,6 @@ def direction_accuracy(predictions: List[Dict], actuals: List[Dict]) -> float:
 
 
 def precision_recall_f1(predictions: List[Dict], actuals: List[Dict], cls: str) -> Dict[str, float]:
-    """Precision, recall, F1 for a single class (LONG or SHORT)."""
     tp = sum(1 for p, a in zip(predictions, actuals) if p["bias"] == cls and a["bias"] == cls)
     fp = sum(1 for p, a in zip(predictions, actuals) if p["bias"] == cls and a["bias"] != cls)
     fn = sum(1 for p, a in zip(predictions, actuals) if p["bias"] != cls and a["bias"] == cls)
@@ -25,7 +23,6 @@ def precision_recall_f1(predictions: List[Dict], actuals: List[Dict], cls: str) 
 
 
 def win_rate(results: List[Dict]) -> float:
-    """Fraction of trades that hit TP (outcome == WIN)."""
     if not results:
         return 0.0
     wins = sum(1 for r in results if r.get("outcome") == "WIN")
@@ -33,7 +30,6 @@ def win_rate(results: List[Dict]) -> float:
 
 
 def profit_factor(results: List[Dict]) -> float:
-    """Gross profit / gross loss. Returns inf if no losses."""
     gross_profit = sum(r["pnl_pct"] for r in results if r.get("pnl_pct", 0) > 0)
     gross_loss = abs(sum(r["pnl_pct"] for r in results if r.get("pnl_pct", 0) < 0))
     if gross_loss == 0:
@@ -42,7 +38,6 @@ def profit_factor(results: List[Dict]) -> float:
 
 
 def avg_win_loss(results: List[Dict]) -> Dict[str, float]:
-    """Average win and average loss in pnl_pct."""
     wins = [r["pnl_pct"] for r in results if r.get("pnl_pct", 0) > 0]
     losses = [r["pnl_pct"] for r in results if r.get("pnl_pct", 0) < 0]
     return {
@@ -52,7 +47,6 @@ def avg_win_loss(results: List[Dict]) -> Dict[str, float]:
 
 
 def sharpe_ratio(results: List[Dict], annualize_factor: float = 365.0) -> float:
-    """Sharpe ratio from pnl_pct series."""
     returns = [r.get("pnl_pct", 0) for r in results]
     if len(returns) < 2:
         return 0.0
@@ -64,7 +58,6 @@ def sharpe_ratio(results: List[Dict], annualize_factor: float = 365.0) -> float:
 
 
 def max_drawdown(results: List[Dict]) -> float:
-    """Maximum peak-to-trough drawdown from cumulative pnl_pct."""
     if not results:
         return 0.0
     equity = 100.0
@@ -79,7 +72,6 @@ def max_drawdown(results: List[Dict]) -> float:
 
 
 def confidence_calibration(predictions: List[Dict], results: List[Dict], bins: int = 5) -> List[Dict]:
-    """Bin predictions by confidence and compare to actual accuracy."""
     buckets: Dict[int, List[bool]] = defaultdict(list)
     for p, r in zip(predictions, results):
         conf = p.get("confidence", 5)
@@ -91,18 +83,15 @@ def confidence_calibration(predictions: List[Dict], results: List[Dict], bins: i
         items = buckets.get(b, [])
         lo = b * (10 // bins)
         hi = lo + (10 // bins)
-        calibration.append(
-            {
-                "confidence_range": f"{lo}-{hi}",
-                "count": len(items),
-                "actual_accuracy": sum(items) / len(items) if items else 0.0,
-            }
-        )
+        calibration.append({
+            "confidence_range": f"{lo}-{hi}",
+            "count": len(items),
+            "actual_accuracy": sum(items) / len(items) if items else 0.0,
+        })
     return calibration
 
 
 def compute_all_metrics(predictions: List[Dict], actuals: List[Dict], results: List[Dict]) -> Dict[str, Any]:
-    """Compute all metrics in one call."""
     wl = avg_win_loss(results)
     return {
         "total_samples": len(predictions),

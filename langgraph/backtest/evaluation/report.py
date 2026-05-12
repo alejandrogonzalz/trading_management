@@ -14,7 +14,6 @@ def _fmt_float(v: float) -> str:
 
 
 def print_report(result: Dict[str, Any]) -> None:
-    """Print a formatted metrics report to terminal."""
     m = result.get("metrics", {})
     if not m:
         print("No metrics available.")
@@ -26,7 +25,6 @@ def print_report(result: Dict[str, Any]) -> None:
 
     try:
         from tabulate import tabulate  # noqa: F401
-
         _print_tabulate(result, m, tag, provider, model)
     except ImportError:
         _print_manual(result, m, tag, provider, model)
@@ -54,17 +52,15 @@ def _print_tabulate(result, m, tag, provider, model):
 
     lm = m.get("long_metrics", {})
     sm = m.get("short_metrics", {})
-    rows.extend(
-        [
-            ["", ""],
-            ["LONG Precision", _fmt_pct(lm.get("precision", 0))],
-            ["LONG Recall", _fmt_pct(lm.get("recall", 0))],
-            ["LONG F1", _fmt_float(lm.get("f1", 0))],
-            ["SHORT Precision", _fmt_pct(sm.get("precision", 0))],
-            ["SHORT Recall", _fmt_pct(sm.get("recall", 0))],
-            ["SHORT F1", _fmt_float(sm.get("f1", 0))],
-        ]
-    )
+    rows.extend([
+        ["", ""],
+        ["LONG Precision", _fmt_pct(lm.get("precision", 0))],
+        ["LONG Recall", _fmt_pct(lm.get("recall", 0))],
+        ["LONG F1", _fmt_float(lm.get("f1", 0))],
+        ["SHORT Precision", _fmt_pct(sm.get("precision", 0))],
+        ["SHORT Recall", _fmt_pct(sm.get("recall", 0))],
+        ["SHORT F1", _fmt_float(sm.get("f1", 0))],
+    ])
 
     print(tabulate(rows, headers=["Metric", "Value"], tablefmt="simple"))
     print()
@@ -89,7 +85,6 @@ def _print_manual(result, m, tag, provider, model):
 
 
 def print_comparison(comparison: Dict[str, Any]) -> None:
-    """Print a formatted comparison table."""
     bt = comparison.get("baseline_tag", "baseline")
     ct = comparison.get("candidate_tag", "candidate")
 
@@ -97,14 +92,10 @@ def print_comparison(comparison: Dict[str, Any]) -> None:
         from tabulate import tabulate
 
         rows = []
-        # Metrics that are 0-1 ratios (display as %)
         ratio_metrics = {
-            "Direction Accuracy",
-            "Win Rate",
-            "LONG Precision",
-            "LONG Recall",
-            "SHORT Precision",
-            "SHORT Recall",
+            "Direction Accuracy", "Win Rate",
+            "LONG Precision", "LONG Recall",
+            "SHORT Precision", "SHORT Recall",
         }
         for r in comparison.get("rows", []):
             bv = r["baseline"]
@@ -136,7 +127,6 @@ def print_comparison(comparison: Dict[str, Any]) -> None:
 
 
 def plot_equity_curve(result: Dict[str, Any], save_path: str = None) -> None:
-    """Plot equity curve if matplotlib is available."""
     try:
         import matplotlib.pyplot as plt
     except ImportError:

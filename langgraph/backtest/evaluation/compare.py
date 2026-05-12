@@ -6,7 +6,6 @@ from typing import Dict, Any
 
 
 def load_results(path: str) -> Dict[str, Any]:
-    """Load a backtest results JSON file."""
     with open(path) as f:
         return json.load(f)
 
@@ -30,9 +29,9 @@ def compare(baseline_path: str, candidate_path: str) -> Dict[str, Any]:
         ("win_rate", "Win Rate", True),
         ("profit_factor", "Profit Factor", True),
         ("avg_win", "Avg Win %", True),
-        ("avg_loss", "Avg Loss %", False),  # Less negative is better
+        ("avg_loss", "Avg Loss %", False),
         ("sharpe_ratio", "Sharpe Ratio", True),
-        ("max_drawdown", "Max Drawdown %", False),  # Lower is better
+        ("max_drawdown", "Max Drawdown %", False),
     ]
 
     for key, label, higher_is_better in metric_keys:
@@ -40,32 +39,21 @@ def compare(baseline_path: str, candidate_path: str) -> Dict[str, Any]:
         cv = cm.get(key, 0)
         delta = _delta(bv, cv)
         improved = (delta > 0) == higher_is_better if delta is not None else None
-        rows.append(
-            {
-                "metric": label,
-                "baseline": bv,
-                "candidate": cv,
-                "delta": delta,
-                "improved": improved,
-            }
-        )
+        rows.append({"metric": label, "baseline": bv, "candidate": cv, "delta": delta, "improved": improved})
 
-    # Per-class metrics
     for cls in ("long", "short"):
         bclass = bm.get(f"{cls}_metrics", {})
         cclass = cm.get(f"{cls}_metrics", {})
         for sub in ("precision", "recall", "f1"):
             bv = bclass.get(sub, 0)
             cv = cclass.get(sub, 0)
-            rows.append(
-                {
-                    "metric": f"{cls.upper()} {sub.capitalize()}",
-                    "baseline": bv,
-                    "candidate": cv,
-                    "delta": _delta(bv, cv),
-                    "improved": (_delta(bv, cv) or 0) > 0,
-                }
-            )
+            rows.append({
+                "metric": f"{cls.upper()} {sub.capitalize()}",
+                "baseline": bv,
+                "candidate": cv,
+                "delta": _delta(bv, cv),
+                "improved": (_delta(bv, cv) or 0) > 0,
+            })
 
     comparison = {
         "baseline_tag": baseline.get("tag", "baseline"),
@@ -77,7 +65,6 @@ def compare(baseline_path: str, candidate_path: str) -> Dict[str, Any]:
         "rows": rows,
     }
 
-    # Save comparison
     results_dir = Path(baseline_path).parent
     out_path = results_dir / f"comparison_{comparison['baseline_tag']}_vs_{comparison['candidate_tag']}.json"
     with open(out_path, "w") as f:

@@ -75,7 +75,7 @@ Each run writes `results/{model}_optimization.json`:
 }
 ```
 
-`run_ml_backtest.py` auto-loads `best_params` from this file when `--serialize` is used.
+`MLBacktestRunner` auto-loads `best_params` from this file when instantiated without explicit `params=`.
 
 ## Programmatic use
 
