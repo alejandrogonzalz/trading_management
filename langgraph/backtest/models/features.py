@@ -92,6 +92,9 @@ def _temporal_split(
 
 
 def _samples_to_xy(samples: list[dict], timeframes: list[str] | None = None) -> Tuple[np.ndarray, np.ndarray]:
+    # Infer once so every sample is encoded with the same TF order and vector length.
+    if timeframes is None:
+        timeframes = _infer_timeframes(samples)
     X = np.array([extract_features(s["indicators"], timeframes) for s in samples], dtype=np.float32)
     y = np.array([1 if s["label"]["bias"] == "LONG" else 0 for s in samples], dtype=np.int32)
     return X, y
