@@ -1,8 +1,6 @@
 import os
 import json
 import asyncio
-import time
-from typing import Optional
 from abc import ABC, abstractmethod
 from langchain_core.messages import SystemMessage, HumanMessage
 
@@ -20,9 +18,7 @@ class OllamaProvider(LLMProvider):
     def __init__(self, model_name: str, base_url: str, temperature: float):
         from langchain_ollama import ChatOllama
 
-        self.client = ChatOllama(
-            model=model_name, base_url=base_url, temperature=temperature
-        )
+        self.client = ChatOllama(model=model_name, base_url=base_url, temperature=temperature)
 
     async def generate_setup(self, system_prompt: str, user_prompt: str) -> str:
         max_retries = 3
@@ -37,11 +33,7 @@ class OllamaProvider(LLMProvider):
                     ]
                 )
 
-                content = (
-                    response.content
-                    if response and hasattr(response, "content")
-                    else ""
-                )
+                content = response.content if response and hasattr(response, "content") else ""
 
                 # Validate response is not empty
                 if not content or content.strip() == "":
@@ -50,17 +42,13 @@ class OllamaProvider(LLMProvider):
                 # Basic validation - should contain JSON structure
                 if "{" not in content and "[" not in content:
                     # Might still be valid if it's a simple value, but warn
-                    print(
-                        f"Warning: LLM response may not be JSON (attempt {attempt + 1}/{max_retries})"
-                    )
+                    print(f"Warning: LLM response may not be JSON (attempt {attempt + 1}/{max_retries})")
 
                 return content
 
             except Exception as e:
                 last_exception = e
-                print(
-                    f"Ollama API error (attempt {attempt + 1}/{max_retries}): {type(e).__name__}: {e}"
-                )
+                print(f"Ollama API error (attempt {attempt + 1}/{max_retries}): {type(e).__name__}: {e}")
 
                 if attempt < max_retries - 1:
                     wait_time = 2**attempt  # Exponential backoff: 1, 2, 4 seconds
@@ -89,9 +77,7 @@ class GoogleProvider(LLMProvider):
     def __init__(self, model_name: str, api_key: str, temperature: float):
         from langchain_google_genai import ChatGoogleGenerativeAI
 
-        self.client = ChatGoogleGenerativeAI(
-            model=model_name, google_api_key=api_key, temperature=temperature
-        )
+        self.client = ChatGoogleGenerativeAI(model=model_name, google_api_key=api_key, temperature=temperature)
 
     async def generate_setup(self, system_prompt: str, user_prompt: str) -> str:
         max_retries = 3
@@ -106,11 +92,7 @@ class GoogleProvider(LLMProvider):
                     ]
                 )
 
-                content = (
-                    response.content
-                    if response and hasattr(response, "content")
-                    else ""
-                )
+                content = response.content if response and hasattr(response, "content") else ""
 
                 # Validate response is not empty
                 if not content or content.strip() == "":
@@ -118,17 +100,13 @@ class GoogleProvider(LLMProvider):
 
                 # Basic validation - should contain JSON structure
                 if "{" not in content and "[" not in content:
-                    print(
-                        f"Warning: LLM response may not be JSON (attempt {attempt + 1}/{max_retries})"
-                    )
+                    print(f"Warning: LLM response may not be JSON (attempt {attempt + 1}/{max_retries})")
 
                 return content
 
             except Exception as e:
                 last_exception = e
-                print(
-                    f"Google AI API error (attempt {attempt + 1}/{max_retries}): {type(e).__name__}: {e}"
-                )
+                print(f"Google AI API error (attempt {attempt + 1}/{max_retries}): {type(e).__name__}: {e}")
 
                 if attempt < max_retries - 1:
                     wait_time = 2**attempt
@@ -164,9 +142,7 @@ class BedrockProvider(LLMProvider):
         )
 
     async def generate_setup(self, system_prompt: str, user_prompt: str) -> str:
-        response = await self.client.ainvoke(
-            [SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)]
-        )
+        response = await self.client.ainvoke([SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)])
         return response.content
 
 
@@ -177,19 +153,87 @@ class OpenAIProvider(LLMProvider):
         self.client = ChatOpenAI(model=model_name, temperature=temperature)
 
     async def generate_setup(self, system_prompt: str, user_prompt: str) -> str:
-        response = await self.client.ainvoke(
-            [SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)]
-        )
+        response = await self.client.ainvoke([SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)])
         return response.content
+
+
+class OpenAICompatibleProvider(LLMProvider):
+    """Works with any OpenAI-compatible API: Groq, DeepSeek, Together, Fireworks, etc."""
+
+    KNOWN_BASE_URLS = {
+        "groq": "https://api.groq.com/openai/v1",
+        "deepseek": "https://api.deepseek.com/v1",
+        "together": "https://api.together.xyz/v1",
+        "fireworks": "https://api.fireworks.ai/inference/v1",
+    }
+
+    def __init__(self, provider_type: str, model_name: str, api_key: str, temperature: float):
+        from langchain_openai import ChatOpenAI
+
+        base_url = os.getenv("LLM_BASE_URL") or self.KNOWN_BASE_URLS.get(provider_type)
+        if not base_url:
+            raise ValueError(
+                f"Unknown provider '{provider_type}' and LLM_BASE_URL not set. "
+                f"Known providers: {list(self.KNOWN_BASE_URLS.keys())}"
+            )
+
+        self.client = ChatOpenAI(
+            model=model_name,
+            api_key=api_key,
+            base_url=base_url,
+            temperature=temperature,
+        )
+
+    async def generate_setup(self, system_prompt: str, user_prompt: str) -> str:
+        max_retries = 3
+        last_exception = None
+
+        for attempt in range(max_retries):
+            try:
+                response = await self.client.ainvoke(
+                    [
+                        SystemMessage(content=system_prompt),
+                        HumanMessage(content=user_prompt),
+                    ]
+                )
+
+                content = response.content if response and hasattr(response, "content") else ""
+
+                if not content or content.strip() == "":
+                    raise ValueError("Empty response from LLM")
+
+                return content
+
+            except Exception as e:
+                last_exception = e
+                print(f"OpenAI-compatible API error (attempt {attempt + 1}/{max_retries}): {type(e).__name__}: {e}")
+
+                if attempt < max_retries - 1:
+                    wait_time = 2**attempt
+                    print(f"Retrying in {wait_time} seconds...")
+                    await asyncio.sleep(wait_time)
+                    continue
+
+        error_msg = f"Failed after {max_retries} attempts: {last_exception}"
+        print(error_msg)
+
+        fallback_response = {
+            "error": error_msg,
+            "bias": "NEUTRAL",
+            "entry": 0,
+            "tp": 0,
+            "sl": 0,
+            "leverage": None,
+            "reasoning": f"LLM service unavailable: {last_exception}",
+        }
+        return json.dumps(fallback_response)
 
 
 class MockProvider(LLMProvider):
     async def generate_setup(self, system_prompt: str, user_prompt: str) -> str:
         """Returns mock trade setups based on the symbol and scenario indicators."""
         # Detect if we are in optimizer mode
-        is_optimizer = (
-            "optimizer" in system_prompt.lower() or "Risk Manager" in system_prompt
-        )
+        is_optimizer = "optimizer" in system_prompt.lower() or "Risk Manager" in system_prompt
 
         # Simple detection of symbol and scenario from prompt
         if "BTCUSDT" in user_prompt:
@@ -238,9 +282,7 @@ class MockProvider(LLMProvider):
                 "confidence": 6,
             }
         elif "SOLUSDT" in user_prompt:
-            if (
-                "RANGE" in user_prompt or "NEUTRAL" in user_prompt
-            ):  # range_market or risky_futures
+            if "RANGE" in user_prompt or "NEUTRAL" in user_prompt:  # range_market or risky_futures
                 setup = {
                     "bias": "LONG",
                     "entry": 146.0,
@@ -278,12 +320,7 @@ class MockProvider(LLMProvider):
                     # Get first timeframe's data
                     first_tf = next(iter(indicators.values())) if indicators else {}
                     # Try to find price in various fields
-                    price = (
-                        first_tf.get("close")
-                        or first_tf.get("price")
-                        or first_tf.get("last")
-                        or 100.0
-                    )
+                    price = first_tf.get("close") or first_tf.get("price") or first_tf.get("last") or 100.0
                     if price <= 0:
                         price = 100.0
                     # Adjust for volatility
@@ -368,8 +405,27 @@ def get_llm_provider() -> LLMProvider:
             temperature=temperature,
         )
 
-    elif provider_type == "openai":
+    elif provider_type == "openai" and not os.getenv("LLM_BASE_URL"):
         return OpenAIProvider(model_name=model_name, temperature=temperature)
+
+    elif provider_type in ("groq", "deepseek", "together", "fireworks", "openai"):
+        api_key = os.getenv("LLM_API_KEY")
+        if not api_key:
+            provider_key_map = {
+                "groq": "GROQ_API_KEY",
+                "deepseek": "DEEPSEEK_API_KEY",
+                "together": "TOGETHER_API_KEY",
+                "openai": "OPENAI_API_KEY",
+            }
+            env_var = provider_key_map.get(provider_type)
+            if env_var:
+                api_key = os.getenv(env_var)
+        return OpenAICompatibleProvider(
+            provider_type=provider_type,
+            model_name=model_name,
+            api_key=api_key or "",
+            temperature=temperature,
+        )
 
     else:  # Default to Ollama
         return OllamaProvider(

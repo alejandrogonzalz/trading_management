@@ -3,6 +3,7 @@ import time
 from typing import TypedDict, List, Dict, Any, Literal, Optional
 from langgraph.graph import StateGraph, END
 from agent.llm_factory import get_llm_provider
+from agent.prompts import build_system_prompt, build_user_prompt
 
 
 # --- State Definition ---
@@ -118,49 +119,8 @@ async def generator_node(state: TradeState) -> Dict[str, Any]:
 
     llm = get_llm_provider()
 
-    mode_context = (
-        "SPOT (Long Only, No Leverage)"
-        if state["mode"] == "SPOT"
-        else "FUTURES (Long/Short, Leverage 1-50x)"
-    )
-
-    system_prompt = f"""
-    You are a Senior Technical Analyst for a {mode_context} trading system.
-    Analyze the provided multi-timeframe indicators and generate a high-confluence trade setup.
-    
-    RULES:
-    - MODE: {state["mode"]}
-    - If SPOT: Bias MUST be LONG. Leverage MUST be null.
-    - If FUTURES: Bias can be LONG or SHORT. Recommend leverage (1-50) based on volatility.
-    - Output MUST be valid JSON.
-    """
-
-    user_prompt = f"""
-    Symbol: {state["symbol"]}
-    Indicators: {json.dumps(state["indicators"])}
-    
-    Return valid JSON with these exact fields:
-    {{
-        "bias": "LONG" or "SHORT",
-        "entry": float (price number),
-        "tp": float (take profit price),
-        "sl": float (stop loss price), 
-        "leverage": integer or null,
-        "reasoning": "2 sentences max explaining the setup",
-        "quality": "HIGH", "MEDIUM", or "LOW"
-    }}
-    
-    Example JSON response:
-    {{
-        "bias": "LONG",
-        "entry": 100.50,
-        "tp": 105.25,
-        "sl": 98.75,
-        "leverage": 5,
-        "reasoning": "Bullish breakout on 1h with strong volume support.",
-        "quality": "HIGH"
-    }}
-    """
+    system_prompt = build_system_prompt(state["mode"])
+    user_prompt = build_user_prompt(state["symbol"], state["indicators"])
 
     original = None
     try:
@@ -306,9 +266,7 @@ def evaluator_node(state: TradeState) -> Dict[str, Any]:
 
         # We want SL to be hit BEFORE liquidation with a safety buffer (30%)
         if risk_pct >= (liq_pct * 0.7):
-            issues.append(
-                f"High Liq Risk: SL distance ({risk_pct:.1f}%) too close to Liq ({liq_pct:.1f}%)"
-            )
+            issues.append(f"High Liq Risk: SL distance ({risk_pct:.1f}%) too close to Liq ({liq_pct:.1f}%)")
             liq_safe = False
 
     # 7. Macro Alignment
@@ -364,7 +322,7 @@ async def optimizer_node(state: TradeState) -> Dict[str, Any]:
 
     llm = get_llm_provider()
 
-    system_prompt = f"""You are a Risk Manager. Fix the provided trade setup based on identified technical issues.
+    system_prompt = """You are a Risk Manager. Fix the provided trade setup based on identified technical issues.
     
     CRITICAL: You MUST return valid JSON only. Do not include any explanatory text before or after the JSON.
     The JSON must contain exactly the fields: bias, entry, tp, sl, leverage, reasoning, changes.
