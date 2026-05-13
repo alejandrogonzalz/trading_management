@@ -9,46 +9,10 @@ from collections import Counter
 from pathlib import Path
 from typing import Dict, Any, List, Literal
 
-
-def _build_system_prompt(mode: Literal["SPOT", "FUTURES"]) -> str:
-    """Exact system prompt from generator_node()."""
-    mode_context = "SPOT (Long Only, No Leverage)" if mode == "SPOT" else "FUTURES (Long/Short, Leverage 1-50x)"
-    return (
-        f"You are a Senior Technical Analyst for a {mode_context} trading system.\n"
-        "Analyze the provided multi-timeframe indicators and generate a high-confluence trade setup.\n\n"
-        f"RULES:\n- MODE: {mode}\n"
-        + (
-            "- If SPOT: Bias MUST be LONG. Leverage MUST be null.\n"
-            if mode == "SPOT"
-            else "- If FUTURES: Bias can be LONG or SHORT. Recommend leverage (1-50) based on volatility.\n"
-        )
-        + "- Output MUST be valid JSON."
-    )
-
-
-def _build_user_prompt(symbol: str, indicators: Dict[str, Any]) -> str:
-    """Exact user prompt from generator_node()."""
-    return (
-        f"Symbol: {symbol}\n"
-        f"Indicators: {json.dumps(indicators)}\n\n"
-        "Return valid JSON with these exact fields:\n"
-        '{\n    "bias": "LONG" or "SHORT",\n'
-        '    "entry": float (price number),\n'
-        '    "tp": float (take profit price),\n'
-        '    "sl": float (stop loss price), \n'
-        '    "leverage": integer or null,\n'
-        '    "reasoning": "2 sentences max explaining the setup",\n'
-        '    "quality": "HIGH", "MEDIUM", or "LOW"\n}\n\n'
-        "Example JSON response:\n"
-        '{\n    "bias": "LONG",\n    "entry": 100.50,\n    "tp": 105.25,\n'
-        '    "sl": 98.75,\n    "leverage": 5,\n'
-        '    "reasoning": "Bullish breakout on 1h with strong volume support.",\n'
-        '    "quality": "HIGH"\n}'
-    )
+from agent.prompts import build_system_prompt, build_user_prompt
 
 
 def _generate_reasoning(bias: str, indicators: Dict[str, Any]) -> str:
-    """Programmatic reasoning from indicator signals."""
     parts = []
     rsi = indicators.get("rsi", 50)
     adx = indicators.get("adx", 20)
@@ -89,8 +53,6 @@ def build_training_example(sample: Dict[str, Any], mode: Literal["SPOT", "FUTURE
     indicators = sample["indicators"]
     label = sample["label"]
 
-    # If indicators are already multi-TF ({"1h": {...}, "4h": {...}}), use as-is.
-    # If flat ({"price": ..., "rsi": ...}), wrap in {"1h": ...} for backward compat.
     if indicators and isinstance(next(iter(indicators.values())), dict):
         multi_tf_indicators = indicators
         base_ind = indicators.get("1h", next(iter(indicators.values())))
@@ -98,10 +60,9 @@ def build_training_example(sample: Dict[str, Any], mode: Literal["SPOT", "FUTURE
         multi_tf_indicators = {"1h": indicators}
         base_ind = indicators
 
-    system_prompt = _build_system_prompt(mode)
-    user_prompt = _build_user_prompt(symbol, multi_tf_indicators)
+    system_prompt = build_system_prompt(mode)
+    user_prompt = build_user_prompt(symbol, multi_tf_indicators)
 
-    # Build assistant response
     reasoning = _generate_reasoning(label["bias"], base_ind)
     assistant_response = {
         "bias": label["bias"],
@@ -127,7 +88,6 @@ def temporal_split(
     train_ratio: float = 0.70,
     val_ratio: float = 0.15,
 ) -> tuple[List[Dict], List[Dict], List[Dict]]:
-    """Split samples temporally (by timestamp). Assumes samples are sorted."""
     sorted_samples = sorted(samples, key=lambda s: s.get("timestamp", 0))
     n = len(sorted_samples)
     train_end = int(n * train_ratio)
@@ -136,7 +96,6 @@ def temporal_split(
 
 
 def print_stats(samples: List[Dict], split_name: str) -> None:
-    """Print dataset statistics for a split."""
     if not samples:
         print(f"  {split_name}: 0 samples")
         return
@@ -157,7 +116,7 @@ def export_training_data(
     output_dir: str,
     mode: Literal["SPOT", "FUTURES"] = "FUTURES",
 ) -> Dict[str, int]:
-    """Main export: read labeled JSONL, build chat examples, split, write files."""
+    """Read labeled JSONL, build chat examples, split, write files."""
     samples = []
     with open(dataset_path) as f:
         for line in f:
@@ -183,7 +142,6 @@ def export_training_data(
                 f.write(json.dumps(example) + "\n")
         counts[split_name] = len(split_data)
 
-    # Print statistics
     print(f"\nDataset exported to {out}/")
     print(f"Total: {len(samples)} samples\n")
     print_stats(train, "Train")

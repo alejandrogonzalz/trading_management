@@ -25,7 +25,6 @@ def label_candle(
 
     # Detect multi-TF vs flat format — use base TF for labeling decisions
     if raw_ind and isinstance(next(iter(raw_ind.values())), dict):
-        # Multi-TF: pick the base TF for labeling logic
         base_tf = "1h" if "1h" in raw_ind else next(iter(raw_ind.keys()))
         ind = raw_ind[base_tf]
     else:
@@ -34,7 +33,7 @@ def label_candle(
     entry = ind["price"]
 
     if candle_index + lookahead >= len(candles):
-        return None  # Not enough future data
+        return None
 
     future = candles[candle_index + 1 : candle_index + 1 + lookahead]
     if not future:
@@ -54,16 +53,15 @@ def label_candle(
     # Directional clarity: one side must dominate by 1.5x
     if max_up > threshold_pct and max_up > max_down * 1.5:
         bias = "LONG"
-        tp = entry * (1 + max_up * 0.7)  # Take 70% of the move
-        sl = entry * (1 - atr * 1.0 / entry)  # 1x ATR stop
+        tp = entry * (1 + max_up * 0.7)
+        sl = entry * (1 - atr * 1.0 / entry)
     elif max_down > threshold_pct and max_down > max_up * 1.5:
         bias = "SHORT"
         tp = entry * (1 - max_down * 0.7)
         sl = entry * (1 + atr * 1.0 / entry)
     else:
-        return None  # Ambiguous
+        return None
 
-    # R:R filter
     reward = abs(tp - entry)
     risk = abs(entry - sl)
     if risk == 0 or reward / risk < 1.0:
@@ -74,7 +72,7 @@ def label_candle(
     if bias == "LONG":
         early_drop = (entry - min(c["low"] for c in early)) / entry
         if early_drop > threshold_pct:
-            return None  # Whipsaw
+            return None
     else:
         early_rise = (max(c["high"] for c in early) - entry) / entry
         if early_rise > threshold_pct:
@@ -84,7 +82,7 @@ def label_candle(
     if bias == "LONG":
         for c in future:
             if c["low"] <= sl:
-                return None  # SL hit before TP
+                return None
             if c["high"] >= tp:
                 break
     else:
@@ -118,7 +116,6 @@ def generate_labeled_dataset(
     lookahead: int = 24,
 ) -> List[Dict[str, Any]]:
     """Generate labeled dataset from candles and indicator points."""
-    # Build timestamp -> candle index map
     ts_to_idx = {c["timestamp"]: i for i, c in enumerate(candles)}
 
     labeled = []

@@ -80,83 +80,81 @@ The backtest pipeline lives entirely in `langgraph/backtest/` and is orchestrate
 
 ### Full Pipeline
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  STEP 1 — FETCH CANDLES                                         │
-│  fetch_candles.py                                               │
-│  Binance public API (/api/v3/klines) → OHLCV JSON files        │
-│  12 symbols × 3 TFs × 18 months = 36 files (~21MB)             │
-└──────────────────────────────┬──────────────────────────────────┘
-                               │
-┌──────────────────────────────▼──────────────────────────────────┐
-│  STEP 2 — CALCULATE INDICATORS                                  │
-│  calculate_indicators.py                                        │
-│  TA-Lib: EMA20/50/200, RSI, MACD, ADX, ATR, BB, VolSMA        │
-│  Derived: heatmap, structure, atr_ratio, volume_ratio, bb_pos   │
-│  For each 1h candle: aligns most-recent 4h and 1d snapshot      │
-└──────────────────────────────┬──────────────────────────────────┘
-                               │
-┌──────────────────────────────▼──────────────────────────────────┐
-│  STEP 3 — HINDSIGHT LABELING                                    │
-│  label_data.py                                                  │
-│  For each candle, look 24 candles ahead:                        │
-│    max_up   = (max_high - entry) / entry                        │
-│    max_down = (entry - min_low) / entry                         │
-│  Quality filters:                                               │
-│    ✓ volume_ratio >= 0.5 (min liquidity)                        │
-│    ✓ ADX >= 15 (min trend)                                      │
-│    ✓ reward/risk >= 1.0 (positive R:R)                          │
-│    ✓ no whipsaw in first 4 candles                              │
-│  Direction: LONG if max_up > 1.5x max_down, SHORT if inverse    │
-│  TP = entry × (1 + max_up × 0.7), SL = entry - 1 ATR          │
-│  Output: 56,161 labeled samples (49% LONG, 51% SHORT)          │
-└──────────────────────────────┬──────────────────────────────────┘
-                               │
-              ┌────────────────┴──────────────────┐
-              │                                   │
-┌─────────────▼──────────────┐   ┌───────────────▼──────────────┐
-│  STEP 4A — LLM BACKTEST    │   │  STEP 4B — ML BACKTEST       │
-│  run_backtest.py           │   │  run_ml_backtest.py          │
-│  Calls Ollama/Groq/etc.    │   │  Trains XGBoost, RF, or LSTM │
-│  Parses JSON response      │   │  with temporal split         │
-│  → bias, entry, tp, sl     │   │  → bias + ATR-based tp/sl    │
-└─────────────┬──────────────┘   └───────────────┬──────────────┘
-              └────────────────┬──────────────────┘
-                               │
-┌──────────────────────────────▼──────────────────────────────────┐
-│  STEP 5 — TRADE SIMULATION                                      │
-│  simulate_trade() in run_backtest.py                            │
-│  Given prediction (bias, entry, tp, sl):                        │
-│    Scan next 24 future candles for TP or SL hit                 │
-│    First hit wins: outcome = WIN | LOSS | TIMEOUT               │
-│    pnl_pct = (exit_price - entry) / entry × direction           │
-└──────────────────────────────┬──────────────────────────────────┘
-                               │
-┌──────────────────────────────▼──────────────────────────────────┐
-│  STEP 6 — METRICS                                               │
-│  metrics.py → compute_all_metrics()                             │
-│  Classification: accuracy, precision, recall, F1 per class      │
-│  Trading: win_rate, profit_factor, avg_win/loss                 │
-│           sharpe_ratio (annualized), max_drawdown               │
-│           confidence_calibration (binned confidence vs accuracy) │
-└──────────────────────────────┬──────────────────────────────────┘
-                               │
-┌──────────────────────────────▼──────────────────────────────────┐
-│  STEP 7 — COMPARE & REPORT                                      │
-│  compare.py + report.py                                         │
-│  Side-by-side table: baseline vs candidate                      │
-│  CLI: python -m cli compare --baseline f1.json --candidate f2   │
-└─────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    subgraph FETCH["① FETCH CANDLES"]
+        F1["fetch_candles.py"]
+        F2["Binance API  /api/v3/klines"]
+        F3["12 symbols × 3 timeframes × 18 months\n36 OHLCV JSON files · ~21 MB"]
+        F1 --> F2 --> F3
+    end
+
+    subgraph CALC["② CALCULATE INDICATORS"]
+        C1["calculate_indicators.py"]
+        C2["TA-Lib: EMA 20/50/200 · RSI · MACD\nADX · ATR · Bollinger Bands · Vol SMA"]
+        C3["Derived: heatmap · structure\natr_ratio · volume_ratio · bb_pos\nAligns 4h and 1d snapshot to each 1h candle"]
+        C1 --> C2 --> C3
+    end
+
+    subgraph LABEL["③ HINDSIGHT LABELING"]
+        L1["label_data.py\nLook 24 candles ahead per entry"]
+        L2["Quality filters\nvol_ratio ≥ 0.5 · ADX ≥ 15 · R:R ≥ 1.0 · no whipsaw in first 4 candles"]
+        L3["LONG if max_up &gt; 1.5× max_down  ·  SHORT if inverse\n56,161 labeled samples  ·  49% LONG · 51% SHORT"]
+        L1 --> L2 --> L3
+    end
+
+    subgraph PREDICT["④ PREDICT"]
+        subgraph LLM_PATH["LLM Path"]
+            P1["run_backtest.py\nOllama / Groq / DeepSeek"]
+            P2["→ bias · entry · tp · sl\nvia JSON prompt"]
+            P1 --> P2
+        end
+        subgraph ML_PATH["ML Path"]
+            P3["run_ml_backtest.py\nXGBoost · Random Forest · LSTM"]
+            P4["→ bias + ATR-based tp/sl\n(temporal split: train 70 / val 15 / test 15)"]
+            P3 --> P4
+        end
+    end
+
+    subgraph SIM["⑤ TRADE SIMULATION"]
+        S1["simulate_trade()"]
+        S2["Scan next 24 candles for TP or SL hit\nFirst hit wins"]
+        S3["Outcome: WIN · LOSS · TIMEOUT\npnl_pct = (exit − entry) / entry × direction"]
+        S1 --> S2 --> S3
+    end
+
+    subgraph MET["⑥ METRICS  —  metrics.py"]
+        M1["Classification\naccuracy · precision · recall · F1 per class"]
+        M2["Trading\nwin_rate · profit_factor · avg win/loss\nsharpe ratio · max drawdown"]
+        M3["Calibration\nbinned confidence vs realized accuracy"]
+    end
+
+    subgraph REP["⑦ COMPARE & REPORT"]
+        R1["compare.py + report.py"]
+        R2["Side-by-side table: baseline vs candidate\ncli: python -m cli compare --baseline f1.json --candidate f2"]
+        R1 --> R2
+    end
+
+    FETCH --> CALC --> LABEL --> PREDICT --> SIM --> MET --> REP
 ```
 
 ### Temporal Split (critical — never shuffle)
 
-```
-56,161 samples ordered by timestamp
-│
-├── Train  70% → 39,312 samples   (used to fit model)
-├── Val    15% →  8,424 samples   (early stopping / CV)
-└── Test   15% →  8,425 samples   ← NEVER touched until final eval
+```mermaid
+flowchart LR
+    subgraph TIMELINE["56,161 samples · ordered chronologically ──────────────────▶"]
+        direction LR
+        subgraph TRAIN["Train  70%"]
+            TR["39,312 samples\nFit model weights"]
+        end
+        subgraph VAL["Val  15%"]
+            VL["8,424 samples\nEarly stopping · CV"]
+        end
+        subgraph TEST["Test  15%"]
+            TS["8,425 samples\n⚠ NEVER touched until final eval"]
+        end
+        TRAIN -->|time →| VAL -->|time →| TEST
+    end
 ```
 
 Shuffling would cause data leakage — future candles would appear in the training set. All splits respect chronological order.
@@ -219,33 +217,35 @@ The backtest framework's most valuable output is **not the model** — it's the 
 
 The LangGraph agent (`langgraph/agent/`) runs independently from the ML backtest system. It receives live indicator data from the backend and generates trade setups through 3 nodes:
 
-```
-POST /analyze (port 2024)
-      │
-      ▼
-┌─────────────────────────────────────────────────────┐
-│  Node 1: generator_node (LLM)                       │
-│  Qwen 2.5 14B via Ollama                           │
-│  → {"bias", "entry", "tp", "sl", "leverage",       │
-│      "reasoning", "quality"}                        │
-└──────────────────────────┬──────────────────────────┘
-                           │
-┌──────────────────────────▼──────────────────────────┐
-│  Node 2: evaluator_node (deterministic, no LLM)     │
-│  Validates setup mathematically:                    │
-│  - tp > entry > sl (LONG) / tp < entry < sl (SHORT) │
-│  - RSI overbought/oversold check                    │
-│  - ATR ratio volatility check                       │
-│  - FUTURES: SL distance vs liquidation distance     │
-│  - Multi-TF heatmap alignment check                 │
-│  → {"confidence", "issues", "rr", "safety_margin"}  │
-└──────────────────────────┬──────────────────────────┘
-                           │ (if issues found)
-┌──────────────────────────▼──────────────────────────┐
-│  Node 3: optimizer_node (LLM, conditional)          │
-│  "Risk Manager" persona refines setup               │
-│  → adjusted entry/tp/sl + changes list              │
-└─────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    REQ(["POST /analyze · port 2024\nmulti-TF indicators from backend"])
+
+    subgraph GEN["Node 1 — generator_node"]
+        G1["Qwen 2.5 14B via Ollama"]
+        G2["Generates trade setup\nbias · entry · tp · sl · leverage · quality"]
+        G3["reasoning field — natural language explanation"]
+        G1 --> G2 --> G3
+    end
+
+    subgraph EVAL["Node 2 — evaluator_node  ·  deterministic, no LLM"]
+        E1["Structural checks\ntp/entry/sl ordering · R:R calculation"]
+        E2["Market checks\nRSI overbought/oversold · ATR volatility ratio\nLiquidation distance · Multi-TF heatmap alignment"]
+        E3["Output\nconfidence · issues list · rr · safety_margin"]
+        E1 --> E2 --> E3
+    end
+
+    subgraph OPT["Node 3 — optimizer_node  ·  conditional"]
+        O1["Qwen 2.5 14B — Risk Manager persona\nOnly triggered when evaluator finds issues"]
+        O2["Refined entry · tp · sl\n+ changes list explaining each adjustment"]
+        O1 --> O2
+    end
+
+    DONE(["Final trade setup"])
+
+    REQ --> GEN --> EVAL
+    EVAL -->|"issues found"| OPT --> DONE
+    EVAL -->|"no issues"| DONE
 ```
 
 **Current limitation**: The generator_node relies entirely on LLM intuition. There is no objective signal from the trained LSTM to anchor or validate the generated bias.
@@ -254,28 +254,33 @@ POST /analyze (port 2024)
 
 The trained LSTM can be integrated as a **pre-generator validation step** or a **parallel signal node**:
 
-```
-POST /analyze
-      │
-      ▼
-┌─────────────────────────────────────────────────────┐
-│  Node 0 (NEW): ml_signal_node                       │
-│  Loads lstm_final.pt (no GPU needed, CPU inference) │
-│  Input: same multi-TF indicators from request       │
-│  Output: {"ml_bias": "LONG", "ml_confidence": 8}   │
-│  Adds to state: ml_signal                           │
-└──────────────────────────┬──────────────────────────┘
-                           │
-┌──────────────────────────▼──────────────────────────┐
-│  Node 1: generator_node (LLM — enhanced prompt)     │
-│  System prompt now includes:                        │
-│  "The ML model (85.5% test accuracy) predicts LONG  │
-│   with confidence 8/10. Factor this into your       │
-│   analysis but explain if you disagree."            │
-│  → Anchored LLM output with ML prior               │
-└──────────────────────────┬──────────────────────────┘
-                           │
-               [evaluator + optimizer unchanged]
+```mermaid
+flowchart TD
+    REQ(["POST /analyze\nmulti-TF indicators"])
+
+    subgraph ML0["Node 0  NEW — ml_signal_node"]
+        M1["Loads lstm_final.pt once at startup\nno GPU needed"]
+        M2["CPU inference  ·  &lt; 1ms latency"]
+        M3["Output added to TradeState\nml_bias: LONG/SHORT  ·  ml_confidence: 0-10"]
+        M1 --> M2 --> M3
+    end
+
+    subgraph GEN["Node 1 — generator_node  ·  enhanced"]
+        G1["Qwen 2.5 14B via Ollama"]
+        G2["System prompt includes ML prior\n'LSTM (85.5% accuracy) predicts LONG · confidence 8/10\nFactor this in or explain if you disagree'"]
+        G3["→ Anchored output: bias · entry · tp · sl"]
+        G1 --> G2 --> G3
+    end
+
+    subgraph TAIL["Nodes 2 & 3 — unchanged"]
+        T1["evaluator_node\nNow also flags LLM ↔ ML bias disagreement as an issue"]
+        T2["optimizer_node\nConditional refinement if issues found"]
+        T1 -->|"if issues"| T2
+    end
+
+    DONE(["Trade Setup\nML-grounded"])
+
+    REQ --> ML0 --> GEN --> TAIL --> DONE
 ```
 
 **Why this matters**:
@@ -288,19 +293,31 @@ POST /analyze
 
 The scanner already collects live multi-TF indicators. The connection would be:
 
-```
-Scanner API → /market/analyze
-      │
-      ├── Indicators (RSI, ADX, ATR, heatmap, etc. per TF)
-      │         │
-      │         ▼
-      │   ┌──────────────────┐
-      │   │  LSTM inference  │  ← lstm_final.pt loaded once at startup
-      │   │  (CPU, <1ms)     │
-      │   └────────┬─────────┘
-      │            │ ml_signal
-      │            ▼
-      └──► LangGraph /analyze ──► trade setup with ML-grounded bias
+```mermaid
+flowchart LR
+    subgraph BACKEND["Backend Scanner"]
+        SC["scanner_service.py\n20+ pairs · 7 timeframes · multithreaded"]
+        IND["Indicators per TF\nRSI · ADX · ATR · heatmap\nstructure · MACD · BB · volume"]
+        SC --> IND
+    end
+
+    subgraph INFERENCE["LSTM Inference Layer"]
+        LM["lstm_final.pt\nloaded once at startup"]
+        CPU["CPU · &lt; 1ms\nno GPU required"]
+        SIG["ml_bias: LONG / SHORT\nml_confidence: 0–10"]
+        LM --> CPU --> SIG
+    end
+
+    subgraph AGENT["LangGraph Agent  ·  port 2024"]
+        N0["ml_signal_node\ninjects ML prior into state"]
+        N1["generator_node\nLLM with ML-anchored prompt"]
+        N2["evaluator + optimizer\nflags LLM ↔ ML disagreement"]
+        N0 --> N1 --> N2
+    end
+
+    OUT(["Trade Setup\nML-grounded bias\nentry · tp · sl · reasoning"])
+
+    BACKEND -->|"indicators"| INFERENCE -->|"ml_signal"| AGENT --> OUT
 ```
 
 This would make the LSTM a live decision-support layer between the scanner and the LLM setup generator — combining the scanner's real-time market awareness, the LSTM's learned pattern recognition, and the LLM's reasoning and target generation.

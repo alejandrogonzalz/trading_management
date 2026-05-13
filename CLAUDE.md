@@ -48,9 +48,10 @@ Full-stack crypto trading platform with GPU-accelerated AI, LangGraph agents, ba
 - **Backtest**: Historical evaluation of LLM vs ML predictions (56,161 labeled samples)
 - **Research**: Master's thesis comparing zero-shot LLM, fine-tuned LLM, XGB, RF, LSTM
 
-## Current Status (2026-05-09)
+## Current Status (2026-05-11)
 - **Production**: Backend + Frontend + Ollama running via Docker Compose
 - **LangGraph**: Agent running, 3-node graph tested
+- **Backtest**: Refactored into clean subpackages (`ingestion/`, `models/`, `evaluation/`)
 - **ML Results**: LSTM 84.29% acc (winner), XGB 76.79%, RF 74.89%
 - **Pending**: LSTM test-set eval, serialization, QLoRA fine-tuning, DVC
 

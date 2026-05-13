@@ -21,5 +21,13 @@ DEFAULT_SYMBOLS = [
     "NEARUSDT",
 ]
 
-DEFAULT_TIMEFRAMES = ["1h", "4h", "1d"]
+# All timeframes available in production (market_service.py).
+# 5m/15m produce large files (~130K candles each over 18 months).
+# 1h is the base TF for labeling — always required.
+ALL_TIMEFRAMES = ["5m", "15m", "1h", "4h", "1d", "1w"]
+
+# Default for CLI commands — matches production minus very short TFs for manageability.
+# Override with --timeframes to use ALL_TIMEFRAMES.
+DEFAULT_TIMEFRAMES = ["15m", "1h", "4h", "1d", "1w"]
+
 DEFAULT_MONTHS = 18

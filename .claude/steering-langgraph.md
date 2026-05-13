@@ -65,6 +65,13 @@ Body: {"symbol": str, "mode": "SPOT"|"FUTURES", "indicators": {tf: {...}}}
 Response: {run_id, symbol, mode, original, evaluation, optimized, issues, audit_trail}
 ```
 
+### Shared Prompts (`langgraph/agent/prompts.py`)
+Single source of truth for prompts used across the agent graph, backtest runner, and fine-tuning export:
+```python
+build_system_prompt(mode: Literal["SPOT", "FUTURES"]) -> str
+build_user_prompt(symbol: str, indicators: Dict[str, Any]) -> str
+```
+
 ---
 
 ## LLM Factory (`langgraph/agent/llm_factory.py`)
@@ -83,24 +90,44 @@ Supported providers (via `LLM_PROVIDER` env var):
 
 ## Backtest Framework (`langgraph/backtest/`)
 
-### Pipeline
+### Directory Structure
 ```
-1. fetch_candles.py   → Binance klines, 12 symbols × 3 TFs × 18 months → JSON
-2. calculate_indicators.py → TA-Lib batch → multi-TF indicator points
-3. label_data.py      → Hindsight labeling → 56,161 samples JSONL
-4. run_backtest.py    → LLM predictions → trade simulation → metrics
-   OR run_ml_backtest.py → ML predictions → same metrics
-5. compare.py         → Side-by-side comparison of two result JSONs
-6. report.py          → Terminal table output
+backtest/
+├── config.py              # DEFAULT_SYMBOLS, DEFAULT_TIMEFRAMES, DEFAULT_MONTHS
+├── pipeline.py            # DataPipeline class — orchestrates fetch → indicators → label
+├── export.py              # Fine-tuning data export (chat-format JSONL)
+├── ingestion/
+│   ├── fetcher.py         # Binance candle download (async, auto-paginated, concurrent TFs)
+│   ├── indicators.py      # TA-Lib batch indicator calculation + multi-TF alignment
+│   └── labeler.py         # Hindsight labeling algorithm
+├── models/
+│   ├── features.py        # Feature extraction + dataset utilities (_load_dataset, _temporal_split)
+│   ├── sklearn_models.py  # XGBoostPredictor, RandomForestPredictor, get_predictor()
+│   └── lstm.py            # LSTMPredictor, _LSTMNet
+└── evaluation/
+    ├── metrics.py          # All metric functions (accuracy, win rate, Sharpe, drawdown, etc.)
+    ├── simulate.py         # _parse_prediction(), simulate_trade()
+    ├── runner.py           # LLMBacktestRunner, MLBacktestRunner (class-based)
+    ├── compare.py          # Side-by-side comparison of two result JSONs
+    └── report.py           # Terminal tables + matplotlib equity curves
 ```
 
-### `fetch_candles.py`
-- `fetch_candles(symbol, interval, start_date, end_date)` — HTTP GET `/api/v3/klines`, auto-paginates 1000 candle chunks
-- `fetch_multi_tf_candles(symbol, timeframes)` — parallel multi-TF
-- `save_candles()` → `data/candles/{SYMBOL}_{interval}.json`
-- Default range: 18 months (Nov 2024 – May 2026)
+### Data Pipeline Flow
+```
+DataPipeline.fetch()        → ingestion/fetcher.py   → data/candles/{SYM}_{TF}.json
+DataPipeline.build_dataset()→ ingestion/indicators.py → multi-TF indicator points
+                            → ingestion/labeler.py   → data/labeled/dataset.jsonl
+LLMBacktestRunner.run()     → evaluation/runner.py   → data/results/{tag}.json
+MLBacktestRunner.run()      → evaluation/runner.py   → data/results/{tag}.json
+```
 
-### `calculate_indicators.py`
+### `ingestion/fetcher.py`
+- `fetch_candles(symbol, interval, start_date, end_date)` — HTTP GET `/api/v3/klines`, auto-paginates 1000-candle chunks
+- `fetch_multi_tf_candles(symbol, timeframes)` — concurrent with `asyncio.Semaphore(4)` + exponential backoff
+- `save_candles()` / `load_candles()` → `data/candles/{SYMBOL}_{interval}.json`
+- Default range: 18 months
+
+### `ingestion/indicators.py`
 Indicators computed per candle (TA-Lib):
 | Indicator | Period | Purpose |
 |-----------|--------|---------|
@@ -122,11 +149,11 @@ Derived features:
 Key function:
 ```python
 calculate_multi_tf_indicators(candles_by_tf, base_tf="1h", lookback=200)
-# For each 1h candle, aligns the most recent 4h and 1d indicator snapshot
+# For each 1h candle, aligns the most recent 4h/1d/etc indicator snapshot
 # Returns: [{"timestamp", "indicators": {"1h": {...}, "4h": {...}, "1d": {...}}, "atr_raw"}, ...]
 ```
 
-### `label_data.py` — Hindsight Labeling Algorithm
+### `ingestion/labeler.py` — Hindsight Labeling Algorithm
 1. Extract ATR from indicator point
 2. Dynamic threshold: `ATR × 1.5`
 3. Look 24 candles ahead
@@ -145,12 +172,49 @@ calculate_multi_tf_indicators(candles_by_tf, base_tf="1h", lookback=200)
 
 **Dataset stats**: 56,161 samples, 49% LONG / 51% SHORT (balanced), from 250K+ raw candles
 
-### `run_backtest.py` — LLM Backtest
+### `models/features.py` — Feature Extraction
 ```python
-run_backtest(dataset_path, provider, tag, sample_limit)
-# For each sample: build LLM prompt → parse JSON → simulate trade (check 24 future candles for TP/SL hit) → PnL
+extract_features(indicators, timeframes=None) -> list[float]
+# 9 features per TF (7 numeric + 2 encoded categorical) + 3 cross-TF features
+# Dynamic size: n_TFs × 9 + 3 (inferred from data, consistent via _timeframes stored in model)
 ```
-Output JSON:
+
+Private utilities also used by `optimization/`:
+- `_load_dataset(path)` — reads JSONL, returns list of dicts
+- `_temporal_split(samples, train_frac, val_frac)` — 70/15/15 split (never shuffled)
+- `_samples_to_xy(samples, timeframes)` — returns (X: np.ndarray, y: np.ndarray)
+- `_sorted_timeframes(indicators)` — sorts TF keys by duration (shortest first)
+- `_infer_timeframes(samples)` — detects TF order from first valid multi-TF sample
+
+### `models/sklearn_models.py` / `models/lstm.py` — ML Predictors
+
+Feature vector: `n_timeframes × 9 + 3` (dynamic size stored with model)
+
+**XGBoostPredictor**: trains with early stopping on val set, stores `.meta.pkl` alongside the model file
+**RandomForestPredictor**: pickled as `{"model": ..., "timeframes": ...}` dict
+**LSTMPredictor**:
+- Architecture: LSTM(input_size, hidden_size, num_layers) → Linear(hidden_size, 2)
+- Sequences of 10 steps (last 10 candles × features), zero-padded for early samples
+- Early stopping (patience=10), Adam optimizer, z-score normalization stored with model
+- `predict_sequence(tensor)` for pre-built sequence batches (used in ML backtest)
+
+Temporal split: 70% train / 15% val / 15% test (never shuffled)
+
+### `evaluation/runner.py` — Backtest Runners
+
+**LLMBacktestRunner** — calls LLM for each sample, parses JSON response, simulates trade:
+```python
+runner = LLMBacktestRunner(dataset_path="...", provider="groq", tag="zero-shot-groq")
+result = asyncio.run(runner.run())
+```
+
+**MLBacktestRunner** — trains model on train+val splits, evaluates on test split:
+```python
+runner = MLBacktestRunner(dataset_path="...", model_type="lstm", tag="ml-lstm", serialize=True)
+result = runner.run()
+```
+
+Both runners write results to `data/results/{tag}.json` in the same schema:
 ```python
 {
     "tag", "provider", "model", "dataset",
@@ -158,44 +222,36 @@ Output JSON:
     "metrics": {...},
     "predictions": [...], "actuals": [...],
     "trade_results": [{"outcome": "WIN"|"LOSS"|"TIMEOUT", "pnl_pct": float}],
-    "audit_trail": [...]
 }
 ```
 
-### `metrics.py` — All Metrics
+### `evaluation/metrics.py` — All Metrics
 | Metric | Function |
 |--------|----------|
 | Direction accuracy | `direction_accuracy()` |
 | Precision/Recall/F1 | `precision_recall_f1()` per class |
 | Win rate | `win_rate()` — fraction reaching TP |
 | Profit factor | `profit_factor()` — gross gain / gross loss |
-| Avg win / avg loss | `avg_win()`, `avg_loss()` |
+| Avg win / avg loss | `avg_win_loss()` |
 | Sharpe ratio | `sharpe_ratio()` — annualized |
 | Max drawdown | `max_drawdown()` — equity curve |
 | Confidence calibration | `confidence_calibration()` — binned confidence vs actual accuracy |
 
-### `ml_models.py` — ML Predictors
-
-Feature extraction: 30 features per sample
-- Multi-TF indicators (3 TFs × 7 numeric + 2 categorical) = 27 base
-- Cross-TF: TF agreement, RSI divergence, volume spread = 3 extra
-
-**XGBoostPredictor**: GridSearchCV + TimeSeriesSplit(n_splits=3)
-**RandomForestPredictor**: RandomizedSearchCV (100 iters)
-**LSTMPredictor**:
-- Architecture: LSTM(input_size, hidden_size, num_layers) → Linear(hidden_size, 2)
-- Sequences of 10 steps (last 10 candles × features)
-- Early stopping (patience=10), Adam optimizer
-- Normalization: mean/std of training set stored with model
-
-Temporal split: 70% train / 15% val / 15% test (never shuffled)
-
-### `export_training_data.py` — Fine-tuning Data Export
+### `export.py` — Fine-tuning Data Export
 Converts labeled dataset → chat JSONL for LLM fine-tuning:
 ```jsonl
 {"messages": [{"role": "system", "content": "..."}, {"role": "user", "content": "Symbol: BTCUSDT\nIndicators: {..."}, {"role": "assistant", "content": "{\"bias\": \"LONG\", ...}"}]}
 ```
 Temporal split: train/val/test.jsonl
+
+### `pipeline.py` — DataPipeline Class
+```python
+pipe = DataPipeline(symbols=["BTCUSDT"], timeframes=["15m","1h","4h","1d"], base_tf="1h")
+asyncio.run(pipe.fetch())   # download candles
+pipe.build_dataset()         # indicators + labeling → data/labeled/dataset.jsonl
+# Or combined:
+pipe.run()
+```
 
 ---
 
@@ -208,12 +264,14 @@ Three search strategies:
 3. **QLoRA**: Prints recommended configs; manual training with Unsloth + GPU
 
 Config YAMLs:
-- `configs/xgboost.yaml` — 576 combinations (grid)
+- `configs/xgboost.yaml` — random search, L1/L2 regularization round 2
 - `configs/random_forest.yaml` — 100 random iterations
 - `configs/lstm.yaml` — 30 random iterations
 - `configs/qlora.yaml` — 5 recommended QLoRA configs
 
 Output: `results/{model}_optimization.json` with best_params, all_results, scores, timing
+
+`MLBacktestRunner` auto-loads `best_params` from this file when `--serialize` is not used.
 
 ### `analyze_results.py`
 Loads result JSONs from 3-4 models → comparison table + matplotlib charts
@@ -229,7 +287,7 @@ python -m cli prepare-dataset --symbols BTCUSDT,ETHUSDT --interval 1h --timefram
 python -m cli run-backtest --dataset backtest/data/labeled/dataset.jsonl --provider mock
 python -m cli run-backtest --dataset backtest/data/labeled/dataset.jsonl --provider ollama
 python -m cli train-ml --model xgboost --dataset backtest/data/labeled/dataset.jsonl
-python -m cli train-ml --model lstm --dataset backtest/data/labeled/dataset.jsonl
+python -m cli train-ml --model lstm --dataset backtest/data/labeled/dataset.jsonl --serialize
 python -m cli export-training-data --dataset backtest/data/labeled/dataset.jsonl --output training_data/
 python -m cli compare --baseline results/baseline.json --candidate results/ml-xgboost.json
 ```
@@ -254,22 +312,38 @@ DEFAULT_SYMBOLS = [
     "SOLUSDT", "XRPUSDT", "ADAUSDT", "AVAXUSDT", "DOTUSDT",  # Mid cap
     "DOGEUSDT", "LINKUSDT", "MATICUSDT", "NEARUSDT"           # Volatile
 ]
-DEFAULT_TIMEFRAMES = ["1h", "4h", "1d"]
+DEFAULT_TIMEFRAMES = ["15m", "1h", "4h", "1d", "1w"]   # 5 TFs (base: 1h)
 DEFAULT_MONTHS = 18
 ```
 
 Data files: `langgraph/backtest/data/`
-- `candles/` — 36 JSON files (12 symbols × 3 TFs)
+- `candles/` — JSON files per symbol × TF (e.g. `BTCUSDT_1h.json`)
 - `labeled/dataset.jsonl` — 56,161 labeled samples
 - `results/` — backtest result JSONs for each model/provider
+- `models/` — serialized trained models
 
 ---
 
-## Current Status (2026-05-09)
+## Tests (`langgraph/tests/`)
+```
+tests/
+├── conftest.py                    # Adds langgraph/ root to sys.path
+├── backtest/
+│   └── test_backtest.py           # 35 unit tests (prompts, features, predictors, metrics, pipeline)
+└── optimization/
+    └── test_optimization.py       # Optimization pipeline tests
+```
+
+Run: `conda activate trading && python -m pytest tests/backtest/ -v`
+
+---
+
+## Current Status (2026-05-11)
 
 ### Completed ✅
 - LangGraph agent (3 nodes) — production-ready, running on port 2024
-- Backtest framework — full CLI with 6 commands
+- Backtest framework — full CLI with 6 commands, refactored into clean subpackages
+- Shared prompts (`agent/prompts.py`) — single source used by graph, backtest, and fine-tuning export
 - Dataset: 56,161 samples (18 months, 12 symbols, 3 TFs)
 - Optimization round 1 complete:
   - **LSTM: 84.29%** accuracy (winner, CPU, 73.5 min training)
@@ -281,14 +355,13 @@ Data files: `langgraph/backtest/data/`
 2. Serialize LSTM with `torch.save()` for deployment
 3. Second optimization round for XGB/RF (L1/L2 regularization)
 4. Initialize DVC for model versioning
-5. Refactor `optimization/` to class-based pipeline
-6. QLoRA fine-tuning of Qwen 2.5 7B (thesis requirement)
+5. QLoRA fine-tuning of Qwen 2.5 7B (thesis requirement)
 
 ### Research Context
 This is part of a **master's thesis** research project:
 > "Can fine-tuning significantly improve LLM accuracy for crypto technical analysis while maintaining explainable reasoning?"
 
-5 models to compare: zero-shot LLM, fine-tuned LLM (QLoRA), XGBoost, Random Forest, LSTM
+4 models to compare: zero-shot LLM (ReAct/LangGraph agent), fine-tuned LLM (QLoRA), XGBoost, Random Forest, LSTM
 Statistical validation: McNemar test + paired t-test
 
 ---

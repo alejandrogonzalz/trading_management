@@ -1,7 +1,6 @@
 # Backtest Module
 
-> For a high-level overview of the 3 approaches (zero-shot LLM, fine-tuned LLM, traditional ML), see [docs/three-approaches.md](../../docs/three-approaches.md).
-> For the full framework documentation, see [docs/backtest-framework.md](../../docs/backtest-framework.md).
+> For a high-level overview of the 4 approaches (zero-shot LLM, fine-tuned LLM, traditional ML), see [docs/three-approaches.md](../../docs/three-approaches.md).
 
 Evaluates trading signal quality by replaying historical data and comparing predictions against hindsight-labeled ground truth.
 
@@ -19,21 +18,22 @@ graph LR
 
 ```bash
 cd langgraph
+conda activate trading
 
-# 1. Fetch 6 months of hourly candles
-python -m cli fetch-candles --symbols BTCUSDT,ETHUSDT --interval 1h --months 6
+# 1. Fetch 18 months of candles for 5 timeframes
+python -m cli fetch-candles --symbols BTCUSDT,ETHUSDT --months 18 --timeframes "15m,1h,4h,1d,1w"
 
 # 2. Calculate indicators + generate labeled dataset
-python -m cli prepare-dataset --symbols BTCUSDT,ETHUSDT --interval 1h
+python -m cli prepare-dataset --symbols BTCUSDT,ETHUSDT --timeframes "15m,1h,4h,1d,1w"
 
 # 3. Run LLM backtest (zero-shot baseline)
-python -m cli run-backtest --tag baseline --max-samples 100
+python -m cli run-backtest --dataset data/labeled/dataset.jsonl --provider mock --tag baseline
 
 # 4. Train and backtest ML model
-python -m cli train-ml --model xgboost --tag ml-xgboost
+python -m cli train-ml --model xgboost --dataset data/labeled/dataset.jsonl --serialize
 
 # 5. Export training data for fine-tuning
-python -m cli export-training-data
+python -m cli export-training-data --dataset data/labeled/dataset.jsonl --output training_data/
 
 # 6. Compare two runs
 python -m cli compare \
@@ -41,21 +41,51 @@ python -m cli compare \
   --candidate backtest/data/results/ml-xgboost.json
 ```
 
-## Module Reference
+## Package Structure
 
-| File | Purpose |
-|------|---------|
-| `fetch_candles.py` | Downloads OHLCV candles from Binance with auto-pagination |
-| `calculate_indicators.py` | Batch indicator calculation (EMA, RSI, MACD, ADX, ATR, BB) |
-| `label_data.py` | Hindsight labeling with quality/whipsaw/drawdown filters |
-| `run_backtest.py` | LLM backtest: send indicators to LLM, parse JSON, simulate trades |
-| `run_ml_backtest.py` | ML backtest: train model on training split, evaluate on test split |
-| `ml_models.py` | XGBoost, Random Forest, LSTM implementations |
-| `export_training_data.py` | Convert labeled data to chat-format JSONL for fine-tuning |
-| `metrics.py` | Accuracy, win rate, profit factor, Sharpe, drawdown, calibration |
-| `compare.py` | Side-by-side comparison of two result files |
-| `report.py` | Terminal tables + matplotlib equity curves |
-| `config.py` | Shared configuration |
+```
+backtest/
+├── config.py              # Symbols, timeframes, default settings
+├── pipeline.py            # DataPipeline class — orchestrates the full data flow
+├── export.py              # Fine-tuning data export (chat-format JSONL)
+│
+├── ingestion/             # Data acquisition and preparation
+│   ├── fetcher.py         # Binance candle download (async, concurrent TFs, retry)
+│   ├── indicators.py      # TA-Lib batch calculation + multi-TF alignment
+│   └── labeler.py         # Hindsight labeling with quality/whipsaw/drawdown filters
+│
+├── models/                # ML model implementations
+│   ├── features.py        # Feature extraction + shared dataset utilities
+│   ├── sklearn_models.py  # XGBoostPredictor, RandomForestPredictor
+│   └── lstm.py            # LSTMPredictor (sequence model, early stopping)
+│
+└── evaluation/            # Backtesting and analysis
+    ├── runner.py           # LLMBacktestRunner, MLBacktestRunner
+    ├── simulate.py         # _parse_prediction(), simulate_trade()
+    ├── metrics.py          # Accuracy, win rate, Sharpe, drawdown, calibration
+    ├── compare.py          # Side-by-side comparison of two result files
+    └── report.py           # Terminal tables + matplotlib equity curves
+```
+
+## Programmatic Usage
+
+```python
+from backtest.pipeline import DataPipeline
+from backtest.evaluation.runner import LLMBacktestRunner, MLBacktestRunner
+import asyncio
+
+# Fetch + label in one call
+pipe = DataPipeline(symbols=["BTCUSDT"], timeframes=["15m", "1h", "4h", "1d"])
+pipe.run()
+
+# LLM backtest
+runner = LLMBacktestRunner(dataset_path="data/labeled/dataset.jsonl", provider="groq", tag="zero-shot")
+result = asyncio.run(runner.run())
+
+# ML backtest (trains + evaluates on test split)
+runner = MLBacktestRunner(dataset_path="data/labeled/dataset.jsonl", model_type="lstm", serialize=True)
+result = runner.run()
+```
 
 ## Data Directories
 
@@ -63,7 +93,8 @@ python -m cli compare \
 backtest/data/
 ├── candles/          # Raw OHLCV JSON files (e.g. BTCUSDT_1h.json)
 ├── labeled/          # JSONL datasets with indicators + LONG/SHORT labels
-│   └── training/     # Train/val/test splits (temporal, not random)
+│   └── training/     # Train/val/test splits for fine-tuning (temporal split)
+├── models/           # Serialized trained models
 └── results/          # Backtest output JSON per model run
 ```
 
@@ -78,3 +109,11 @@ GROQ_API_KEY=gsk_...
 ```
 
 The `mock` provider returns random predictions — useful for testing the pipeline without API calls.
+
+## Feature Vector
+
+Each sample is encoded as a flat vector of size `n_timeframes × 9 + 3`:
+- **9 features per TF**: price, rsi, macd_hist, adx, volume_ratio, atr_ratio, bb_pos, heatmap (encoded), structure (encoded)
+- **3 cross-TF features**: bullish TF count, RSI divergence across TFs, volume spread across TFs
+
+The TF order is inferred from the dataset and stored with each serialized model so train/inference vectors are always consistent.
