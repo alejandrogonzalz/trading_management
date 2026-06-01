@@ -48,12 +48,14 @@ Full-stack crypto trading platform with GPU-accelerated AI, LangGraph agents, ba
 - **Backtest**: Historical evaluation of LLM vs ML predictions (56,161 labeled samples)
 - **Research**: Master's thesis comparing zero-shot LLM, fine-tuned LLM, XGB, RF, LSTM
 
-## Current Status (2026-05-11)
+## Current Status (2026-06-01)
 - **Production**: Backend + Frontend + Ollama running via Docker Compose
 - **LangGraph**: Agent running, 3-node graph tested
 - **Backtest**: Refactored into clean subpackages (`ingestion/`, `models/`, `evaluation/`)
-- **ML Results**: LSTM 84.29% acc (winner), XGB 76.79%, RF 74.89%
-- **Pending**: LSTM test-set eval, serialization, QLoRA fine-tuning, DVC
+- **ML Results (Avance4)**: LSTM 81.5% test acc (winner), SVM 70.8%, XGBoost 66.6%
+- **LSTM Best Params**: hidden=32, layers=3, seq_len=5, dropout=0.1, lr=0.001
+- **Next**: Avance5 — ensemble models (stacking, voting, bagging-LSTM, blending)
+- **Pending**: QLoRA fine-tuning, DVC, full LLM vs ML thesis comparison
 
 ---
 
@@ -62,3 +64,25 @@ Full-stack crypto trading platform with GPU-accelerated AI, LangGraph agents, ba
 @.claude/steering-backend.md
 @.claude/steering-frontend.md
 @.claude/steering-langgraph.md
+
+## Custom Commands
+
+- `/run-backtest <model> [tuned]` — Run MLBacktestRunner with trade simulation
+- `/train-model <model>` — Launch hyperparameter optimization
+- `/compare <tag1> <tag2>` — Compare two backtest result files
+
+## ML Quick Reference
+
+```bash
+# Activate env
+cd langgraph && source .venv/bin/activate
+
+# Train a model
+OMP_NUM_THREADS=1 python optimization/optimize.py --model lstm --config optimization/configs/lstm.yaml
+
+# Run backtest
+python -m cli run-backtest --dataset backtest/data/labeled/dataset.jsonl --provider mock
+
+# Run tests
+python -m pytest tests/ -v
+```
