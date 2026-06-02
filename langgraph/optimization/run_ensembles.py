@@ -79,8 +79,17 @@ def main():
 
     all_results = []
     t0_total = time.time()
+    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
     for name, searcher in SEARCHERS:
+        out_path = RESULTS_DIR / f"{name}_optimization.json"
+
+        if out_path.exists():
+            log.info(f"\n  Skipping {name} — already completed ({out_path.name})")
+            with open(out_path) as f:
+                all_results.append(json.load(f))
+            continue
+
         log.info(f"\n{'─' * 60}")
         log.info(f"  Running: {name}")
         log.info(f"{'─' * 60}")
@@ -89,8 +98,6 @@ def main():
             result = searcher.search(ENSEMBLE_CONFIG, DATASET)
             all_results.append(result)
 
-            out_path = RESULTS_DIR / f"{name}_optimization.json"
-            RESULTS_DIR.mkdir(parents=True, exist_ok=True)
             with open(out_path, "w") as f:
                 json.dump(result, f, indent=2)
             log.info(f"  Saved: {out_path}")

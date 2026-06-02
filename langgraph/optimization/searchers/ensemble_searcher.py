@@ -1,5 +1,6 @@
 """Ensemble model searchers — Bagging, AdaBoost, Voting, Stacking, Blending."""
 
+import gc
 import logging
 import time
 from datetime import datetime
@@ -304,15 +305,18 @@ class StackingSearcher(BaseSearcher, _DataMixin):
             xgb_f = xgb.XGBClassifier(**xgb_params, eval_metric="logloss", random_state=random_state)
             xgb_f.fit(X_tv[tr_idx], y_tv[tr_idx])
             oof[vl_idx, 0] = xgb_f.predict_proba(X_tv[vl_idx])[:, 1]
+            del xgb_f
 
             svm_f = SVC(kernel="rbf", C=1.0, gamma="scale", probability=True, random_state=random_state)
             svm_f.fit(X_tv_s[tr_idx], y_tv[tr_idx])
             oof[vl_idx, 1] = svm_f.predict_proba(X_tv_s[vl_idx])[:, 1]
+            del svm_f
 
             mlp_f = MLPClassifier(hidden_layer_sizes=(128, 64), max_iter=300,
                                   early_stopping=True, validation_fraction=0.15, random_state=random_state)
             mlp_f.fit(X_tv_s[tr_idx], y_tv[tr_idx])
             oof[vl_idx, 2] = mlp_f.predict_proba(X_tv_s[vl_idx])[:, 1]
+            del mlp_f
 
             torch.manual_seed(random_state)
             lstm_f = LSTMPredictor(**lstm_params)
@@ -325,7 +329,8 @@ class StackingSearcher(BaseSearcher, _DataMixin):
                 fold_seqs = self._build_lstm_sequences(X_norm, sl, vl_idx[0], vl_idx[-1] + 1)
                 oof[vl_idx, 3] = torch.softmax(lstm_f.model(fold_seqs), dim=1)[:, 1].numpy()
 
-            del xgb_f, svm_f, mlp_f, lstm_f
+            del lstm_f, X_norm, fold_seqs
+            gc.collect()
 
         # Meta-learner
         valid_mask = oof.sum(axis=1) != 0
@@ -333,6 +338,7 @@ class StackingSearcher(BaseSearcher, _DataMixin):
         meta.fit(oof[valid_mask], y_tv[valid_mask])
 
         # Final base learners on full trainval
+        gc.collect()
         log.info("  Training final base learners...")
         torch.manual_seed(random_state)
         lstm_final = LSTMPredictor(**lstm_params)
