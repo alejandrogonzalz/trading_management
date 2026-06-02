@@ -44,7 +44,7 @@ cd trading_management/langgraph
 python3 -m venv .venv --system-site-packages
 source .venv/bin/activate
 
-# Install training dependencies
+# Install training dependencies (see requirements-finetuning.txt for pins)
 pip install "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git"
 pip install --no-deps trl peft accelerate bitsandbytes
 pip install datasets scikit-learn pyyaml
@@ -52,6 +52,11 @@ pip install datasets scikit-learn pyyaml
 # Verify GPU is available
 python -c "import torch; print(f'GPU: {torch.cuda.get_device_name(0)}, VRAM: {torch.cuda.get_device_properties(0).total_mem / 1e9:.1f} GB')"
 ```
+
+> **Note on candle data**: the evaluation step simulates trades against future
+> candles (`backtest/data/candles/*.json`). If those files are not in the repo
+> (they are DVC-tracked / gitignored), upload them manually or skip trade
+> simulation with `--max-eval 0`. Direction accuracy is computed regardless.
 
 ---
 
@@ -72,13 +77,21 @@ python optimization/train_qlora.py --max-eval 100 --epochs 1
 ```
 
 ### What the script does:
-1. Exports `dataset.jsonl` → `training_data/{train,val,test}.jsonl` (chat format)
-2. Loads Qwen 2.5 7B with 4-bit quantization (~5GB VRAM)
-3. Applies LoRA adapters (rank=16 → ~0.1% trainable params)
-4. Trains with SFTTrainer (eval every 100 steps, saves best checkpoint)
-5. Saves LoRA adapters + GGUF export for Ollama
-6. Evaluates on test set (direction accuracy)
-7. Writes result to `optimization/results/qlora_optimization.json`
+1. **prepare_data** — splits `dataset.jsonl` with the same 70/15/15 temporal split
+   used by LSTM/XGBoost (no sort) → `training_data/{train,val,test}.jsonl` in
+   system/user/assistant chat format
+2. **load_model** — loads Qwen 2.5 7B in 4-bit quantization (~4-5 GB VRAM) and
+   applies LoRA adapters (rank=16, ~0.6% trainable params) on all attention +
+   MLP projection layers
+3. **train** — SFTTrainer: 3 epochs, effective batch=16, cosine LR, eval every
+   100 steps on val set, saves best checkpoint by eval_loss
+4. **save_model** — writes LoRA adapters + merged GGUF (Q4_K_M) for Ollama
+5. **evaluate** — rebuilds prompts from raw indicators (NOT from the training
+   JSONL), generates predictions with greedy decoding, runs `simulate_trade()`
+   against future candles, emits `sample_keys` for paired McNemar / t-test
+6. **save result** — writes `optimization/results/qlora_optimization.json` with
+   full metrics (accuracy, win_rate, profit_factor, Sharpe, drawdown) +
+   per-sample predictions/actuals/trade_results/sample_keys
 
 ### Expected output:
 ```
