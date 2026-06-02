@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [dev, main]
+  pull_request:
+    branches: [dev, main]
+
+jobs:
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install ruff
+      - run: ruff check langgraph/ backend/
+      - run: ruff format --check langgraph/ backend/
+
+  test-langgraph:
+    name: Tests — LangGraph
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install TA-Lib C library
+        run: |
+          sudo apt-get update -q
+          wget -q http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz
+          tar -xzf ta-lib-0.4.0-src.tar.gz
+          cd ta-lib && sudo ./configure --prefix=/usr && sudo make && sudo make install
+          cd .. && rm -rf ta-lib ta-lib-0.4.0-src.tar.gz
+
+      - name: Install Python deps
+        run: |
+          pip install --upgrade pip
+          pip install -r langgraph/requirements.txt
+
+      - name: Run backtest tests
+        run: |
+          cd langgraph
+          python -m pytest tests/backtest/ tests/optimization/test_stats.py -v --tb=short
+
+  test-backend:
+    name: Tests — Backend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install TA-Lib C library
+        run: |
+          sudo apt-get update -q
+          wget -q http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz
+          tar -xzf ta-lib-0.4.0-src.tar.gz
+          cd ta-lib && sudo ./configure --prefix=/usr && sudo make && sudo make install
+          cd .. && rm -rf ta-lib ta-lib-0.4.0-src.tar.gz
+
+      - name: Install Python deps
+        run: pip install -r backend/requirements.txt
+
+      - name: Run backend tests
+        run: |
+          cd backend
+          python -m pytest tests/ -v --tb=short --ignore=tests/integration
+        continue-on-error: true  # integration tests need Binance/Ollama — skip in CI

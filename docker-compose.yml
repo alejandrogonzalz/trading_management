@@ -1,6 +1,6 @@
 services:
   ollama:
-    image: ollama/ollama:latest
+    image: ollama/ollama:0.6.5
     container_name: trading_management-ollama
     volumes:
       - ./volumes/ollama_models:/root/.ollama

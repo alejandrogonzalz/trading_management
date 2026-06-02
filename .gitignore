@@ -9,6 +9,16 @@ __pycache__/
 .pytest_cache/
 .venv/
 venv/
+*.log
+*.csv
+
+# Model artifacts (too large for git — use DVC)
+*.pkl
+*.pickle
+*.pt
+*.pth
+*.onnx
+*.gguf
 
 # Node
 node_modules/

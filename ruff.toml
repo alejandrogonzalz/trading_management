@@ -1,2 +1,30 @@
 line-length = 120
 target-version = "py311"
+
+[lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes (unused imports, undefined names)
+    "I",    # isort (import ordering)
+    "B",    # flake8-bugbear (likely bugs)
+    "UP",   # pyupgrade (modernize syntax)
+    "N",    # pep8-naming
+]
+ignore = [
+    "E501",  # line too long — handled by formatter
+    "B008",  # do not perform calls in default args (FastAPI depends on this)
+    "N806",  # variable in function should be lowercase (ML code uses X, y)
+    "N803",  # argument name should be lowercase (same reason)
+]
+
+[lint.per-file-ignores]
+"tests/**" = ["F401", "F811"]
+"langgraph/optimization/**" = ["N802"]
+
+[lint.isort]
+known-first-party = ["app", "agent", "backtest", "optimization"]
+
+[format]
+quote-style = "double"
+indent-style = "space"

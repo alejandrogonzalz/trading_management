@@ -1,0 +1,61 @@
+repos:
+  # ── Commit message format ────────────────────────────────────────────────
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: v3.4.0
+    hooks:
+      - id: conventional-pre-commit
+        stages: [commit-msg]
+        # Enforces: type(scope): description
+        # Types: feat, fix, refactor, docs, test, chore, perf, ci
+        # Example: feat(langgraph): add QLoRA evaluation pipeline
+        args:
+          - feat
+          - fix
+          - refactor
+          - docs
+          - test
+          - chore
+          - perf
+          - ci
+
+  # ── General file hygiene ─────────────────────────────────────────────────
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ["--maxkb=500"]          # block files > 500 KB (catches model weights)
+      - id: detect-private-key         # block accidental API key commits
+      - id: no-commit-to-branch
+        args: ["--branch", "main"]     # never commit directly to main
+
+  # ── Python — ruff lint + format ──────────────────────────────────────────
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.4
+    hooks:
+      - id: ruff
+        args: ["--fix"]
+        types_or: [python, pyi]
+      - id: ruff-format
+        types_or: [python, pyi]
+
+  # ── Python — type stubs / syntax check ───────────────────────────────────
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-ast                  # catches invalid Python syntax
+
+  # ── Frontend — ESLint ────────────────────────────────────────────────────
+  - repo: local
+    hooks:
+      - id: eslint-frontend
+        name: ESLint (frontend)
+        language: node
+        entry: bash -c "cd frontend && npx eslint . --max-warnings=0"
+        files: ^frontend/.*\.(ts|tsx)$
+        pass_filenames: false
