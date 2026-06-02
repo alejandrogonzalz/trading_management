@@ -6,7 +6,8 @@ from datetime import datetime
 
 import numpy as np
 
-from backtest.models.features import _load_dataset, extract_features, _temporal_split
+from backtest.models.features import _load_dataset, _temporal_split, extract_features
+
 from .base import BaseSearcher
 
 log = logging.getLogger(__name__)
@@ -33,9 +34,7 @@ class LSTMSearcher(BaseSearcher):
         input_size = X_all.shape[1]
 
         device = torch.device(
-            "mps" if torch.backends.mps.is_available()
-            else "cuda" if torch.cuda.is_available()
-            else "cpu"
+            "mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu"
         )
         log.info(f"LSTM device: {device}")
 
@@ -60,8 +59,8 @@ class LSTMSearcher(BaseSearcher):
             seqs = np.zeros((n, sl, d), dtype=np.float32)
             for i in range(n):
                 start = max(0, i - sl + 1)
-                chunk = features[start:i + 1]
-                seqs[i, sl - len(chunk):] = chunk
+                chunk = features[start : i + 1]
+                seqs[i, sl - len(chunk) :] = chunk
             return (
                 torch.tensor(seqs, device=device),
                 torch.tensor(labels, dtype=torch.long, device=device),
@@ -77,7 +76,7 @@ class LSTMSearcher(BaseSearcher):
             bs = params.get("batch_size", 32)
 
             X_tr, y_tr = build_seq(X_all[:n_train], y_all[:n_train], seq_len)
-            X_va, y_va = build_seq(X_all[:n_train + n_val], y_all[:n_train + n_val], seq_len)
+            X_va, y_va = build_seq(X_all[: n_train + n_val], y_all[: n_train + n_val], seq_len)
             X_va, y_va = X_va[n_train:], y_va[n_train:]
 
             model = self._build_net(input_size, hidden, layers, drop).to(device)
@@ -89,11 +88,11 @@ class LSTMSearcher(BaseSearcher):
             best_state = None
             epoch = 0
 
-            for epoch in range(max_epochs):
+            for _epoch in range(max_epochs):
                 model.train()
                 perm = torch.randperm(len(X_tr), device=device)
                 for i in range(0, len(perm), bs):
-                    idx = perm[i:i + bs]
+                    idx = perm[i : i + bs]
                     loss = criterion(model(X_tr[idx]), y_tr[idx])
                     optimizer.zero_grad()
                     loss.backward()
@@ -155,7 +154,9 @@ class LSTMSearcher(BaseSearcher):
             def __init__(self):
                 super().__init__()
                 self.lstm = nn.LSTM(
-                    input_size, hidden, layers,
+                    input_size,
+                    hidden,
+                    layers,
                     dropout=drop if layers > 1 else 0,
                     batch_first=True,
                 )

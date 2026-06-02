@@ -1,22 +1,21 @@
-import os
 import time
-import json
-from app.services import binance_service
-from app.services import trade_tracker
+
+from app.services import binance_service, trade_tracker
+
 
 def run_integration_test():
     print("🚀 STARTING EXPANDED SMART TRADE TEST (3-BUY / 3-SELL)")
-    
+
     # 0. Initial Cleanup
     trade_tracker._save_trades({})
     symbol = "BTCUSDT"
-    test_amount_usdt = 6.00 
-    
+    test_amount_usdt = 6.00
+
     try:
         ticker = binance_service.binance_client.get_symbol_ticker(symbol=symbol)
-        price = float(ticker['price'])
+        price = float(ticker["price"])
         qty = test_amount_usdt / price
-        
+
         print(f"📊 Market Price: ${price}, Target Qty: {qty}")
 
         # --- STAGE 1: TRIPLE CREATION ---
@@ -25,18 +24,22 @@ def run_integration_test():
         for i in range(1, 4):
             print(f"Creating Trade #{i}...")
             res = binance_service.create_smart_trade(
-                symbol=symbol, quantity=qty, buy_price=None,
-                take_profit_price=price * 1.05, stop_loss_price=price * 0.95, side="BUY"
+                symbol=symbol,
+                quantity=qty,
+                buy_price=None,
+                take_profit_price=price * 1.05,
+                stop_loss_price=price * 0.95,
+                side="BUY",
             )
-            if res.get('entry', {}).get('status') == 'FILLED':
+            if res.get("entry", {}).get("status") == "FILLED":
                 tid = list(trade_tracker._load_trades().keys())[-1]
                 trade_ids.append(tid)
                 print(f"✅ Trade {tid} Created & Protected.")
-            time.sleep(1) # Small gap between orders
+            time.sleep(1)  # Small gap between orders
 
         # --- STAGE 2: VALIDATE INITIAL STATE ---
         all_trades = trade_tracker._load_trades()
-        active_count = len([t for t in all_trades.values() if t['status'] == 'ACTIVE'])
+        active_count = len([t for t in all_trades.values() if t["status"] == "ACTIVE"])
         print(f"\n2️⃣  Validation: {active_count}/3 Trades are ACTIVE in JSON.")
         if active_count != 3:
             print("❌ Initial state validation failed.")
@@ -49,40 +52,40 @@ def run_integration_test():
             meta = all_trades[tid]
             print(f"🔥 Closing {tid}...")
             binance_service.market_close_position(
-                symbol=symbol, quantity=meta['quantity'], order_list_id=meta.get('orderListId')
+                symbol=symbol, quantity=meta["quantity"], order_list_id=meta.get("orderListId")
             )
-            
+
         # Verify Isolation
         all_trades = trade_tracker._load_trades()
-        active = [tid for tid, t in all_trades.items() if t['status'] == 'ACTIVE']
-        closed = [tid for tid, t in all_trades.items() if t['status'] == 'CLOSED']
-        
+        active = [tid for tid, t in all_trades.items() if t["status"] == "ACTIVE"]
+        closed = [tid for tid, t in all_trades.items() if t["status"] == "CLOSED"]
+
         print(f"✅ Isolation Check: {len(closed)} Closed, {len(active)} Active.")
         if len(active) != 1 or active[0] != trade_ids[2]:
             print(f"❌ Isolation Failure! Remaining Active: {active}")
             return
-        
+
         # Verify Binance OCOs for Trade 3 still exist
         open_ocos = binance_service.binance_client.get_open_oco_orders(recvWindow=60000)
-        target_list_id = all_trades[trade_ids[2]].get('orderListId')
-        matching_oco = [o for o in open_ocos if o['orderListId'] == target_list_id]
-        
+        target_list_id = all_trades[trade_ids[2]].get("orderListId")
+        matching_oco = [o for o in open_ocos if o["orderListId"] == target_list_id]
+
         if matching_oco:
-            print(f"✅ Trade #3 OCO confirmed still live on Binance.")
+            print("✅ Trade #3 OCO confirmed still live on Binance.")
         else:
-            print(f"❌ Trade #3 OCO was accidentally cancelled!")
+            print("❌ Trade #3 OCO was accidentally cancelled!")
             return
 
         # --- STAGE 4: FINAL EXIT ---
         print("\n4️⃣  Closing Final Trade #3...")
         binance_service.market_close_position(
-            symbol=symbol, 
-            quantity=all_trades[trade_ids[2]]['quantity'], 
-            order_list_id=all_trades[trade_ids[2]].get('orderListId')
+            symbol=symbol,
+            quantity=all_trades[trade_ids[2]]["quantity"],
+            order_list_id=all_trades[trade_ids[2]].get("orderListId"),
         )
-        
+
         all_trades = trade_tracker._load_trades()
-        final_active = len([t for t in all_trades.values() if t['status'] == 'ACTIVE'])
+        final_active = len([t for t in all_trades.values() if t["status"] == "ACTIVE"])
         if final_active == 0:
             print("✅ All trades CLOSED. JSON is clean.")
         else:
@@ -99,6 +102,7 @@ def run_integration_test():
 
     except Exception as e:
         print(f"💥 CRITICAL TEST FAILURE: {e}")
+
 
 if __name__ == "__main__":
     run_integration_test()

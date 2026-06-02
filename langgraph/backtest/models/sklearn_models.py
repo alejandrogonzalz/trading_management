@@ -2,12 +2,16 @@
 
 import pickle
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Any
 
 import numpy as np
 
 from backtest.models.features import (
-    extract_features, _infer_timeframes, _load_dataset, _temporal_split, _samples_to_xy,
+    _infer_timeframes,
+    _load_dataset,
+    _samples_to_xy,
+    _temporal_split,
+    extract_features,
 )
 
 MODELS_DIR = Path(__file__).parent.parent / "data" / "models"
@@ -134,10 +138,11 @@ class RandomForestPredictor:
             self.model = data
 
 
-def get_predictor(model_type: str, params: Optional[Dict[str, Any]] = None):
+def get_predictor(model_type: str, params: dict[str, Any] | None = None):
     """Factory for model predictors."""
     if model_type == "lstm":
         from backtest.models.lstm import LSTMPredictor
+
         p = params or {}
         return LSTMPredictor(
             hidden_size=p.get("hidden_size", 64),

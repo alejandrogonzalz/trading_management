@@ -1,25 +1,25 @@
 """Class-based data pipeline: fetch candles → calculate indicators → label → save dataset."""
 
 import asyncio
-import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from backtest.config import DEFAULT_MONTHS, DEFAULT_SYMBOLS, DEFAULT_TIMEFRAMES
-from backtest.ingestion.fetcher import DATA_DIR as CANDLES_DIR, fetch_multi_tf_candles, load_candles, save_candles
-from backtest.ingestion.indicators import calculate_indicators_batch, calculate_multi_tf_indicators
+from backtest.ingestion.fetcher import DATA_DIR as CANDLES_DIR
+from backtest.ingestion.fetcher import fetch_multi_tf_candles, load_candles, save_candles
+from backtest.ingestion.indicators import calculate_multi_tf_indicators
 from backtest.ingestion.labeler import generate_labeled_dataset, save_labeled_dataset
 
 LABELED_DIR = Path(__file__).parent / "data" / "labeled"
 
 # Minimal lookback per TF so we maximise usable output points.
 # Chosen to satisfy MACD(26) warm-up on short TFs and keep weekly TF usable.
-_HTF_LOOKBACK: Dict[str, int] = {
+_HTF_LOOKBACK: dict[str, int] = {
     "5m": 40,
     "15m": 40,
     "30m": 40,
-    "1h": 200,   # base TF — full lookback for EMA200
+    "1h": 200,  # base TF — full lookback for EMA200
     "4h": 40,
     "1d": 40,
     "1w": 30,
@@ -40,13 +40,13 @@ class DataPipeline:
 
     def __init__(
         self,
-        symbols: List[str] = DEFAULT_SYMBOLS,
-        timeframes: List[str] = DEFAULT_TIMEFRAMES,
+        symbols: list[str] = DEFAULT_SYMBOLS,
+        timeframes: list[str] = DEFAULT_TIMEFRAMES,
         months: int = DEFAULT_MONTHS,
         base_tf: str = "1h",
         lookahead: int = 24,
-        output_path: Optional[Path] = None,
-        candles_dir: Optional[Path] = None,
+        output_path: Path | None = None,
+        candles_dir: Path | None = None,
     ):
         self.symbols = symbols
         self.timeframes = timeframes
@@ -64,7 +64,7 @@ class DataPipeline:
     # ------------------------------------------------------------------
 
     def _date_range(self) -> tuple[str, str]:
-        end = datetime.now(timezone.utc)
+        end = datetime.now(UTC)
         start = end - timedelta(days=self.months * 30)
         return start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d")
 
@@ -75,10 +75,7 @@ class DataPipeline:
         async def _fetch_symbol(sym: str) -> None:
             tfs_to_fetch = self.timeframes
             if skip_existing:
-                tfs_to_fetch = [
-                    tf for tf in self.timeframes
-                    if not (self.candles_dir / f"{sym}_{tf}.json").exists()
-                ]
+                tfs_to_fetch = [tf for tf in self.timeframes if not (self.candles_dir / f"{sym}_{tf}.json").exists()]
             if not tfs_to_fetch:
                 print(f"  {sym}: all candle files already exist, skipping")
                 return
@@ -96,15 +93,15 @@ class DataPipeline:
     # Step 2 — indicators + labeling
     # ------------------------------------------------------------------
 
-    def _load_candles_for_symbol(self, sym: str) -> Dict[str, List[Dict[str, Any]]]:
-        available: Dict[str, List[Dict[str, Any]]] = {}
+    def _load_candles_for_symbol(self, sym: str) -> dict[str, list[dict[str, Any]]]:
+        available: dict[str, list[dict[str, Any]]] = {}
         for tf in self.timeframes:
             candles = load_candles(sym, tf, self.candles_dir)
             if candles:
                 available[tf] = candles
         return available
 
-    def _indicators_for_symbol(self, sym: str, candles_by_tf: Dict[str, List]) -> List[Dict[str, Any]]:
+    def _indicators_for_symbol(self, sym: str, candles_by_tf: dict[str, list]) -> list[dict[str, Any]]:
         lookback = _HTF_LOOKBACK.get(self.base_tf, 200)
 
         # Build per-TF lookback map for calculate_multi_tf_indicators
@@ -117,9 +114,9 @@ class DataPipeline:
             print(f"  Skipping {sym}: {exc}")
             return []
 
-    def build_dataset(self) -> List[Dict[str, Any]]:
+    def build_dataset(self) -> list[dict[str, Any]]:
         """Calculate indicators and label all symbols. Returns all labeled samples."""
-        all_labeled: List[Dict[str, Any]] = []
+        all_labeled: list[dict[str, Any]] = []
 
         for sym in self.symbols:
             candles_by_tf = self._load_candles_for_symbol(sym)
@@ -136,9 +133,7 @@ class DataPipeline:
                 continue
             print(f"  {len(indicators)} indicator points")
 
-            labeled = generate_labeled_dataset(
-                candles_by_tf[self.base_tf], indicators, sym, lookahead=self.lookahead
-            )
+            labeled = generate_labeled_dataset(candles_by_tf[self.base_tf], indicators, sym, lookahead=self.lookahead)
             longs = sum(1 for s in labeled if s["label"]["bias"] == "LONG")
             print(f"  {len(labeled)} labeled samples  ({longs} LONG / {len(labeled) - longs} SHORT)")
 
@@ -152,7 +147,7 @@ class DataPipeline:
 
         return all_labeled
 
-    def run(self, skip_existing_candles: bool = False) -> List[Dict[str, Any]]:
+    def run(self, skip_existing_candles: bool = False) -> list[dict[str, Any]]:
         """Fetch + build dataset in one call."""
         asyncio.run(self.fetch(skip_existing=skip_existing_candles))
         return self.build_dataset()

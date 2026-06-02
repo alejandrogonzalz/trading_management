@@ -8,8 +8,13 @@ from datetime import datetime
 import numpy as np
 
 from backtest.models.features import (
-    extract_features, _infer_timeframes, _load_dataset, _temporal_split, _samples_to_xy,
+    _infer_timeframes,
+    _load_dataset,
+    _samples_to_xy,
+    _temporal_split,
+    extract_features,
 )
+
 from .base import BaseSearcher
 
 log = logging.getLogger(__name__)
@@ -28,27 +33,35 @@ class _DataMixin:
         X_test, y_test = _samples_to_xy(test_s, timeframes)
 
         from sklearn.preprocessing import StandardScaler
+
         scaler = StandardScaler().fit(X_train)
 
         X_trainval = np.vstack([X_train, X_val])
         y_trainval = np.concatenate([y_train, y_val])
 
         return {
-            "samples": samples, "timeframes": timeframes,
-            "X_train": X_train, "y_train": y_train,
-            "X_val": X_val, "y_val": y_val,
-            "X_test": X_test, "y_test": y_test,
+            "samples": samples,
+            "timeframes": timeframes,
+            "X_train": X_train,
+            "y_train": y_train,
+            "X_val": X_val,
+            "y_val": y_val,
+            "X_test": X_test,
+            "y_test": y_test,
             "X_train_s": scaler.transform(X_train),
             "X_val_s": scaler.transform(X_val),
             "X_test_s": scaler.transform(X_test),
-            "X_trainval": X_trainval, "y_trainval": y_trainval,
+            "X_trainval": X_trainval,
+            "y_trainval": y_trainval,
             "X_trainval_s": scaler.transform(X_trainval),
             "scaler": scaler,
-            "n_train": len(train_s), "n_val": len(val_s),
+            "n_train": len(train_s),
+            "n_val": len(val_s),
         }
 
     def _evaluate(self, y_true, y_pred, y_proba=None):
         from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
+
         result = {
             "accuracy": float(accuracy_score(y_true, y_pred)),
             "f1_macro": float(f1_score(y_true, y_pred, average="macro")),
@@ -59,12 +72,13 @@ class _DataMixin:
 
     def _build_lstm_sequences(self, X_norm, sl, start, end):
         import torch
+
         seqs = []
         for i in range(start, end):
             s = max(0, i - sl + 1)
-            chunk = X_norm[s:i + 1]
+            chunk = X_norm[s : i + 1]
             padded = np.zeros((sl, X_norm.shape[1]), dtype=np.float32)
-            padded[sl - len(chunk):] = chunk
+            padded[sl - len(chunk) :] = chunk
             seqs.append(padded)
         return torch.tensor(np.array(seqs))
 
@@ -74,6 +88,7 @@ class BaggingLSTMSearcher(BaseSearcher, _DataMixin):
 
     def search(self, cfg: dict, dataset_path: str) -> dict:
         import torch
+
         from backtest.models.lstm import LSTMPredictor
 
         data = self._load_all(dataset_path)
@@ -109,7 +124,8 @@ class BaggingLSTMSearcher(BaseSearcher, _DataMixin):
                     predictor.model(self._build_lstm_sequences(X_norm, sl, n_train, n_train + n_val)), dim=1
                 )[:, 1].numpy()
                 test_proba = torch.softmax(
-                    predictor.model(self._build_lstm_sequences(X_norm, sl, n_train + n_val, len(data["samples"]))), dim=1
+                    predictor.model(self._build_lstm_sequences(X_norm, sl, n_train + n_val, len(data["samples"]))),
+                    dim=1,
                 )[:, 1].numpy()
 
             all_probas_val.append(val_proba)
@@ -143,14 +159,17 @@ class AdaBoostSearcher(BaseSearcher, _DataMixin):
 
     def search(self, cfg: dict, dataset_path: str) -> dict:
         from sklearn.ensemble import AdaBoostClassifier
-        from sklearn.tree import DecisionTreeClassifier
         from sklearn.model_selection import GridSearchCV, TimeSeriesSplit
+        from sklearn.tree import DecisionTreeClassifier
 
         data = self._load_all(dataset_path)
-        param_grid = cfg.get("param_grid", {
-            "n_estimators": [100, 200, 300],
-            "learning_rate": [0.01, 0.05, 0.1, 0.5],
-        })
+        param_grid = cfg.get(
+            "param_grid",
+            {
+                "n_estimators": [100, 200, 300],
+                "learning_rate": [0.01, 0.05, 0.1, 0.5],
+            },
+        )
         random_state = cfg.get("random_state", 42)
 
         log.info(f"AdaBoost: grid={param_grid}")
@@ -193,6 +212,7 @@ class VotingSearcher(BaseSearcher, _DataMixin):
         import torch
         import xgboost as xgb
         from sklearn.svm import SVC
+
         from backtest.models.lstm import LSTMPredictor
 
         data = self._load_all(dataset_path)
@@ -218,8 +238,12 @@ class VotingSearcher(BaseSearcher, _DataMixin):
 
         lstm.model.eval()
         with torch.no_grad():
-            lstm_val = torch.softmax(lstm.model(self._build_lstm_sequences(X_norm, sl, n_train, n_train + n_val)), dim=1)[:, 1].numpy()
-            lstm_test = torch.softmax(lstm.model(self._build_lstm_sequences(X_norm, sl, n_train + n_val, len(data["samples"]))), dim=1)[:, 1].numpy()
+            lstm_val = torch.softmax(
+                lstm.model(self._build_lstm_sequences(X_norm, sl, n_train, n_train + n_val)), dim=1
+            )[:, 1].numpy()
+            lstm_test = torch.softmax(
+                lstm.model(self._build_lstm_sequences(X_norm, sl, n_train + n_val, len(data["samples"]))), dim=1
+            )[:, 1].numpy()
 
         # XGBoost
         xgb_model = xgb.XGBClassifier(**xgb_params, eval_metric="logloss", random_state=random_state)
@@ -234,11 +258,13 @@ class VotingSearcher(BaseSearcher, _DataMixin):
         svm_test = svm.predict_proba(data["X_test_s"])[:, 1]
 
         # Weights from individual val accuracy
-        w = np.array([
-            float(((lstm_val > 0.5).astype(int) == data["y_val"]).mean()),
-            float(((xgb_val > 0.5).astype(int) == data["y_val"]).mean()),
-            float(((svm_val > 0.5).astype(int) == data["y_val"]).mean()),
-        ])
+        w = np.array(
+            [
+                float(((lstm_val > 0.5).astype(int) == data["y_val"]).mean()),
+                float(((xgb_val > 0.5).astype(int) == data["y_val"]).mean()),
+                float(((svm_val > 0.5).astype(int) == data["y_val"]).mean()),
+            ]
+        )
         w = w / w.sum()
         log.info(f"  Weights: LSTM={w[0]:.3f}, XGB={w[1]:.3f}, SVM={w[2]:.3f}")
 
@@ -270,10 +296,11 @@ class StackingSearcher(BaseSearcher, _DataMixin):
     def search(self, cfg: dict, dataset_path: str) -> dict:
         import torch
         import xgboost as xgb
-        from sklearn.svm import SVC
-        from sklearn.neural_network import MLPClassifier
         from sklearn.linear_model import LogisticRegression
         from sklearn.model_selection import TimeSeriesSplit
+        from sklearn.neural_network import MLPClassifier
+        from sklearn.svm import SVC
+
         from backtest.models.lstm import LSTMPredictor
 
         data = self._load_all(dataset_path)
@@ -312,8 +339,13 @@ class StackingSearcher(BaseSearcher, _DataMixin):
             oof[vl_idx, 1] = svm_f.predict_proba(X_tv_s[vl_idx])[:, 1]
             del svm_f
 
-            mlp_f = MLPClassifier(hidden_layer_sizes=(128, 64), max_iter=300,
-                                  early_stopping=True, validation_fraction=0.15, random_state=random_state)
+            mlp_f = MLPClassifier(
+                hidden_layer_sizes=(128, 64),
+                max_iter=300,
+                early_stopping=True,
+                validation_fraction=0.15,
+                random_state=random_state,
+            )
             mlp_f.fit(X_tv_s[tr_idx], y_tv[tr_idx])
             oof[vl_idx, 2] = mlp_f.predict_proba(X_tv_s[vl_idx])[:, 1]
             del mlp_f
@@ -350,8 +382,13 @@ class StackingSearcher(BaseSearcher, _DataMixin):
         svm_final = SVC(kernel="rbf", C=1.0, gamma="scale", probability=True, random_state=random_state)
         svm_final.fit(X_tv_s, y_tv)
 
-        mlp_final = MLPClassifier(hidden_layer_sizes=(128, 64), max_iter=300,
-                                  early_stopping=True, validation_fraction=0.15, random_state=random_state)
+        mlp_final = MLPClassifier(
+            hidden_layer_sizes=(128, 64),
+            max_iter=300,
+            early_stopping=True,
+            validation_fraction=0.15,
+            random_state=random_state,
+        )
         mlp_final.fit(X_tv_s, y_tv)
 
         X_all_norm = (X_all - lstm_final._mean) / lstm_final._std
@@ -359,21 +396,30 @@ class StackingSearcher(BaseSearcher, _DataMixin):
         lstm_final.model.eval()
 
         with torch.no_grad():
-            lstm_val_p = torch.softmax(lstm_final.model(self._build_lstm_sequences(X_all_norm, sl, n_train, n_train + n_val)), dim=1)[:, 1].numpy()
-            lstm_test_p = torch.softmax(lstm_final.model(self._build_lstm_sequences(X_all_norm, sl, n_train + n_val, len(data["samples"]))), dim=1)[:, 1].numpy()
+            lstm_val_p = torch.softmax(
+                lstm_final.model(self._build_lstm_sequences(X_all_norm, sl, n_train, n_train + n_val)), dim=1
+            )[:, 1].numpy()
+            lstm_test_p = torch.softmax(
+                lstm_final.model(self._build_lstm_sequences(X_all_norm, sl, n_train + n_val, len(data["samples"]))),
+                dim=1,
+            )[:, 1].numpy()
 
-        val_meta = np.column_stack([
-            xgb_final.predict_proba(data["X_val"])[:, 1],
-            svm_final.predict_proba(data["X_val_s"])[:, 1],
-            mlp_final.predict_proba(data["X_val_s"])[:, 1],
-            lstm_val_p,
-        ])
-        test_meta = np.column_stack([
-            xgb_final.predict_proba(data["X_test"])[:, 1],
-            svm_final.predict_proba(data["X_test_s"])[:, 1],
-            mlp_final.predict_proba(data["X_test_s"])[:, 1],
-            lstm_test_p,
-        ])
+        val_meta = np.column_stack(
+            [
+                xgb_final.predict_proba(data["X_val"])[:, 1],
+                svm_final.predict_proba(data["X_val_s"])[:, 1],
+                mlp_final.predict_proba(data["X_val_s"])[:, 1],
+                lstm_val_p,
+            ]
+        )
+        test_meta = np.column_stack(
+            [
+                xgb_final.predict_proba(data["X_test"])[:, 1],
+                svm_final.predict_proba(data["X_test_s"])[:, 1],
+                mlp_final.predict_proba(data["X_test_s"])[:, 1],
+                lstm_test_p,
+            ]
+        )
 
         proba_val = meta.predict_proba(val_meta)[:, 1]
         proba_test = meta.predict_proba(test_meta)[:, 1]
@@ -404,9 +450,10 @@ class BlendingSearcher(BaseSearcher, _DataMixin):
     def search(self, cfg: dict, dataset_path: str) -> dict:
         import torch
         import xgboost as xgb
-        from sklearn.svm import SVC
-        from sklearn.neural_network import MLPClassifier
         from sklearn.linear_model import LogisticRegression
+        from sklearn.neural_network import MLPClassifier
+        from sklearn.svm import SVC
+
         from backtest.models.lstm import LSTMPredictor
 
         data = self._load_all(dataset_path)
@@ -440,8 +487,13 @@ class BlendingSearcher(BaseSearcher, _DataMixin):
         svm_model = SVC(kernel="rbf", C=1.0, gamma="scale", probability=True, random_state=random_state)
         svm_model.fit(X_base_s, y_base)
 
-        mlp_model = MLPClassifier(hidden_layer_sizes=(128, 64), max_iter=300,
-                                  early_stopping=True, validation_fraction=0.15, random_state=random_state)
+        mlp_model = MLPClassifier(
+            hidden_layer_sizes=(128, 64),
+            max_iter=300,
+            early_stopping=True,
+            validation_fraction=0.15,
+            random_state=random_state,
+        )
         mlp_model.fit(X_base_s, y_base)
 
         torch.manual_seed(random_state)
@@ -457,33 +509,44 @@ class BlendingSearcher(BaseSearcher, _DataMixin):
                 lstm_model.model(self._build_lstm_sequences(X_all_norm, sl, split_idx, n_tv)), dim=1
             )[:, 1].numpy()
 
-        blend_meta = np.column_stack([
-            xgb_model.predict_proba(X_blend)[:, 1],
-            svm_model.predict_proba(X_blend_s)[:, 1],
-            mlp_model.predict_proba(X_blend_s)[:, 1],
-            lstm_blend,
-        ])
+        blend_meta = np.column_stack(
+            [
+                xgb_model.predict_proba(X_blend)[:, 1],
+                svm_model.predict_proba(X_blend_s)[:, 1],
+                mlp_model.predict_proba(X_blend_s)[:, 1],
+                lstm_blend,
+            ]
+        )
 
         meta = LogisticRegression(C=1.0, max_iter=1000, random_state=random_state)
         meta.fit(blend_meta, y_blend)
 
         # Test & val predictions
         with torch.no_grad():
-            lstm_val_p = torch.softmax(lstm_model.model(self._build_lstm_sequences(X_all_norm, sl, n_train, n_train + n_val)), dim=1)[:, 1].numpy()
-            lstm_test_p = torch.softmax(lstm_model.model(self._build_lstm_sequences(X_all_norm, sl, n_train + n_val, len(data["samples"]))), dim=1)[:, 1].numpy()
+            lstm_val_p = torch.softmax(
+                lstm_model.model(self._build_lstm_sequences(X_all_norm, sl, n_train, n_train + n_val)), dim=1
+            )[:, 1].numpy()
+            lstm_test_p = torch.softmax(
+                lstm_model.model(self._build_lstm_sequences(X_all_norm, sl, n_train + n_val, len(data["samples"]))),
+                dim=1,
+            )[:, 1].numpy()
 
-        val_meta = np.column_stack([
-            xgb_model.predict_proba(data["X_val"])[:, 1],
-            svm_model.predict_proba(data["X_val_s"])[:, 1],
-            mlp_model.predict_proba(data["X_val_s"])[:, 1],
-            lstm_val_p,
-        ])
-        test_meta = np.column_stack([
-            xgb_model.predict_proba(data["X_test"])[:, 1],
-            svm_model.predict_proba(data["X_test_s"])[:, 1],
-            mlp_model.predict_proba(data["X_test_s"])[:, 1],
-            lstm_test_p,
-        ])
+        val_meta = np.column_stack(
+            [
+                xgb_model.predict_proba(data["X_val"])[:, 1],
+                svm_model.predict_proba(data["X_val_s"])[:, 1],
+                mlp_model.predict_proba(data["X_val_s"])[:, 1],
+                lstm_val_p,
+            ]
+        )
+        test_meta = np.column_stack(
+            [
+                xgb_model.predict_proba(data["X_test"])[:, 1],
+                svm_model.predict_proba(data["X_test_s"])[:, 1],
+                mlp_model.predict_proba(data["X_test_s"])[:, 1],
+                lstm_test_p,
+            ]
+        )
 
         proba_val = meta.predict_proba(val_meta)[:, 1]
         proba_test = meta.predict_proba(test_meta)[:, 1]

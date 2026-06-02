@@ -1,44 +1,51 @@
 from pydantic import BaseModel
-from typing import Optional, List, Dict, Any
+
 
 class SmartTradeRequest(BaseModel):
     symbol: str
     quantity: float
-    buy_price: Optional[float] = None
+    buy_price: float | None = None
     take_profit_price: float
     stop_loss_price: float
-    side: Optional[str] = "BUY"
-    mode: Optional[str] = "SPOT"
+    side: str | None = "BUY"
+    mode: str | None = "SPOT"
+
 
 class CancelOrderRequest(BaseModel):
     symbol: str
     orderId: int
 
+
 class MarketCloseRequest(BaseModel):
     symbol: str
-    quantity: Optional[float] = None
-    orderListId: Optional[int] = None
+    quantity: float | None = None
+    orderListId: int | None = None
+
 
 class RunScannerRequest(BaseModel):
-    pairs: List[str]
-    timeframe: Optional[str] = "1h" # Default to 1h if not specified
+    pairs: list[str]
+    timeframe: str | None = "1h"  # Default to 1h if not specified
+
 
 # --- Lead / Futures Models ---
 
+
 class LeadOrderRequest(BaseModel):
     symbol: str
-    side: str # 'BUY' or 'SELL'
-    type: str # 'LIMIT' or 'MARKET'
+    side: str  # 'BUY' or 'SELL'
+    type: str  # 'LIMIT' or 'MARKET'
     quantity: float
-    price: Optional[float] = None
-    leverage: Optional[int] = 10
-    take_profit_price: Optional[float] = 0
-    stop_loss_price: Optional[float] = 0
+    price: float | None = None
+    leverage: int | None = 10
+    take_profit_price: float | None = 0
+    stop_loss_price: float | None = 0
+
 
 class SetLeverageRequest(BaseModel):
     symbol: str
     leverage: int
 
+
 class FuturesCloseRequest(BaseModel):
     symbol: str
-    quantity: Optional[float] = None
+    quantity: float | None = None

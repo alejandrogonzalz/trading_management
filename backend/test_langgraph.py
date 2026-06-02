@@ -1,6 +1,6 @@
 import asyncio
+
 import httpx
-import json
 
 
 async def test():
@@ -8,14 +8,10 @@ async def test():
         payload = {
             "symbol": "TRUUSDT",
             "mode": "SPOT",
-            "indicators": {
-                "1h": {"close": 0.1, "heatmap": "NEUTRAL", "atr_ratio": 1.0}
-            },
+            "indicators": {"1h": {"close": 0.1, "heatmap": "NEUTRAL", "atr_ratio": 1.0}},
         }
         try:
-            response = await http_client.post(
-                "http://langgraph:2024/analyze", json=payload
-            )
+            response = await http_client.post("http://langgraph:2024/analyze", json=payload)
             print(f"Status: {response.status_code}")
             print(f"Response: {response.text}")
         except Exception as e:

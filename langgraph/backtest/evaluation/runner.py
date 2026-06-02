@@ -6,22 +6,21 @@ import os
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from agent.llm_factory import get_llm_provider
 from agent.prompts import build_system_prompt, build_user_prompt
 from backtest.evaluation.metrics import compute_all_metrics
 from backtest.evaluation.simulate import _parse_prediction, simulate_trade
-from backtest.models.features import extract_features, _load_dataset, _temporal_split
+from backtest.models.features import _load_dataset, _temporal_split, extract_features
 from backtest.models.sklearn_models import get_predictor
-from backtest.models.lstm import LSTMPredictor
 
 RESULTS_DIR = Path(__file__).parent.parent / "data" / "results"
 CANDLES_DIR = Path(__file__).parent.parent / "data" / "candles"
 OPTIMIZATION_RESULTS_DIR = Path(__file__).parent.parent.parent / "optimization" / "results"
 
 
-def _load_jsonl(path: str) -> List[Dict[str, Any]]:
+def _load_jsonl(path: str) -> list[dict[str, Any]]:
     samples = []
     with open(path) as f:
         for line in f:
@@ -31,9 +30,9 @@ def _load_jsonl(path: str) -> List[Dict[str, Any]]:
     return samples
 
 
-def _load_candles_map(candles_dir: Path) -> tuple[Dict[str, List], Dict[str, Dict[int, int]]]:
+def _load_candles_map(candles_dir: Path) -> tuple[dict[str, list], dict[str, dict[int, int]]]:
     """Load 1h candles for all symbols (used for trade simulation timestamps)."""
-    candles_map: Dict[str, List] = {}
+    candles_map: dict[str, list] = {}
     for f in candles_dir.glob("*_1h.json"):
         sym = f.stem.split("_")[0]
         with open(f) as fh:
@@ -49,7 +48,7 @@ def _load_candles_map(candles_dir: Path) -> tuple[Dict[str, List], Dict[str, Dic
     return candles_map, ts_idx_map
 
 
-def _save_result(result: Dict[str, Any], tag: str) -> Path:
+def _save_result(result: dict[str, Any], tag: str) -> Path:
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     out = RESULTS_DIR / f"{tag}.json"
     with open(out, "w") as f:
@@ -70,10 +69,10 @@ class LLMBacktestRunner:
         self,
         dataset_path: str,
         tag: str = "backtest",
-        provider: Optional[str] = None,
-        model: Optional[str] = None,
-        max_samples: Optional[int] = None,
-        candles_dir: Optional[Path] = None,
+        provider: str | None = None,
+        model: str | None = None,
+        max_samples: int | None = None,
+        candles_dir: Path | None = None,
         mode: str = "FUTURES",
         verbose: bool = False,
     ):
@@ -86,7 +85,7 @@ class LLMBacktestRunner:
         self.mode = mode
         self.verbose = verbose
 
-    async def run(self) -> Dict[str, Any]:
+    async def run(self) -> dict[str, Any]:
         if self.provider:
             os.environ["LLM_PROVIDER"] = self.provider
         if self.model:
@@ -123,7 +122,7 @@ class LLMBacktestRunner:
                     if prediction:
                         break
                 except Exception as exc:
-                    print(f"  [{i+1}] LLM error (attempt {attempt+1}): {exc}")
+                    print(f"  [{i + 1}] LLM error (attempt {attempt + 1}): {exc}")
                     await asyncio.sleep(1)
 
             if not prediction:
@@ -145,12 +144,14 @@ class LLMBacktestRunner:
 
             if self.verbose:
                 ts = sample.get("timestamp", "")
-                ts_str = f" @ {datetime.fromtimestamp(ts/1000).strftime('%Y-%m-%d %H:%M')}" if ts else ""
+                ts_str = f" @ {datetime.fromtimestamp(ts / 1000).strftime('%Y-%m-%d %H:%M')}" if ts else ""
                 icon = {"WIN": "✅", "LOSS": "❌"}.get(trade_result["outcome"], "⏱️")
-                print(f"[{i+1}/{len(samples)}] {symbol}{ts_str} pred={prediction.get('bias')} actual={label['bias']} {icon} {trade_result['pnl_pct']:+.2f}%")
+                print(
+                    f"[{i + 1}/{len(samples)}] {symbol}{ts_str} pred={prediction.get('bias')} actual={label['bias']} {icon} {trade_result['pnl_pct']:+.2f}%"
+                )
 
             if (i + 1) % 50 == 0:
-                print(f"  Progress: {i+1}/{len(samples)} ({time.time()-start:.0f}s, {errors} errors)")
+                print(f"  Progress: {i + 1}/{len(samples)} ({time.time() - start:.0f}s, {errors} errors)")
 
         metrics = compute_all_metrics(predictions, actuals, trade_results) if predictions else {}
         result = {
@@ -188,12 +189,12 @@ class MLBacktestRunner:
         self,
         dataset_path: str,
         model_type: str = "xgboost",
-        tag: Optional[str] = None,
-        max_samples: Optional[int] = None,
-        candles_dir: Optional[Path] = None,
+        tag: str | None = None,
+        max_samples: int | None = None,
+        candles_dir: Path | None = None,
         serialize: bool = False,
         verbose: bool = False,
-        params: Optional[Dict[str, Any]] = None,
+        params: dict[str, Any] | None = None,
     ):
         self.dataset_path = dataset_path
         self.model_type = model_type
@@ -204,7 +205,7 @@ class MLBacktestRunner:
         self.verbose = verbose
         self.params = params
 
-    def _load_best_params(self) -> Optional[Dict[str, Any]]:
+    def _load_best_params(self) -> dict[str, Any] | None:
         name_map = {"lstm": "lstm", "xgboost": "xgboost", "random-forest": "random_forest"}
         fname = OPTIMIZATION_RESULTS_DIR / f"{name_map.get(self.model_type, self.model_type)}_optimization.json"
         if fname.exists():
@@ -215,7 +216,7 @@ class MLBacktestRunner:
             return params
         return None
 
-    def run(self) -> Dict[str, Any]:
+    def run(self) -> dict[str, Any]:
         candles_map, ts_idx_map = _load_candles_map(self.candles_dir)
 
         params = self.params or self._load_best_params()
@@ -224,7 +225,7 @@ class MLBacktestRunner:
         start = time.time()
         train_info = predictor.train(self.dataset_path)
         print(
-            f"  Train done in {time.time()-start:.1f}s  "
+            f"  Train done in {time.time() - start:.1f}s  "
             f"val_acc={train_info['val_accuracy']:.3f}  "
             f"TFs={train_info.get('timeframes')}  features={train_info.get('n_features')}"
         )
@@ -300,10 +301,12 @@ class MLBacktestRunner:
 
             if self.verbose:
                 ts = sample.get("timestamp", "")
-                ts_str = f" @ {datetime.fromtimestamp(ts/1000).strftime('%Y-%m-%d %H:%M')}" if ts else ""
+                ts_str = f" @ {datetime.fromtimestamp(ts / 1000).strftime('%Y-%m-%d %H:%M')}" if ts else ""
                 icon = {"WIN": "✅", "LOSS": "❌"}.get(trade_result["outcome"], "⏱️")
                 match = "✓" if pred["bias"] == label["bias"] else "✗"
-                print(f"  [{i+1}] {symbol}{ts_str} pred={pred['bias']} actual={label['bias']} {match} {icon} {trade_result['pnl_pct']:+.2f}%")
+                print(
+                    f"  [{i + 1}] {symbol}{ts_str} pred={pred['bias']} actual={label['bias']} {match} {icon} {trade_result['pnl_pct']:+.2f}%"
+                )
 
         elapsed = time.time() - start
         metrics = compute_all_metrics(predictions, actuals, trade_results) if predictions else {}

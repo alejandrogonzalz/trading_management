@@ -2,10 +2,10 @@
 
 import json
 import re
-from typing import Dict, List, Any, Optional
+from typing import Any
 
 
-def _parse_prediction(response_text: str) -> Optional[Dict[str, Any]]:
+def _parse_prediction(response_text: str) -> dict[str, Any] | None:
     """Parse LLM response into a prediction dict."""
     text = response_text.strip().replace("```json", "").replace("```", "").strip()
     match = re.search(r"\{.*\}", text, re.DOTALL)
@@ -20,7 +20,7 @@ def _parse_prediction(response_text: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-def simulate_trade(prediction: Dict, future_candles: List[Dict], max_hold: int = 24) -> Dict[str, Any]:
+def simulate_trade(prediction: dict, future_candles: list[dict], max_hold: int = 24) -> dict[str, Any]:
     """Simulate a single trade against future candles."""
     entry = prediction.get("entry", 0)
     tp = prediction.get("tp", 0)

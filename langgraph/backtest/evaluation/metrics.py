@@ -1,18 +1,18 @@
 """Metric calculations for backtest results."""
 
 import math
-from typing import List, Dict, Any
 from collections import defaultdict
+from typing import Any
 
 
-def direction_accuracy(predictions: List[Dict], actuals: List[Dict]) -> float:
+def direction_accuracy(predictions: list[dict], actuals: list[dict]) -> float:
     if not predictions:
         return 0.0
     correct = sum(1 for p, a in zip(predictions, actuals) if p["bias"] == a["bias"])
     return correct / len(predictions)
 
 
-def precision_recall_f1(predictions: List[Dict], actuals: List[Dict], cls: str) -> Dict[str, float]:
+def precision_recall_f1(predictions: list[dict], actuals: list[dict], cls: str) -> dict[str, float]:
     tp = sum(1 for p, a in zip(predictions, actuals) if p["bias"] == cls and a["bias"] == cls)
     fp = sum(1 for p, a in zip(predictions, actuals) if p["bias"] == cls and a["bias"] != cls)
     fn = sum(1 for p, a in zip(predictions, actuals) if p["bias"] != cls and a["bias"] == cls)
@@ -22,14 +22,14 @@ def precision_recall_f1(predictions: List[Dict], actuals: List[Dict], cls: str) 
     return {"precision": precision, "recall": recall, "f1": f1}
 
 
-def win_rate(results: List[Dict]) -> float:
+def win_rate(results: list[dict]) -> float:
     if not results:
         return 0.0
     wins = sum(1 for r in results if r.get("outcome") == "WIN")
     return wins / len(results)
 
 
-def profit_factor(results: List[Dict]) -> float:
+def profit_factor(results: list[dict]) -> float:
     gross_profit = sum(r["pnl_pct"] for r in results if r.get("pnl_pct", 0) > 0)
     gross_loss = abs(sum(r["pnl_pct"] for r in results if r.get("pnl_pct", 0) < 0))
     if gross_loss == 0:
@@ -37,7 +37,7 @@ def profit_factor(results: List[Dict]) -> float:
     return gross_profit / gross_loss
 
 
-def avg_win_loss(results: List[Dict]) -> Dict[str, float]:
+def avg_win_loss(results: list[dict]) -> dict[str, float]:
     wins = [r["pnl_pct"] for r in results if r.get("pnl_pct", 0) > 0]
     losses = [r["pnl_pct"] for r in results if r.get("pnl_pct", 0) < 0]
     return {
@@ -46,7 +46,7 @@ def avg_win_loss(results: List[Dict]) -> Dict[str, float]:
     }
 
 
-def sharpe_ratio(results: List[Dict], annualize_factor: float = 365.0) -> float:
+def sharpe_ratio(results: list[dict], annualize_factor: float = 365.0) -> float:
     returns = [r.get("pnl_pct", 0) for r in results]
     if len(returns) < 2:
         return 0.0
@@ -57,7 +57,7 @@ def sharpe_ratio(results: List[Dict], annualize_factor: float = 365.0) -> float:
     return (mean_r / std_r) * math.sqrt(annualize_factor)
 
 
-def max_drawdown(results: List[Dict]) -> float:
+def max_drawdown(results: list[dict]) -> float:
     if not results:
         return 0.0
     equity = 100.0
@@ -71,8 +71,8 @@ def max_drawdown(results: List[Dict]) -> float:
     return max_dd
 
 
-def confidence_calibration(predictions: List[Dict], results: List[Dict], bins: int = 5) -> List[Dict]:
-    buckets: Dict[int, List[bool]] = defaultdict(list)
+def confidence_calibration(predictions: list[dict], results: list[dict], bins: int = 5) -> list[dict]:
+    buckets: dict[int, list[bool]] = defaultdict(list)
     for p, r in zip(predictions, results):
         conf = p.get("confidence", 5)
         bucket = min(conf // (10 // bins), bins - 1)
@@ -83,15 +83,17 @@ def confidence_calibration(predictions: List[Dict], results: List[Dict], bins: i
         items = buckets.get(b, [])
         lo = b * (10 // bins)
         hi = lo + (10 // bins)
-        calibration.append({
-            "confidence_range": f"{lo}-{hi}",
-            "count": len(items),
-            "actual_accuracy": sum(items) / len(items) if items else 0.0,
-        })
+        calibration.append(
+            {
+                "confidence_range": f"{lo}-{hi}",
+                "count": len(items),
+                "actual_accuracy": sum(items) / len(items) if items else 0.0,
+            }
+        )
     return calibration
 
 
-def compute_all_metrics(predictions: List[Dict], actuals: List[Dict], results: List[Dict]) -> Dict[str, Any]:
+def compute_all_metrics(predictions: list[dict], actuals: list[dict], results: list[dict]) -> dict[str, Any]:
     wl = avg_win_loss(results)
     return {
         "total_samples": len(predictions),

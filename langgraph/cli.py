@@ -12,11 +12,11 @@ load_dotenv()
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from backtest.config import DEFAULT_MONTHS, DEFAULT_SYMBOLS, DEFAULT_TIMEFRAMES  # noqa: E402
-from backtest.pipeline import DataPipeline  # noqa: E402
-from backtest.evaluation.runner import LLMBacktestRunner, MLBacktestRunner  # noqa: E402
 from backtest.evaluation.compare import compare  # noqa: E402
-from backtest.evaluation.report import print_report, print_comparison  # noqa: E402
+from backtest.evaluation.report import print_comparison, print_report  # noqa: E402
+from backtest.evaluation.runner import LLMBacktestRunner, MLBacktestRunner  # noqa: E402
 from backtest.export import export_training_data  # noqa: E402
+from backtest.pipeline import DataPipeline  # noqa: E402
 
 _DEFAULT_SYMBOLS_STR = ",".join(DEFAULT_SYMBOLS)
 _DEFAULT_TIMEFRAMES_STR = ",".join(DEFAULT_TIMEFRAMES)
@@ -76,6 +76,7 @@ def cmd_export_training_data(args):
 
 def cmd_compare_stats(args):
     from optimization.stats_tests import compare as compare_stats
+
     compare_stats(args.a, args.b)
 
 

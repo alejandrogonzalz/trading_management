@@ -26,13 +26,13 @@ import argparse
 import json
 import math
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 
 # --------------------------------------------------------------------------- #
 # Core statistics (pure Python)
 # --------------------------------------------------------------------------- #
-def mcnemar(correct_a: List[int], correct_b: List[int]) -> Dict[str, Any]:
+def mcnemar(correct_a: list[int], correct_b: list[int]) -> dict[str, Any]:
     """McNemar's test on paired binary correctness vectors.
 
     correct_a / correct_b: lists of 0/1, aligned sample-by-sample.
@@ -68,11 +68,11 @@ def _binom_two_sided(k: int, n: int, p: float = 0.5) -> float:
     if n == 0:
         return 1.0
     # one-sided tail mass at the smaller count, doubled and capped at 1.0
-    tail = sum(math.comb(n, i) * (p ** i) * ((1 - p) ** (n - i)) for i in range(0, k + 1))
+    tail = sum(math.comb(n, i) * (p**i) * ((1 - p) ** (n - i)) for i in range(0, k + 1))
     return min(1.0, 2.0 * tail)
 
 
-def paired_ttest(values_a: List[float], values_b: List[float]) -> Dict[str, Any]:
+def paired_ttest(values_a: list[float], values_b: list[float]) -> dict[str, Any]:
     """Paired t-test on a per-sample continuous metric (e.g. PnL%).
 
     p-value uses the normal approximation (exact in the large-df limit).
@@ -81,8 +81,7 @@ def paired_ttest(values_a: List[float], values_b: List[float]) -> Dict[str, Any]
         raise ValueError("value vectors must be the same length")
     n = len(values_a)
     if n < 2:
-        return {"t_statistic": 0.0, "df": max(0, n - 1), "p_value": 1.0,
-                "mean_diff": 0.0, "significant_at_0.05": False}
+        return {"t_statistic": 0.0, "df": max(0, n - 1), "p_value": 1.0, "mean_diff": 0.0, "significant_at_0.05": False}
 
     diffs = [a - b for a, b in zip(values_a, values_b)]
     mean_d = sum(diffs) / n
@@ -116,7 +115,7 @@ def _normal_cdf(x: float) -> float:
 # --------------------------------------------------------------------------- #
 # Result-file alignment
 # --------------------------------------------------------------------------- #
-def _bias_of(pred: Any) -> Optional[str]:
+def _bias_of(pred: Any) -> str | None:
     """Extract bias from a prediction entry (dict or raw string)."""
     if isinstance(pred, dict):
         b = str(pred.get("bias", "")).upper()
@@ -130,8 +129,8 @@ def _pnl_of(trade: Any) -> float:
 
 
 def align_results(
-    res_a: Dict[str, Any], res_b: Dict[str, Any]
-) -> Tuple[List[int], List[int], List[float], List[float]]:
+    res_a: dict[str, Any], res_b: dict[str, Any]
+) -> tuple[list[int], list[int], list[float], list[float]]:
     """Align two result dicts sample-by-sample.
 
     Prefers alignment by ``sample_keys`` intersection; falls back to positional
@@ -139,7 +138,7 @@ def align_results(
     correctness_a, correctness_b, pnl_a, pnl_b.
     """
     pa, aa, ta = res_a["predictions"], res_a["actuals"], res_a.get("trade_results", [])
-    pb, ab, tb = res_b["predictions"], res_b["actuals"], res_b.get("trade_results", [])
+    pb, _ab, tb = res_b["predictions"], res_b["actuals"], res_b.get("trade_results", [])
     ka, kb = res_a.get("sample_keys"), res_b.get("sample_keys")
 
     if ka and kb and len(ka) == len(pa) and len(kb) == len(pb):
@@ -147,9 +146,11 @@ def align_results(
         pairs = [(i, idx_b[k]) for i, k in enumerate(ka) if k in idx_b]
         order = [(i, j) for i, j in pairs]
     else:
-        print("⚠️  No usable sample_keys on both results — falling back to "
-              "positional alignment (truncating to the shorter array). "
-              "Pairing validity is NOT guaranteed.")
+        print(
+            "⚠️  No usable sample_keys on both results — falling back to "
+            "positional alignment (truncating to the shorter array). "
+            "Pairing validity is NOT guaranteed."
+        )
         m = min(len(pa), len(pb))
         order = [(i, i) for i in range(m)]
 
@@ -170,7 +171,7 @@ def align_results(
 # --------------------------------------------------------------------------- #
 # Top-level comparison
 # --------------------------------------------------------------------------- #
-def compare(path_a: str, path_b: str) -> Dict[str, Any]:
+def compare(path_a: str, path_b: str) -> dict[str, Any]:
     """Load two result JSONs and run McNemar + paired t-test."""
     res_a = json.loads(Path(path_a).read_text())
     res_b = json.loads(Path(path_b).read_text())
@@ -199,7 +200,7 @@ def compare(path_a: str, path_b: str) -> Dict[str, Any]:
     return summary
 
 
-def _print_summary(s: Dict[str, Any]) -> None:
+def _print_summary(s: dict[str, Any]) -> None:
     print(f"\n{'=' * 64}")
     print(f"  Statistical Comparison: {s['model_a']}  vs  {s['model_b']}")
     print(f"{'=' * 64}")
@@ -207,17 +208,20 @@ def _print_summary(s: Dict[str, Any]) -> None:
     print(f"  Accuracy {s['model_a']:<16}: {s['accuracy_a']:.4f}")
     print(f"  Accuracy {s['model_b']:<16}: {s['accuracy_b']:.4f}")
     mc = s["mcnemar"]
-    print(f"\n  McNemar's test (direction correctness)")
-    print(f"    A right / B wrong: {mc['b_a_right_b_wrong']}   "
-          f"A wrong / B right: {mc['c_a_wrong_b_right']}")
+    print("\n  McNemar's test (direction correctness)")
+    print(f"    A right / B wrong: {mc['b_a_right_b_wrong']}   A wrong / B right: {mc['c_a_wrong_b_right']}")
     print(f"    chi2 (corrected):  {mc['chi2_corrected']}")
-    print(f"    p-value (exact):   {mc['p_value']}   "
-          f"{'SIGNIFICANT' if mc['significant_at_0.05'] else 'not significant'} (α=0.05)")
+    print(
+        f"    p-value (exact):   {mc['p_value']}   "
+        f"{'SIGNIFICANT' if mc['significant_at_0.05'] else 'not significant'} (α=0.05)"
+    )
     tt = s["paired_ttest_pnl"]
-    print(f"\n  Paired t-test (per-sample PnL%)")
+    print("\n  Paired t-test (per-sample PnL%)")
     print(f"    mean diff (A−B):   {tt['mean_diff']}")
-    print(f"    t = {tt['t_statistic']}  (df={tt['df']})   p = {tt['p_value']}   "
-          f"{'SIGNIFICANT' if tt['significant_at_0.05'] else 'not significant'} (α=0.05)")
+    print(
+        f"    t = {tt['t_statistic']}  (df={tt['df']})   p = {tt['p_value']}   "
+        f"{'SIGNIFICANT' if tt['significant_at_0.05'] else 'not significant'} (α=0.05)"
+    )
     print(f"{'=' * 64}\n")
 
 

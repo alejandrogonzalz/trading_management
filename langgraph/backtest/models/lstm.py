@@ -1,11 +1,10 @@
 """LSTM predictor for sequential indicator data."""
 
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 
-from backtest.models.features import extract_features, _infer_timeframes, _load_dataset, _temporal_split
+from backtest.models.features import _infer_timeframes, _load_dataset, _temporal_split, extract_features
 
 
 class LSTMPredictor:
@@ -20,8 +19,8 @@ class LSTMPredictor:
         self.hidden_size = hidden_size
         self.num_layers = num_layers
         self.model = None
-        self.input_size: Optional[int] = None
-        self._timeframes: Optional[list[str]] = None
+        self.input_size: int | None = None
+        self._timeframes: list[str] | None = None
 
     def _build_sequences(self, features: np.ndarray, labels: np.ndarray):
         import torch

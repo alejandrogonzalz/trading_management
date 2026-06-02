@@ -17,22 +17,21 @@ Requirements (GPU machine only):
 import argparse
 import json
 import logging
-import os
 import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from agent.prompts import build_system_prompt, build_user_prompt
-from backtest.export import export_training_data, build_training_example
 from backtest.evaluation.metrics import compute_all_metrics
-from backtest.evaluation.runner import _load_candles_map, CANDLES_DIR
+from backtest.evaluation.runner import CANDLES_DIR, _load_candles_map
 from backtest.evaluation.simulate import _parse_prediction, simulate_trade
+from backtest.export import export_training_data
 from backtest.models.features import _load_dataset, _temporal_split
 
 logging.basicConfig(
@@ -73,13 +72,13 @@ class QLoRATrainer:
         "output_dir": str(MODELS_DIR / "qlora_qwen25_7b"),
     }
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: dict[str, Any] | None = None):
         self.cfg = {**self.DEFAULT_CONFIG, **(config or {})}
         self.model = None
         self.tokenizer = None
         self.trainer = None
 
-    def prepare_data(self) -> Dict[str, int]:
+    def prepare_data(self) -> dict[str, int]:
         """Export labeled dataset to chat-format JSONL splits for SFT."""
         log.info(f"Exporting training data from {DATASET_PATH}")
         log.info(f"  Output: {TRAINING_DATA_DIR}/")
@@ -113,8 +112,13 @@ class QLoRATrainer:
             lora_alpha=self.cfg["lora_alpha"],
             lora_dropout=self.cfg["lora_dropout"],
             target_modules=[
-                "q_proj", "k_proj", "v_proj", "o_proj",
-                "gate_proj", "up_proj", "down_proj",
+                "q_proj",
+                "k_proj",
+                "v_proj",
+                "o_proj",
+                "gate_proj",
+                "up_proj",
+                "down_proj",
             ],
             bias="none",
             use_gradient_checkpointing="unsloth",
@@ -140,17 +144,15 @@ class QLoRATrainer:
         # Convert chat messages to the format expected by SFTTrainer
         texts = []
         for ex in examples:
-            text = self.tokenizer.apply_chat_template(
-                ex["messages"], tokenize=False, add_generation_prompt=False
-            )
+            text = self.tokenizer.apply_chat_template(ex["messages"], tokenize=False, add_generation_prompt=False)
             texts.append(text)
 
         return Dataset.from_dict({"text": texts})
 
-    def train(self) -> Dict[str, Any]:
+    def train(self) -> dict[str, Any]:
         """Run SFT training with early stopping based on validation loss."""
-        from trl import SFTTrainer
         from transformers import TrainingArguments
+        from trl import SFTTrainer
 
         log.info("Loading datasets...")
         train_dataset = self._load_chat_dataset("train")
@@ -204,11 +206,7 @@ class QLoRATrainer:
 
         # Pull the best eval_loss from the trainer's log history (load_best_model_at_end
         # restores the checkpoint with the lowest eval_loss).
-        eval_losses = [
-            rec["eval_loss"]
-            for rec in self.trainer.state.log_history
-            if "eval_loss" in rec
-        ]
+        eval_losses = [rec["eval_loss"] for rec in self.trainer.state.log_history if "eval_loss" in rec]
         best_eval_loss = min(eval_losses) if eval_losses else None
 
         log.info(f"  Training completed in {elapsed:.1f}s ({elapsed / 60:.1f} min)")
@@ -235,11 +233,9 @@ class QLoRATrainer:
         # Save merged GGUF for Ollama deployment (optional)
         gguf_path = Path(output_dir) / "gguf"
         log.info(f"Saving GGUF (Q4_K_M) to {gguf_path}/")
-        self.model.save_pretrained_gguf(
-            str(gguf_path), self.tokenizer, quantization_method="q4_k_m"
-        )
+        self.model.save_pretrained_gguf(str(gguf_path), self.tokenizer, quantization_method="q4_k_m")
 
-    def evaluate(self) -> Dict[str, Any]:
+    def evaluate(self) -> dict[str, Any]:
         """Evaluate the fine-tuned model on the test split.
 
         Mirrors LLMBacktestRunner exactly so the result is comparable to the
@@ -273,10 +269,10 @@ class QLoRATrainer:
         candles_map, ts_idx_map = _load_candles_map(CANDLES_DIR)
         system_prompt = build_system_prompt(self.cfg["mode"])
 
-        predictions: List[Dict[str, Any]] = []
-        actuals: List[Dict[str, Any]] = []
-        trade_results: List[Dict[str, Any]] = []
-        sample_keys: List[str] = []
+        predictions: list[dict[str, Any]] = []
+        actuals: list[dict[str, Any]] = []
+        trade_results: list[dict[str, Any]] = []
+        sample_keys: list[str] = []
         parse_errors = 0
 
         for i, sample in enumerate(test):
@@ -291,9 +287,9 @@ class QLoRATrainer:
 
             user_prompt = build_user_prompt(symbol, indicators)
             input_text = self.tokenizer.apply_chat_template(
-                [{"role": "system", "content": system_prompt},
-                 {"role": "user", "content": user_prompt}],
-                tokenize=False, add_generation_prompt=True,
+                [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
+                tokenize=False,
+                add_generation_prompt=True,
             )
             inputs = self.tokenizer(input_text, return_tensors="pt").to(self.model.device)
 
@@ -304,7 +300,7 @@ class QLoRATrainer:
                     do_sample=False,  # greedy decoding — deterministic, reproducible
                 )
             generated = self.tokenizer.decode(
-                output_ids[0][inputs["input_ids"].shape[1]:],
+                output_ids[0][inputs["input_ids"].shape[1] :],
                 skip_special_tokens=True,
             )
 
@@ -324,15 +320,17 @@ class QLoRATrainer:
 
             candle_idx = ts_idx_map.get(symbol, {}).get(sample["timestamp"])
             if candle_idx is not None and candle_idx + 1 < len(candles_map.get(symbol, [])):
-                future = candles_map[symbol][candle_idx + 1: candle_idx + 25]
+                future = candles_map[symbol][candle_idx + 1 : candle_idx + 25]
                 trade_results.append(simulate_trade(prediction, future))
             else:
                 trade_results.append({"outcome": "ERROR", "pnl_pct": 0, "hold_bars": 0})
 
         metrics = compute_all_metrics(predictions, actuals, trade_results) if predictions else {}
         accuracy = metrics.get("direction_accuracy", 0.0)
-        log.info(f"  Test accuracy: {accuracy:.4f}  win_rate={metrics.get('win_rate', 0):.4f}  "
-                 f"profit_factor={metrics.get('profit_factor', 0):.3f}")
+        log.info(
+            f"  Test accuracy: {accuracy:.4f}  win_rate={metrics.get('win_rate', 0):.4f}  "
+            f"profit_factor={metrics.get('profit_factor', 0):.3f}"
+        )
         log.info(f"  Parse errors: {parse_errors}")
 
         return {
@@ -348,7 +346,7 @@ class QLoRATrainer:
             "sample_keys": sample_keys,
         }
 
-    def _parse_bias(self, text: str) -> Optional[str]:
+    def _parse_bias(self, text: str) -> str | None:
         """Extract bias (LONG/SHORT) from model output."""
         try:
             # Try JSON parse first
@@ -371,13 +369,15 @@ class QLoRATrainer:
 
         return None
 
-    def run(self) -> Dict[str, Any]:
+    def run(self) -> dict[str, Any]:
         """Execute the full pipeline: prepare → load → train → evaluate → save."""
         log.info("=" * 60)
         log.info("  QLoRA Fine-Tuning — Qwen 2.5 7B")
-        log.info(f"  Config: lr={self.cfg['learning_rate']}, rank={self.cfg['lora_rank']}, "
-                 f"alpha={self.cfg['lora_alpha']}, epochs={self.cfg['epochs']}, "
-                 f"batch={self.cfg['batch_size']}")
+        log.info(
+            f"  Config: lr={self.cfg['learning_rate']}, rank={self.cfg['lora_rank']}, "
+            f"alpha={self.cfg['lora_alpha']}, epochs={self.cfg['epochs']}, "
+            f"batch={self.cfg['batch_size']}"
+        )
         log.info("=" * 60)
 
         t0 = time.time()
@@ -452,7 +452,7 @@ class QLoRATrainer:
         return result
 
 
-def load_config_from_yaml(path: str) -> Dict[str, Any]:
+def load_config_from_yaml(path: str) -> dict[str, Any]:
     """Load training config from YAML, mapping to trainer params."""
     with open(path) as f:
         raw = yaml.safe_load(f)
@@ -516,10 +516,8 @@ def main():
     m = result["metrics"]
     print(f"\n{'=' * 60}")
     print(f"  RESULT: Test Accuracy = {result['test_metrics']['accuracy']:.4f}")
-    print(f"  Win Rate = {m.get('win_rate', 0):.4f}  "
-          f"Profit Factor = {m.get('profit_factor', 0):.3f}")
-    print(f"  Sharpe = {m.get('sharpe_ratio', 0):.3f}  "
-          f"Max Drawdown = {m.get('max_drawdown', 0):.2f}%")
+    print(f"  Win Rate = {m.get('win_rate', 0):.4f}  Profit Factor = {m.get('profit_factor', 0):.3f}")
+    print(f"  Sharpe = {m.get('sharpe_ratio', 0):.3f}  Max Drawdown = {m.get('max_drawdown', 0):.2f}%")
     print(f"  Time = {result['elapsed_seconds']:.0f}s")
     print(f"{'=' * 60}")
 

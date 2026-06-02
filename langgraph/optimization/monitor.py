@@ -12,7 +12,6 @@ import argparse
 import json
 import os
 import subprocess
-import sys
 import time
 from datetime import datetime
 from pathlib import Path
@@ -24,10 +23,8 @@ RESULTS_DIR = Path(__file__).resolve().parent / "results"
 def check_process():
     """Find running python optimization processes."""
     try:
-        out = subprocess.check_output(
-            ["ps", "aux"], text=True
-        )
-        procs = [l for l in out.splitlines() if "python" in l and "optim" in l.lower() or "ensemble" in l.lower()]
+        out = subprocess.check_output(["ps", "aux"], text=True)
+        procs = [ln for ln in out.splitlines() if "python" in ln and "optim" in ln.lower() or "ensemble" in ln.lower()]
         return procs
     except Exception:
         return []
@@ -93,7 +90,7 @@ def print_status():
     # Logs
     logs = check_logs()
     if logs:
-        print(f"\n  Log files:")
+        print("\n  Log files:")
         for name, info in logs.items():
             if "error" in info:
                 print(f"    {name}: ERROR - {info['error']}")
@@ -107,7 +104,7 @@ def print_status():
     # Results
     results = check_results()
     if results:
-        print(f"\n  Completed models:")
+        print("\n  Completed models:")
         print(f"    {'Model':<25} {'Val Acc':<10} {'Test Acc':<10} {'Time':<8}")
         print(f"    {'─' * 53}")
         for name, info in sorted(results.items(), key=lambda x: x[1].get("test_acc") or 0, reverse=True):

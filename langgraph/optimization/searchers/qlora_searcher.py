@@ -15,10 +15,7 @@ class QLoRASearcher(BaseSearcher):
             all_combos = list(itertools.product(*grid.values()))
             keys = list(grid.keys())
             random.seed(42)
-            recommended = [
-                dict(zip(keys, c))
-                for c in random.sample(all_combos, min(5, len(all_combos)))
-            ]
+            recommended = [dict(zip(keys, c)) for c in random.sample(all_combos, min(5, len(all_combos)))]
 
         print("\n" + "=" * 70)
         print("QLoRA — Recommended configs for Unsloth training")

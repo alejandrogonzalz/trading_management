@@ -4,29 +4,25 @@ import json
 import sys
 import tempfile
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
 
-import numpy as np
 import pytest
 
 _LANGGRAPH_DIR = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(_LANGGRAPH_DIR))
 
 from agent.prompts import build_system_prompt, build_user_prompt
+from backtest.evaluation.metrics import compute_all_metrics
+from backtest.evaluation.simulate import _parse_prediction, simulate_trade
 from backtest.ingestion.fetcher import _ms
 from backtest.ingestion.labeler import label_candle
 from backtest.models import (
-    LSTMPredictor,
     RandomForestPredictor,
     XGBoostPredictor,
     _infer_timeframes,
     _sorted_timeframes,
     extract_features,
 )
-from backtest.evaluation.metrics import compute_all_metrics
 from backtest.pipeline import DataPipeline
-from backtest.evaluation.simulate import _parse_prediction, simulate_trade
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -35,12 +31,19 @@ from backtest.evaluation.simulate import _parse_prediction, simulate_trade
 _TF_3 = ["1h", "4h", "1d"]
 _TF_5 = ["15m", "1h", "4h", "1d", "1w"]
 
+
 def _make_ind(tfs: list[str] = _TF_3) -> dict:
     return {
         tf: {
-            "price": 50000.0, "rsi": 55.0, "macd_hist": 0.1, "adx": 25.0,
-            "volume_ratio": 1.2, "atr_ratio": 1.0, "bb_pos": 0.6,
-            "heatmap": "BULLISH", "structure": "BULLISH",
+            "price": 50000.0,
+            "rsi": 55.0,
+            "macd_hist": 0.1,
+            "adx": 25.0,
+            "volume_ratio": 1.2,
+            "atr_ratio": 1.0,
+            "bb_pos": 0.6,
+            "heatmap": "BULLISH",
+            "structure": "BULLISH",
         }
         for tf in tfs
     }
@@ -81,6 +84,7 @@ def _write_dataset(samples: list[dict], path: Path) -> None:
 # agent/prompts
 # ---------------------------------------------------------------------------
 
+
 class TestPrompts:
     def test_system_prompt_futures(self):
         sp = build_system_prompt("FUTURES")
@@ -117,6 +121,7 @@ class TestPrompts:
 # ml_models — feature extraction
 # ---------------------------------------------------------------------------
 
+
 class TestExtractFeatures:
     def test_3tf_produces_30_features(self):
         feats = extract_features(_make_ind(_TF_3))
@@ -135,9 +140,15 @@ class TestExtractFeatures:
 
     def test_flat_dict_normalised_to_1h(self):
         flat = {
-            "price": 100.0, "rsi": 50.0, "macd_hist": 0.0, "adx": 20.0,
-            "volume_ratio": 1.0, "atr_ratio": 1.0, "bb_pos": 0.5,
-            "heatmap": "NEUTRAL", "structure": "RANGE",
+            "price": 100.0,
+            "rsi": 50.0,
+            "macd_hist": 0.0,
+            "adx": 20.0,
+            "volume_ratio": 1.0,
+            "atr_ratio": 1.0,
+            "bb_pos": 0.5,
+            "heatmap": "NEUTRAL",
+            "structure": "RANGE",
         }
         feats = extract_features(flat)
         assert len(feats) == 1 * 9 + 3  # wrapped as {"1h": ...}
@@ -156,6 +167,7 @@ class TestExtractFeatures:
 # ---------------------------------------------------------------------------
 # ml_models — predictors
 # ---------------------------------------------------------------------------
+
 
 class TestXGBoostPredictor:
     def test_train_and_predict(self):
@@ -224,6 +236,7 @@ class TestRandomForestPredictor:
 # run_backtest — helpers
 # ---------------------------------------------------------------------------
 
+
 class TestParseAndSimulate:
     def test_parse_valid_json(self):
         raw = '{"bias": "LONG", "entry": 50000, "tp": 52000, "sl": 49000}'
@@ -273,6 +286,7 @@ class TestParseAndSimulate:
 # metrics
 # ---------------------------------------------------------------------------
 
+
 class TestMetrics:
     def _run(self, preds, actuals, trades):
         return compute_all_metrics(preds, actuals, trades)
@@ -305,6 +319,7 @@ class TestMetrics:
 # label_data
 # ---------------------------------------------------------------------------
 
+
 class TestLabelCandle:
     def _make_future(self, n: int, high: float, low: float) -> list[dict]:
         return [{"high": high, "low": low, "close": (high + low) / 2}] * n
@@ -315,9 +330,15 @@ class TestLabelCandle:
             "atr_raw": atr,
             "indicators": {
                 "1h": {
-                    "price": price, "rsi": 55, "macd_hist": 0, "adx": 25,
-                    "volume_ratio": 1.2, "atr_ratio": 1.0, "bb_pos": 0.6,
-                    "heatmap": "BULLISH", "structure": "BULLISH",
+                    "price": price,
+                    "rsi": 55,
+                    "macd_hist": 0,
+                    "adx": 25,
+                    "volume_ratio": 1.2,
+                    "atr_ratio": 1.0,
+                    "bb_pos": 0.6,
+                    "heatmap": "BULLISH",
+                    "structure": "BULLISH",
                 }
             },
         }
@@ -325,7 +346,17 @@ class TestLabelCandle:
     def test_long_label(self):
         price = 50000.0
         atr = 500.0
-        candles = [{"timestamp": i * 3600000, "open": price, "high": price + 1500, "low": price - 200, "close": price + 800, "volume": 100} for i in range(30)]
+        candles = [
+            {
+                "timestamp": i * 3600000,
+                "open": price,
+                "high": price + 1500,
+                "low": price - 200,
+                "close": price + 800,
+                "volume": 100,
+            }
+            for i in range(30)
+        ]
         point = self._make_point(price, atr)
         point["timestamp"] = candles[0]["timestamp"]
         result = label_candle(candles, point, 0, lookahead=24)
@@ -334,7 +365,10 @@ class TestLabelCandle:
 
     def test_ambiguous_returns_none(self):
         price = 50000.0
-        candles = [{"timestamp": i, "open": price, "high": price + 100, "low": price - 100, "close": price, "volume": 100} for i in range(30)]
+        candles = [
+            {"timestamp": i, "open": price, "high": price + 100, "low": price - 100, "close": price, "volume": 100}
+            for i in range(30)
+        ]
         point = self._make_point(price, atr=500.0)
         point["timestamp"] = candles[0]["timestamp"]
         result = label_candle(candles, point, 0, lookahead=24)
@@ -342,7 +376,17 @@ class TestLabelCandle:
 
     def test_low_volume_filtered(self):
         price = 50000.0
-        candles = [{"timestamp": i, "open": price, "high": price + 2000, "low": price - 100, "close": price + 1000, "volume": 10} for i in range(30)]
+        candles = [
+            {
+                "timestamp": i,
+                "open": price,
+                "high": price + 2000,
+                "low": price - 100,
+                "close": price + 1000,
+                "volume": 10,
+            }
+            for i in range(30)
+        ]
         point = self._make_point(price)
         point["indicators"]["1h"]["volume_ratio"] = 0.3
         point["timestamp"] = candles[0]["timestamp"]
@@ -353,6 +397,7 @@ class TestLabelCandle:
 # ---------------------------------------------------------------------------
 # pipeline (minimal / structural)
 # ---------------------------------------------------------------------------
+
 
 class TestDataPipeline:
     def test_init_validates_base_tf(self):
@@ -384,6 +429,7 @@ class TestDataPipeline:
 # ---------------------------------------------------------------------------
 # fetch_candles helpers
 # ---------------------------------------------------------------------------
+
 
 class TestFetchHelpers:
     def test_ms_converts_date(self):

@@ -1,12 +1,14 @@
-import pytest
 import json
 import os
+
+import pytest
+
 from agent.graph import graph
 
 
 def load_scenario(name):
     path = os.path.join(os.path.dirname(__file__), "scenarios", f"{name}.json")
-    with open(path, "r") as f:
+    with open(path) as f:
         data = json.load(f)
 
     # Normalize indicator data to ensure it's multi-timeframe (Dict[str, Dict])

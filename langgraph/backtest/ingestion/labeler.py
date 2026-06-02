@@ -2,16 +2,16 @@
 
 import json
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import Any
 
 
 def label_candle(
-    candles: List[Dict[str, Any]],
-    indicator_point: Dict[str, Any],
+    candles: list[dict[str, Any]],
+    indicator_point: dict[str, Any],
     candle_index: int,
     lookahead: int = 24,
     atr_multiplier: float = 1.5,
-) -> Optional[Dict[str, Any]]:
+) -> dict[str, Any] | None:
     """Label a single candle using hindsight.
 
     indicator_point["indicators"] can be either:
@@ -110,11 +110,11 @@ def label_candle(
 
 
 def generate_labeled_dataset(
-    candles: List[Dict[str, Any]],
-    indicator_points: List[Dict[str, Any]],
+    candles: list[dict[str, Any]],
+    indicator_points: list[dict[str, Any]],
     symbol: str,
     lookahead: int = 24,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Generate labeled dataset from candles and indicator points."""
     ts_to_idx = {c["timestamp"]: i for i, c in enumerate(candles)}
 
@@ -131,7 +131,7 @@ def generate_labeled_dataset(
     return labeled
 
 
-def save_labeled_dataset(data: List[Dict[str, Any]], path: Path) -> Path:
+def save_labeled_dataset(data: list[dict[str, Any]], path: Path) -> Path:
     """Save labeled dataset as JSONL."""
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w") as f:

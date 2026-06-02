@@ -5,6 +5,7 @@ from datetime import datetime
 import numpy as np
 
 from backtest.models.features import _load_dataset, _samples_to_xy, _temporal_split
+
 from .base import BaseSearcher
 
 log = logging.getLogger(__name__)
@@ -32,11 +33,13 @@ class SklearnSearcher(BaseSearcher):
         fixed = cfg.get("fixed_params", {})
         if self.model_name == "xgboost":
             import xgboost as xgb
+
             return xgb.XGBClassifier(
                 eval_metric=fixed.get("eval_metric", "logloss"),
                 random_state=fixed.get("random_state", 42),
             )
         from sklearn.ensemble import RandomForestClassifier
+
         return RandomForestClassifier(
             random_state=fixed.get("random_state", 42),
             n_jobs=fixed.get("n_jobs", -1),
@@ -62,16 +65,25 @@ class SklearnSearcher(BaseSearcher):
 
         if method == "grid":
             search = GridSearchCV(
-                estimator, param_grid, cv=cv,
+                estimator,
+                param_grid,
+                cv=cv,
                 scoring=cfg.get("scoring", "accuracy"),
-                verbose=1, n_jobs=-1, return_train_score=True,
+                verbose=1,
+                n_jobs=-1,
+                return_train_score=True,
             )
         else:
             search = RandomizedSearchCV(
-                estimator, param_grid,
-                n_iter=cfg.get("n_random_iter", 100), cv=cv,
+                estimator,
+                param_grid,
+                n_iter=cfg.get("n_random_iter", 100),
+                cv=cv,
                 scoring=cfg.get("scoring", "accuracy"),
-                verbose=1, n_jobs=-1, random_state=42, return_train_score=True,
+                verbose=1,
+                n_jobs=-1,
+                random_state=42,
+                return_train_score=True,
             )
 
         t0 = time.time()

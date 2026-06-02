@@ -10,7 +10,7 @@ from agent.graph import evaluator_node
 
 def load_scenario(name):
     path = os.path.join(os.path.dirname(__file__), "scenarios", f"{name}.json")
-    with open(path, "r") as f:
+    with open(path) as f:
         return json.load(f)
 
 

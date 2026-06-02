@@ -11,9 +11,7 @@ from .io.results import save_result
 log = logging.getLogger(__name__)
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
-DEFAULT_DATASET = (
-    Path(__file__).resolve().parent.parent / "backtest" / "data" / "labeled" / "dataset.jsonl"
-)
+DEFAULT_DATASET = Path(__file__).resolve().parent.parent / "backtest" / "data" / "labeled" / "dataset.jsonl"
 
 
 class OptimizerPipeline:
@@ -47,11 +45,14 @@ class OptimizerPipeline:
     def _get_searcher(self):
         if self.model in ("xgboost", "random_forest"):
             from .searchers.sklearn_searcher import SklearnSearcher
+
             return SklearnSearcher(self.model)
         if self.model == "lstm":
             from .searchers.lstm_searcher import LSTMSearcher
+
             return LSTMSearcher()
         if self.model == "qlora":
             from .searchers.qlora_searcher import QLoRASearcher
+
             return QLoRASearcher()
         raise ValueError(f"Unknown model: {self.model}. Choose from: xgboost, random_forest, lstm, qlora")

@@ -1,5 +1,4 @@
 import sqlite3
-import sys
 
 conn = sqlite3.connect("data/trading.db")
 cursor = conn.cursor()
@@ -10,9 +9,7 @@ columns = [col[1] for col in cursor.fetchall()]
 print("Columns:", columns)
 
 # Query PEPE trades
-cursor.execute(
-    "SELECT * FROM trades WHERE symbol LIKE '%PEPE%' ORDER BY timestamp DESC"
-)
+cursor.execute("SELECT * FROM trades WHERE symbol LIKE '%PEPE%' ORDER BY timestamp DESC")
 rows = cursor.fetchall()
 
 for row in rows:
@@ -21,9 +18,7 @@ for row in rows:
         print(f"{col}: {row[i]}")
 
     # Also check if there are any lead_trades
-cursor.execute(
-    "SELECT * FROM lead_trades WHERE symbol LIKE '%PEPE%' ORDER BY timestamp DESC"
-)
+cursor.execute("SELECT * FROM lead_trades WHERE symbol LIKE '%PEPE%' ORDER BY timestamp DESC")
 lead_rows = cursor.fetchall()
 if lead_rows:
     cursor.execute("PRAGMA table_info(lead_trades)")

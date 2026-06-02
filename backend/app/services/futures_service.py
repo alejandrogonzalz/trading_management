@@ -1,24 +1,21 @@
-import os
 import time
-import math
-from typing import Optional, List, Dict, Any
-from fastapi import HTTPException
+
+import binance_common.utils as binance_utils
+from binance.client import Client as StandardClient
+from binance_common.configuration import ConfigurationRestAPI
 
 # Specialized Binance SDKs for Lead/Futures
 from binance_sdk_copy_trading.rest_api import CopyTradingRestAPI
 from binance_sdk_derivatives_trading_usds_futures.rest_api import (
     DerivativesTradingUsdsFuturesRestAPI,
 )
-from binance_common.configuration import ConfigurationRestAPI
-from binance.client import Client as StandardClient
+from fastapi import HTTPException
 
 from app.core.config import settings
-from app.services import audit_service
 from app.db.database import db_session
 from app.db.models import LeadTrade
+from app.services import audit_service
 from app.services.binance_service import binance_client, round_step_size
-
-import binance_common.utils as binance_utils
 
 
 class FuturesService:
@@ -73,9 +70,7 @@ class FuturesService:
                 return int(time.time() * 1000) + FuturesService._time_offset
 
             binance_utils.get_timestamp = patched_get_timestamp
-            print(
-                f"Lead Sync: Server Time Offset = {FuturesService._time_offset}ms (Buffer Applied)"
-            )
+            print(f"Lead Sync: Server Time Offset = {FuturesService._time_offset}ms (Buffer Applied)")
         except Exception as e:
             print(f"Lead Sync Time Error: {e}")
 
@@ -94,9 +89,7 @@ class FuturesService:
             res = self.lead_client.account_information_v2()
             return res.data()
         except Exception as e:
-            raise HTTPException(
-                status_code=400, detail=f"Futures Balance Error: {str(e)}"
-            )
+            raise HTTPException(status_code=400, detail=f"Futures Balance Error: {str(e)}")
 
     def get_lead_history(self, symbol: str = None):
         """Retrieves closed Lead/Futures trades from SQLite."""
@@ -205,9 +198,7 @@ class FuturesService:
 
             return response
         except Exception as e:
-            audit_service.log_api_call(
-                "POST", "lead/order-FAILED", {"symbol": symbol}, str(e), 400
-            )
+            audit_service.log_api_call("POST", "lead/order-FAILED", {"symbol": symbol}, str(e), 400)
             raise HTTPException(status_code=400, detail=f"Order Failed: {str(e)}")
 
     def _wait_for_position(self, symbol: str, target_side: str, timeout: int = 15):
@@ -219,9 +210,7 @@ class FuturesService:
             if pos:
                 amt = float(pos.position_amt or 0)
                 # amt > 0 for LONG/BUY, amt < 0 for SHORT/SELL
-                if (target_side == "BUY" and amt > 0) or (
-                    target_side == "SELL" and amt < 0
-                ):
+                if (target_side == "BUY" and amt > 0) or (target_side == "SELL" and amt < 0):
                     print(f"Position Confirmed for {symbol}: {amt}")
                     return True
             time.sleep(1.5)
@@ -243,14 +232,9 @@ class FuturesService:
         while time.time() - start_time < timeout:
             try:
                 # Check current algo orders (SDK uses current_all_algo_open_orders)
-                res = self.lead_client.current_all_algo_open_orders(
-                    symbol=symbol.upper()
-                )
+                res = self.lead_client.current_all_algo_open_orders(symbol=symbol.upper())
                 open_algos = res.data()
-                found = any(
-                    getattr(o, "client_algo_id", "") == client_algo_id
-                    for o in open_algos
-                )
+                found = any(getattr(o, "client_algo_id", "") == client_algo_id for o in open_algos)
                 if found:
                     print(f"✅ Algo Order Verified: {client_algo_id}")
                     return True
@@ -288,22 +272,10 @@ class FuturesService:
                 None,
             )
             if not symbol_info:
-                raise HTTPException(
-                    status_code=400, detail=f"Symbol {symbol} not found."
-                )
+                raise HTTPException(status_code=400, detail=f"Symbol {symbol} not found.")
 
-            tick_size = float(
-                next(
-                    f
-                    for f in symbol_info["filters"]
-                    if f["filterType"] == "PRICE_FILTER"
-                )["tickSize"]
-            )
-            step_size = float(
-                next(
-                    f for f in symbol_info["filters"] if f["filterType"] == "LOT_SIZE"
-                )["stepSize"]
-            )
+            tick_size = float(next(f for f in symbol_info["filters"] if f["filterType"] == "PRICE_FILTER")["tickSize"])
+            step_size = float(next(f for f in symbol_info["filters"] if f["filterType"] == "LOT_SIZE")["stepSize"])
 
             rounded_qty = round_step_size(quantity, step_size)
             rounded_tp = round_step_size(tp_price, tick_size) if tp_price > 0 else 0
@@ -334,18 +306,14 @@ class FuturesService:
             }
             res = self.lead_client.new_order(**entry_params)
             entry_res = res.data()
-            audit_service.log_api_call(
-                "POST", "lead/smart-entry", entry_params, entry_res
-            )
+            audit_service.log_api_call("POST", "lead/smart-entry", entry_params, entry_res)
 
             # 3. VERIFY POSITION & CAPTURE ACTUALS (STATE: ENTRY_FILLED)
             if not self._wait_for_position(symbol, side.upper()):
                 raise Exception("Position verification timed out.")
 
             # Fetch execution details for entry fees and precise price
-            history = self.std_client.futures_account_trades(
-                symbol=symbol.upper(), limit=10
-            )
+            history = self.std_client.futures_account_trades(symbol=symbol.upper(), limit=10)
             entry_fill = next(
                 (h for h in history if h.get("clientOrderId") == f"ENT_{trade_id}"),
                 None,
@@ -354,9 +322,7 @@ class FuturesService:
             actual_entry_price = (
                 float(entry_fill["price"])
                 if entry_fill
-                else float(
-                    getattr(entry_res, "avg_price", 0) or getattr(entry_res, "price", 0)
-                )
+                else float(getattr(entry_res, "avg_price", 0) or getattr(entry_res, "price", 0))
             )
             actual_qty = float(entry_fill["qty"]) if entry_fill else rounded_qty
             entry_fees = float(entry_fill["commission"]) if entry_fill else 0
@@ -369,9 +335,7 @@ class FuturesService:
             trade.entry_price = actual_entry_price
             trade.quantity = actual_qty
             trade.entry_fees = entry_fees
-            trade.entry_fee_asset = (
-                entry_fill.get("commissionAsset", "USDT") if entry_fill else "USDT"
-            )
+            trade.entry_fee_asset = entry_fill.get("commissionAsset", "USDT") if entry_fill else "USDT"
             db_session.commit()
 
             # 4. PROTECTION (STATE: ACTIVE)
@@ -430,44 +394,31 @@ class FuturesService:
                         )
 
                         # Check if error is "Order would immediately trigger"
-                        if (
-                            "Order would immediately trigger" in error_msg
-                            and attempt < max_retries - 1
-                        ):
+                        if "Order would immediately trigger" in error_msg and attempt < max_retries - 1:
                             # Adjust price based on position side and order type
                             adjustment_factor = 0.005  # 0.5% adjustment
                             if side.upper() == "BUY":  # LONG position
                                 if role == "SL":  # Stop loss below entry
                                     # SL would trigger immediately if price below SL
                                     # Move SL further down (more room for price drop)
-                                    adjusted_price = adjusted_price * (
-                                        1 - adjustment_factor
-                                    )
+                                    adjusted_price = adjusted_price * (1 - adjustment_factor)
                                 else:  # TP for LONG
                                     # TP would trigger immediately if price above TP
                                     # Move TP further up (more room for price rise)
-                                    adjusted_price = adjusted_price * (
-                                        1 + adjustment_factor
-                                    )
+                                    adjusted_price = adjusted_price * (1 + adjustment_factor)
                             else:  # SHORT position
                                 if role == "SL":  # Stop loss above entry
                                     # SL would trigger immediately if price above SL
                                     # Move SL further up (more room for price rise)
-                                    adjusted_price = adjusted_price * (
-                                        1 + adjustment_factor
-                                    )
+                                    adjusted_price = adjusted_price * (1 + adjustment_factor)
                                 else:  # TP for SHORT
                                     # TP would trigger immediately if price below TP
                                     # Move TP further down (more room for price drop)
-                                    adjusted_price = adjusted_price * (
-                                        1 - adjustment_factor
-                                    )
+                                    adjusted_price = adjusted_price * (1 - adjustment_factor)
 
                             # Re-round to tick size
                             adjusted_price = round_step_size(adjusted_price, tick_size)
-                            print(
-                                f"Adjusted {role} price to {adjusted_price} and retrying..."
-                            )
+                            print(f"Adjusted {role} price to {adjusted_price} and retrying...")
                             continue
                         else:
                             raise  # Re-raise if not retriable or max retries reached
@@ -475,9 +426,7 @@ class FuturesService:
             # Place SL order with retry logic
             if rounded_sl > 0:
                 try:
-                    sl_order, final_sl_price = place_protection_order(
-                        "STOP_MARKET", rounded_sl, "SL"
-                    )
+                    sl_order, final_sl_price = place_protection_order("STOP_MARKET", rounded_sl, "SL")
                     protection_orders.append(sl_order)
                     audit_service.log_api_call(
                         "POST",
@@ -496,9 +445,7 @@ class FuturesService:
             # Place TP order with retry logic
             if rounded_tp > 0:
                 try:
-                    tp_order, final_tp_price = place_protection_order(
-                        "TAKE_PROFIT_MARKET", rounded_tp, "TP"
-                    )
+                    tp_order, final_tp_price = place_protection_order("TAKE_PROFIT_MARKET", rounded_tp, "TP")
                     protection_orders.append(tp_order)
                     audit_service.log_api_call(
                         "POST",
@@ -546,9 +493,7 @@ class FuturesService:
                     db_session.commit()
                     error_msg += " (Rollback successful)"
                 else:
-                    raise Exception(
-                        f"Position still exists after rollback: {pos.position_amt}"
-                    )
+                    raise Exception(f"Position still exists after rollback: {pos.position_amt}")
 
             except Exception as rollback_err:
                 error_msg += f" (ROLLBACK FAILED: {str(rollback_err)} - MANUAL INTERVENTION REQUIRED)"
@@ -556,9 +501,7 @@ class FuturesService:
                 trade.error = error_msg
                 db_session.commit()
 
-            audit_service.log_api_call(
-                "POST", "lead/smart-trade-FAILED", {"symbol": symbol}, error_msg, 400
-            )
+            audit_service.log_api_call("POST", "lead/smart-trade-FAILED", {"symbol": symbol}, error_msg, 400)
             raise HTTPException(status_code=400, detail=error_msg)
         finally:
             db_session.remove()
@@ -612,9 +555,7 @@ class FuturesService:
                 )
 
             # 4. Fetch virtual setups from SQLite
-            query = db_session.query(LeadTrade).filter(
-                LeadTrade.status.in_(["ACTIVE", "ENTRY_FILLED"])
-            )
+            query = db_session.query(LeadTrade).filter(LeadTrade.status.in_(["ACTIVE", "ENTRY_FILLED"]))
             if symbol:
                 query = query.filter(LeadTrade.symbol == symbol.upper())
 
@@ -635,8 +576,7 @@ class FuturesService:
                         "tp": vs.tp,
                         "sl": vs.sl,
                         "clientOrderId": vs.id,
-                        "needs_protection": vs.status
-                        == "ENTRY_FILLED",  # Flag for UI warning
+                        "needs_protection": vs.status == "ENTRY_FILLED",  # Flag for UI warning
                         "smart_meta": {
                             "entry_price": vs.entry_price,
                             "tp": vs.tp,
@@ -679,17 +619,13 @@ class FuturesService:
             response = res.data()
 
             # Log successful fetch
-            audit_service.log_api_call(
-                "GET", "lead/binance-history", params, f"Fetched {len(response)} trades"
-            )
+            audit_service.log_api_call("GET", "lead/binance-history", params, f"Fetched {len(response)} trades")
 
             return response
         except Exception as e:
             print(f"CRITICAL: History Fetch Failed: {e}")
             # Log failure
-            audit_service.log_api_call(
-                "GET", "lead/binance-history-FAILED", params, str(e), 400
-            )
+            audit_service.log_api_call("GET", "lead/binance-history-FAILED", params, str(e), 400)
             raise HTTPException(status_code=400, detail=f"History Error: {str(e)}")
 
     def close_position(self, symbol: str, quantity: float = None):
@@ -753,9 +689,7 @@ class FuturesService:
             try:
                 # Wait a moment for execution to hit history
                 time.sleep(1)
-                history = self.std_client.futures_account_trades(
-                    symbol=symbol.upper(), limit=5
-                )
+                history = self.std_client.futures_account_trades(symbol=symbol.upper(), limit=5)
                 exit_fill = next(
                     (h for h in history if h.get("clientOrderId") == exit_client_id),
                     None,
@@ -808,9 +742,7 @@ class FuturesService:
             # 1. Fetch all trades that are not CLOSED or FAILED
             pending_trades = (
                 db_session.query(LeadTrade)
-                .filter(
-                    LeadTrade.status.in_(["ACTIVE", "ENTRY_PLACED", "ENTRY_FILLED"])
-                )
+                .filter(LeadTrade.status.in_(["ACTIVE", "ENTRY_PLACED", "ENTRY_FILLED"]))
                 .all()
             )
 
@@ -826,9 +758,7 @@ class FuturesService:
                 # A. Handle ENTRY_PLACED: Check if the entry order filled
                 if trade.status == "ENTRY_PLACED":
                     try:
-                        order = self.std_client.futures_get_order(
-                            symbol=symbol, origClientOrderId=f"ENT_{tid}"
-                        )
+                        order = self.std_client.futures_get_order(symbol=symbol, origClientOrderId=f"ENT_{tid}")
                         if order["status"] == "FILLED":
                             print(f"Entry Filled for {tid}. Updating state...")
                             avg_price = float(order.get("avgPrice", 0))
@@ -837,22 +767,14 @@ class FuturesService:
 
                             # Capture Entry Fees
                             try:
-                                history = self.std_client.futures_account_trades(
-                                    symbol=symbol, limit=10
-                                )
+                                history = self.std_client.futures_account_trades(symbol=symbol, limit=10)
                                 fill = next(
-                                    (
-                                        h
-                                        for h in history
-                                        if h.get("clientOrderId") == f"ENT_{tid}"
-                                    ),
+                                    (h for h in history if h.get("clientOrderId") == f"ENT_{tid}"),
                                     None,
                                 )
                                 if fill:
                                     trade.entry_fees = float(fill.get("commission", 0))
-                                    trade.entry_fee_asset = fill.get(
-                                        "commissionAsset", "USDT"
-                                    )
+                                    trade.entry_fee_asset = fill.get("commissionAsset", "USDT")
                             except:
                                 pass
 
@@ -870,9 +792,7 @@ class FuturesService:
                         # TODO: REVIEW - Using current ticker price as exit price is inaccurate if the app was down.
                         # Should query futures_account_trades for the actual historical fill that closed the position.
                         try:
-                            ticker = self.std_client.futures_symbol_ticker(
-                                symbol=symbol
-                            )
+                            ticker = self.std_client.futures_symbol_ticker(symbol=symbol)
                             trade.exit_price = float(ticker.get("price", 0))
                         except:
                             trade.exit_price = 0
@@ -885,62 +805,36 @@ class FuturesService:
                 elif trade.status == "ACTIVE":
                     res = self.lead_client.current_all_open_orders(symbol=symbol)
                     open_orders = res.data()
-                    open_client_ids = [
-                        getattr(o, "client_order_id", "") for o in open_orders
-                    ]
+                    open_client_ids = [getattr(o, "client_order_id", "") for o in open_orders]
 
                     protection_ids = [
-                        p.get("clientOrderId")
-                        for p in (trade.protection_orders or [])
-                        if p.get("clientOrderId")
+                        p.get("clientOrderId") for p in (trade.protection_orders or []) if p.get("clientOrderId")
                     ]
-                    missing_ids = [
-                        pid for pid in protection_ids if pid not in open_client_ids
-                    ]
+                    missing_ids = [pid for pid in protection_ids if pid not in open_client_ids]
 
                     if missing_ids:
-                        print(
-                            f"Detection: Protection order(s) {missing_ids} missing for {tid}. Checking fills..."
-                        )
-                        history = self.std_client.futures_account_trades(
-                            symbol=symbol, limit=20
-                        )
+                        print(f"Detection: Protection order(s) {missing_ids} missing for {tid}. Checking fills...")
+                        history = self.std_client.futures_account_trades(symbol=symbol, limit=20)
                         fill = next(
-                            (
-                                h
-                                for h in history
-                                if h.get("clientOrderId") in missing_ids
-                            ),
+                            (h for h in history if h.get("clientOrderId") in missing_ids),
                             None,
                         )
 
                         if fill:
-                            print(
-                                f"Trade {tid} closed via {fill['clientOrderId']} at {fill['price']}"
-                            )
+                            print(f"Trade {tid} closed via {fill['clientOrderId']} at {fill['price']}")
                             trade.status = "CLOSED"
                             trade.exit_price = float(fill["price"])
                             trade.exit_fees = float(fill.get("commission", 0))
                             trade.exit_fee_asset = fill.get("commissionAsset", "USDT")
                             trade.close_time = fill["time"] / 1000.0
-                            trade.close_reason = (
-                                "TAKE_PROFIT"
-                                if "TP" in fill.get("clientOrderId", "")
-                                else "STOP_LOSS"
-                            )
+                            trade.close_reason = "TAKE_PROFIT" if "TP" in fill.get("clientOrderId", "") else "STOP_LOSS"
                             db_session.commit()
-                            self.std_client.futures_cancel_all_open_orders(
-                                symbol=symbol
-                            )
+                            self.std_client.futures_cancel_all_open_orders(symbol=symbol)
                         else:
                             positions = self.get_active_positions(symbol)
-                            pos = next(
-                                (p for p in positions if p.symbol == symbol), None
-                            )
+                            pos = next((p for p in positions if p.symbol == symbol), None)
                             if not pos or float(pos.position_amt or 0) == 0:
-                                print(
-                                    f"Trade {tid} has no position and no orders. Closing in DB."
-                                )
+                                print(f"Trade {tid} has no position and no orders. Closing in DB.")
                                 trade.status = "CLOSED"
                                 trade.close_reason = "RECONCILED_EMPTY"
                                 db_session.commit()

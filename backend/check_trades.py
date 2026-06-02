@@ -1,5 +1,5 @@
-import sqlite3
 import json
+import sqlite3
 
 conn = sqlite3.connect("data/trading.db")
 cursor = conn.cursor()

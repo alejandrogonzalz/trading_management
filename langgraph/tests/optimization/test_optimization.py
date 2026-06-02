@@ -2,7 +2,6 @@
 
 import json
 import sys
-import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -11,22 +10,28 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from optimization.searchers.base import BaseSearcher
-from optimization.searchers.qlora_searcher import QLoRASearcher
 from optimization.io.results import load_all_results, save_result
 from optimization.pipeline import OptimizerPipeline
-
+from optimization.searchers.base import BaseSearcher
+from optimization.searchers.qlora_searcher import QLoRASearcher
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 def _make_sample(bias: str = "LONG", ts: int = 1000) -> dict:
     ind = {
         tf: {
-            "price": 50000.0, "rsi": 55.0, "macd_hist": 0.1, "adx": 20.0,
-            "volume_ratio": 1.0, "atr_ratio": 0.01, "bb_pos": 0.5,
-            "heatmap": "BULLISH", "structure": "BULLISH",
+            "price": 50000.0,
+            "rsi": 55.0,
+            "macd_hist": 0.1,
+            "adx": 20.0,
+            "volume_ratio": 1.0,
+            "atr_ratio": 0.01,
+            "bb_pos": 0.5,
+            "heatmap": "BULLISH",
+            "structure": "BULLISH",
         }
         for tf in ["1h", "4h", "1d"]
     }
@@ -110,6 +115,7 @@ def qlora_cfg() -> dict:
 # BaseSearcher
 # ---------------------------------------------------------------------------
 
+
 class TestBaseSearcher:
     def test_cannot_instantiate_abstract(self):
         with pytest.raises(TypeError):
@@ -134,6 +140,7 @@ class TestBaseSearcher:
 # ---------------------------------------------------------------------------
 # QLoRASearcher
 # ---------------------------------------------------------------------------
+
 
 class TestQLoRASearcher:
     def test_search_returns_standard_format(self, qlora_cfg, capsys):
@@ -171,9 +178,11 @@ class TestQLoRASearcher:
 # SklearnSearcher
 # ---------------------------------------------------------------------------
 
+
 class TestSklearnSearcher:
     def test_xgboost_search_returns_standard_format(self, tiny_dataset, xgboost_cfg):
         from optimization.searchers.sklearn_searcher import SklearnSearcher
+
         searcher = SklearnSearcher("xgboost")
         result = searcher.search(xgboost_cfg, tiny_dataset)
 
@@ -187,6 +196,7 @@ class TestSklearnSearcher:
 
     def test_random_forest_search_returns_standard_format(self, tiny_dataset, rf_cfg):
         from optimization.searchers.sklearn_searcher import SklearnSearcher
+
         searcher = SklearnSearcher("random_forest")
         result = searcher.search(rf_cfg, tiny_dataset)
 
@@ -196,11 +206,13 @@ class TestSklearnSearcher:
 
     def test_invalid_model_raises(self):
         from optimization.searchers.sklearn_searcher import SklearnSearcher
+
         with pytest.raises(ValueError, match="Unknown sklearn model"):
             SklearnSearcher("lstm")
 
     def test_max_depth_minus_one_converted_to_none(self, tiny_dataset):
         from optimization.searchers.sklearn_searcher import SklearnSearcher
+
         cfg = {
             "search_method": "random",
             "cv_splits": 2,
@@ -215,6 +227,7 @@ class TestSklearnSearcher:
 
     def test_all_results_sorted_by_rank(self, tiny_dataset, xgboost_cfg):
         from optimization.searchers.sklearn_searcher import SklearnSearcher
+
         result = SklearnSearcher("xgboost").search(xgboost_cfg, tiny_dataset)
         ranks = [r["rank"] for r in result["all_results"]]
         assert ranks == sorted(ranks)
@@ -224,10 +237,12 @@ class TestSklearnSearcher:
 # LSTMSearcher
 # ---------------------------------------------------------------------------
 
+
 class TestLSTMSearcher:
     def test_search_returns_standard_format(self, tiny_dataset, lstm_cfg):
         pytest.importorskip("torch")
         from optimization.searchers.lstm_searcher import LSTMSearcher
+
         result = LSTMSearcher().search(lstm_cfg, tiny_dataset)
 
         assert result["model"] == "lstm"
@@ -260,6 +275,7 @@ class TestLSTMSearcher:
 # ---------------------------------------------------------------------------
 # io.results
 # ---------------------------------------------------------------------------
+
 
 class TestIoResults:
     def _make_result(self, model: str = "xgboost") -> dict:
@@ -320,27 +336,28 @@ class TestIoResults:
 # io.plots
 # ---------------------------------------------------------------------------
 
+
 class TestIoPlots:
     def _make_result(self, model: str = "xgboost") -> dict:
         return {
             "model": model,
             "best_score": 0.76,
-            "all_results": [
-                {"params": {"n_estimators": 100 + i}, "mean_score": 0.75 + i * 0.001}
-                for i in range(5)
-            ],
+            "all_results": [{"params": {"n_estimators": 100 + i}, "mean_score": 0.75 + i * 0.001} for i in range(5)],
         }
 
     def test_save_optimization_plot_creates_file(self, tmp_path):
         from optimization.io.plots import save_optimization_plot
+
         result = self._make_result()
         out = tmp_path / "xgboost_optimization.png"
         save_optimization_plot(result, out)
         assert out.exists()
 
     def test_save_optimization_plot_skips_when_no_results(self, tmp_path, caplog):
-        from optimization.io.plots import save_optimization_plot
         import logging
+
+        from optimization.io.plots import save_optimization_plot
+
         result = {"model": "xgboost", "best_score": None, "all_results": []}
         out = tmp_path / "empty.png"
         with caplog.at_level(logging.INFO):
@@ -349,6 +366,7 @@ class TestIoPlots:
 
     def test_save_comparison_plot_creates_file(self, tmp_path):
         from optimization.io.plots import save_comparison_plot
+
         data = {
             "xgboost": self._make_result("xgboost"),
             "random_forest": self._make_result("random_forest"),
@@ -358,8 +376,10 @@ class TestIoPlots:
         assert out.exists()
 
     def test_save_comparison_plot_skips_when_no_scores(self, tmp_path, caplog):
-        from optimization.io.plots import save_comparison_plot
         import logging
+
+        from optimization.io.plots import save_comparison_plot
+
         data = {"qlora": {"model": "qlora", "best_score": None, "all_results": []}}
         out = tmp_path / "comparison.png"
         with caplog.at_level(logging.WARNING):
@@ -371,6 +391,7 @@ class TestIoPlots:
 # OptimizerPipeline
 # ---------------------------------------------------------------------------
 
+
 class TestOptimizerPipeline:
     def _make_yaml_cfg(self, tmp_path: Path) -> str:
         cfg = {
@@ -381,28 +402,33 @@ class TestOptimizerPipeline:
             "fixed_params": {"eval_metric": "logloss", "random_state": 42},
         }
         import yaml
+
         p = tmp_path / "cfg.yaml"
         p.write_text(yaml.dump(cfg))
         return str(p)
 
     def test_get_searcher_xgboost(self, tmp_path):
         from optimization.searchers.sklearn_searcher import SklearnSearcher
+
         p = OptimizerPipeline("xgboost", self._make_yaml_cfg(tmp_path))
         assert isinstance(p._get_searcher(), SklearnSearcher)
 
     def test_get_searcher_random_forest(self, tmp_path):
         from optimization.searchers.sklearn_searcher import SklearnSearcher
+
         p = OptimizerPipeline("random_forest", self._make_yaml_cfg(tmp_path))
         assert isinstance(p._get_searcher(), SklearnSearcher)
 
     def test_get_searcher_lstm(self, tmp_path):
         pytest.importorskip("torch")
         from optimization.searchers.lstm_searcher import LSTMSearcher
+
         p = OptimizerPipeline("lstm", self._make_yaml_cfg(tmp_path))
         assert isinstance(p._get_searcher(), LSTMSearcher)
 
     def test_get_searcher_qlora(self, tmp_path):
         from optimization.searchers.qlora_searcher import QLoRASearcher
+
         p = OptimizerPipeline("qlora", self._make_yaml_cfg(tmp_path))
         assert isinstance(p._get_searcher(), QLoRASearcher)
 

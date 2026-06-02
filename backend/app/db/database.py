@@ -1,15 +1,16 @@
 import os
+
 from sqlalchemy import create_engine, event, text
-from sqlalchemy.orm import sessionmaker, scoped_session
+from sqlalchemy.orm import scoped_session, sessionmaker
+
 from app.db.models import Base
 
 # Use DATABASE_URL from environment or default to local file
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:////app/data/trading.db")
 
 # connect_args={"check_same_thread": False} is required for SQLite and FastAPI
-engine = create_engine(
-    DATABASE_URL, connect_args={"check_same_thread": False}
-)
+engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+
 
 # Enable WAL mode for better concurrency in SQLite
 @event.listens_for(engine, "connect")
@@ -19,8 +20,10 @@ def set_sqlite_pragma(dbapi_connection, connection_record):
     cursor.execute("PRAGMA synchronous=NORMAL")
     cursor.close()
 
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 db_session = scoped_session(SessionLocal)
+
 
 def init_db():
     """Initializes the database by creating all tables."""
@@ -32,6 +35,7 @@ def init_db():
         print(f"❌ SQLite Database Initialization Failed: {e}")
         return False
 
+
 def get_db():
     """FastAPI dependency to get a database session."""
     db = SessionLocal()
@@ -39,6 +43,7 @@ def get_db():
         yield db
     finally:
         db.close()
+
 
 def ping_db():
     try:

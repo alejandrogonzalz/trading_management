@@ -1,9 +1,11 @@
-import uvicorn
 import uuid
+from typing import Any, Literal
+
+import uvicorn
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
+
 from agent.graph import graph
-from typing import Dict, Any, Literal
 
 app = FastAPI(title="Trading LangGraph Agent")
 
@@ -11,7 +13,7 @@ app = FastAPI(title="Trading LangGraph Agent")
 class AnalysisRequest(BaseModel):
     symbol: str
     mode: Literal["SPOT", "FUTURES"] = Field(default="SPOT")
-    indicators: Dict[str, Any]
+    indicators: dict[str, Any]
 
 
 @app.get("/health")

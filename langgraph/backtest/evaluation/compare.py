@@ -2,15 +2,15 @@
 
 import json
 from pathlib import Path
-from typing import Dict, Any
+from typing import Any
 
 
-def load_results(path: str) -> Dict[str, Any]:
+def load_results(path: str) -> dict[str, Any]:
     with open(path) as f:
         return json.load(f)
 
 
-def compare(baseline_path: str, candidate_path: str) -> Dict[str, Any]:
+def compare(baseline_path: str, candidate_path: str) -> dict[str, Any]:
     """Compare two backtest result files and return a comparison dict."""
     baseline = load_results(baseline_path)
     candidate = load_results(candidate_path)
@@ -47,13 +47,15 @@ def compare(baseline_path: str, candidate_path: str) -> Dict[str, Any]:
         for sub in ("precision", "recall", "f1"):
             bv = bclass.get(sub, 0)
             cv = cclass.get(sub, 0)
-            rows.append({
-                "metric": f"{cls.upper()} {sub.capitalize()}",
-                "baseline": bv,
-                "candidate": cv,
-                "delta": _delta(bv, cv),
-                "improved": (_delta(bv, cv) or 0) > 0,
-            })
+            rows.append(
+                {
+                    "metric": f"{cls.upper()} {sub.capitalize()}",
+                    "baseline": bv,
+                    "candidate": cv,
+                    "delta": _delta(bv, cv),
+                    "improved": (_delta(bv, cv) or 0) > 0,
+                }
+            )
 
     comparison = {
         "baseline_tag": baseline.get("tag", "baseline"),

@@ -1,7 +1,9 @@
 import json
 import time
-from typing import TypedDict, List, Dict, Any, Literal, Optional
-from langgraph.graph import StateGraph, END
+from typing import Any, Literal, TypedDict
+
+from langgraph.graph import END, StateGraph
+
 from agent.llm_factory import get_llm_provider
 from agent.prompts import build_system_prompt, build_user_prompt
 
@@ -11,13 +13,13 @@ class TradeState(TypedDict):
     run_id: str
     symbol: str
     mode: Literal["SPOT", "FUTURES"]
-    indicators: Dict[str, Any]  # Multi-timeframe: {"1h": {...}, "1d": {...}}
-    original: Optional[Dict[str, Any]]
-    evaluation: Optional[Dict[str, Any]]
-    optimized: Optional[Dict[str, Any]]
-    issues: List[str]
+    indicators: dict[str, Any]  # Multi-timeframe: {"1h": {...}, "1d": {...}}
+    original: dict[str, Any] | None
+    evaluation: dict[str, Any] | None
+    optimized: dict[str, Any] | None
+    issues: list[str]
     needs_optimization: bool
-    audit_trail: List[Dict[str, Any]]
+    audit_trail: list[dict[str, Any]]
 
 
 # --- Utilities ---
@@ -48,7 +50,7 @@ def clean_json(text: str) -> str:
     return text.strip()
 
 
-async def safe_json_parse(response_text: str, max_attempts: int = 2) -> Dict[str, Any]:
+async def safe_json_parse(response_text: str, max_attempts: int = 2) -> dict[str, Any]:
     """Safely parse JSON from LLM response with retry and validation."""
     import json
     from json import JSONDecodeError
@@ -109,7 +111,7 @@ async def safe_json_parse(response_text: str, max_attempts: int = 2) -> Dict[str
 # --- Nodes ---
 
 
-async def generator_node(state: TradeState) -> Dict[str, Any]:
+async def generator_node(state: TradeState) -> dict[str, Any]:
     """Initial LLM analysis and setup generation."""
     start_time = time.time()
 
@@ -149,7 +151,7 @@ async def generator_node(state: TradeState) -> Dict[str, Any]:
     return {"original": original, "issues": issues, "audit_trail": audit_trail}
 
 
-def evaluator_node(state: TradeState) -> Dict[str, Any]:
+def evaluator_node(state: TradeState) -> dict[str, Any]:
     """Quant validation and risk check (No LLM)."""
     start_time = time.time()
     setup = state["original"]
@@ -187,7 +189,7 @@ def evaluator_node(state: TradeState) -> Dict[str, Any]:
 
     # 2. Extract Key Data
     rsi = ind.get("rsi", 50)
-    adx = ind.get("adx", 20)
+    _adx = ind.get("adx", 20)
     atr_ratio = ind.get("atr_ratio", 1.0)
     bias = setup.get("bias")
     entry = setup.get("entry", 0)
@@ -214,10 +216,10 @@ def evaluator_node(state: TradeState) -> Dict[str, Any]:
 
     # Trend Confluence across all timeframes
     trend_points = 0
-    total_tfs = len(ind_multi) if isinstance(ind_multi, dict) else 1
+    _total_tfs = len(ind_multi) if isinstance(ind_multi, dict) else 1
 
     if isinstance(ind_multi, dict):
-        for tf, tf_ind in ind_multi.items():
+        for _tf, tf_ind in ind_multi.items():
             heatmap = tf_ind.get("heatmap", "NEUTRAL")
             if bias == "LONG":
                 if heatmap == "STRONG_BULLISH":
@@ -308,7 +310,7 @@ def evaluator_node(state: TradeState) -> Dict[str, Any]:
     }
 
 
-async def optimizer_node(state: TradeState) -> Dict[str, Any]:
+async def optimizer_node(state: TradeState) -> dict[str, Any]:
     """LLM-based refinement if issues were found."""
     start_time = time.time()
     issues = state.get("issues", [])
@@ -323,10 +325,10 @@ async def optimizer_node(state: TradeState) -> Dict[str, Any]:
     llm = get_llm_provider()
 
     system_prompt = """You are a Risk Manager. Fix the provided trade setup based on identified technical issues.
-    
+
     CRITICAL: You MUST return valid JSON only. Do not include any explanatory text before or after the JSON.
     The JSON must contain exactly the fields: bias, entry, tp, sl, leverage, reasoning, changes.
-    
+
     If you cannot optimize the setup, return a valid JSON with error field explaining why."""
     user_prompt = f"""
     Symbol: {state["symbol"]}
@@ -334,11 +336,11 @@ async def optimizer_node(state: TradeState) -> Dict[str, Any]:
     Original Setup: {json.dumps(state["original"])}
     Issues Found: {json.dumps(state["issues"])}
     Indicators: {json.dumps(state["indicators"])}
-    
-    Provide an OPTIMIZED setup that resolves the issues. 
+
+    Provide an OPTIMIZED setup that resolves the issues.
     - If mode is SPOT and bias was SHORT, flip it to LONG and find a bullish entry.
     - If liquidation risk is high, reduce leverage or tighten SL.
-    
+
     Return valid JSON with these exact fields:
     {{
         "bias": "LONG" or "SHORT",
@@ -349,7 +351,7 @@ async def optimizer_node(state: TradeState) -> Dict[str, Any]:
         "reasoning": "Brief explanation of optimization",
         "changes": ["list", "of", "changes", "made"]
     }}
-    
+
     Example JSON response:
     {{
         "bias": "LONG",

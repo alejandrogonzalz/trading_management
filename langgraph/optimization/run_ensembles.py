@@ -33,11 +33,11 @@ log = logging.getLogger(__name__)
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from optimization.searchers.ensemble_searcher import (
-    BaggingLSTMSearcher,
     AdaBoostSearcher,
-    VotingSearcher,
-    StackingSearcher,
+    BaggingLSTMSearcher,
     BlendingSearcher,
+    StackingSearcher,
+    VotingSearcher,
 )
 
 DATASET = str(Path(__file__).resolve().parent.parent / "backtest" / "data" / "labeled" / "dataset.jsonl")
@@ -48,9 +48,14 @@ ENSEMBLE_CONFIG = {
     "random_state": 42,
     "lstm_params": {"hidden_size": 32, "num_layers": 3, "sequence_length": 5},
     "xgb_params": {
-        "n_estimators": 200, "max_depth": 5, "learning_rate": 0.01,
-        "subsample": 0.8, "colsample_bytree": 0.7,
-        "reg_alpha": 0.1, "reg_lambda": 2.0, "min_child_weight": 3,
+        "n_estimators": 200,
+        "max_depth": 5,
+        "learning_rate": 0.01,
+        "subsample": 0.8,
+        "colsample_bytree": 0.7,
+        "reg_alpha": 0.1,
+        "reg_lambda": 2.0,
+        "min_child_weight": 3,
     },
     "n_bags": 5,
     "cv_splits": 5,

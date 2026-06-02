@@ -9,6 +9,7 @@ log = logging.getLogger(__name__)
 def save_optimization_plot(result: dict, output_path: Path):
     """Horizontal bar chart of top-30 configurations for a single model."""
     import matplotlib
+
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
@@ -40,6 +41,7 @@ def save_optimization_plot(result: dict, output_path: Path):
 def save_comparison_plot(data: dict, output: Path):
     """Bar chart comparing best scores across all models, plus heatmaps for 2D grids."""
     import matplotlib
+
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
@@ -68,7 +70,10 @@ def save_comparison_plot(data: dict, output: Path):
             bar.get_x() + bar.get_width() / 2,
             bar.get_height() + 0.005,
             f"{score:.4f}",
-            ha="center", va="bottom", fontsize=10, fontweight="bold",
+            ha="center",
+            va="bottom",
+            fontsize=10,
+            fontweight="bold",
         )
 
     ax_idx = 1

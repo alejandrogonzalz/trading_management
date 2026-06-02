@@ -1,14 +1,15 @@
-import requests
 import json
 import os
 import time
+
+import requests
 
 
 def run_test(run_num):
     url = "http://localhost:2024/analyze"
     scenario_path = os.path.join("langgraph", "tests", "scenarios", "strong_bullish.json")
 
-    with open(scenario_path, "r") as f:
+    with open(scenario_path) as f:
         payload = json.load(f)
 
     print(f"\n--- RUN #{run_num}: STRONG_BULLISH ---")

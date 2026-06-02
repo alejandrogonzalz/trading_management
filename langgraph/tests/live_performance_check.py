@@ -1,14 +1,15 @@
-import requests
 import json
 import os
 import time
+
+import requests
 
 
 def run_scenario(name):
     url = "http://localhost:2024/analyze"
     scenario_path = os.path.join("langgraph", "tests", "scenarios", f"{name}.json")
 
-    with open(scenario_path, "r") as f:
+    with open(scenario_path) as f:
         payload = json.load(f)
 
     print(f"\n--- SCENARIO: {name.upper()} ({payload['mode']}) ---")

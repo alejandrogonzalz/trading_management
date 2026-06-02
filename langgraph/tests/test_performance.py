@@ -1,7 +1,7 @@
+import asyncio
 import json
 import os
 import sys
-import asyncio
 import time
 
 # Ensure agent can be imported
@@ -13,7 +13,7 @@ from agent.graph import graph
 
 def load_scenario(name):
     path = os.path.join(os.path.dirname(__file__), "scenarios", f"{name}.json")
-    with open(path, "r") as f:
+    with open(path) as f:
         return json.load(f)
 
 

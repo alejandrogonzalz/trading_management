@@ -1,6 +1,7 @@
-from typing import Dict, Any
+from typing import Any
 
-def calculate_score(indicators: Dict[str, Any]) -> Dict[str, Any]:
+
+def calculate_score(indicators: dict[str, Any]) -> dict[str, Any]:
     """
     Weighted confluence scoring strictly following table_definitions.txt
     """
@@ -8,7 +9,7 @@ def calculate_score(indicators: Dict[str, Any]) -> Dict[str, Any]:
         return {"score": 0, "reason": indicators.get("error", "No data")}
 
     points = 0
-    
+
     # 1. Bullish EMA alignment (+2)
     if indicators.get("heatmap") == "BULLISH":
         points += 2
@@ -53,7 +54,4 @@ def calculate_score(indicators: Dict[str, Any]) -> Dict[str, Any]:
     normalized = ((points + 7) / 16) * 10
     final_score = max(0, min(10, normalized))
 
-    return {
-        "score": round(final_score, 2),
-        "raw_points": points
-    }
+    return {"score": round(final_score, 2), "raw_points": points}

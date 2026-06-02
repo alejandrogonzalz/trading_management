@@ -1,7 +1,7 @@
 """Batch indicator calculation over historical candles using TA-Lib."""
 
 import math
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import pandas as pd
 import talib
@@ -12,7 +12,7 @@ def _safe_float(v: float, default: float = 0.0) -> float:
     return default if (math.isnan(f) or math.isinf(f)) else f
 
 
-def calculate_indicators_batch(candles: List[Dict[str, Any]], lookback: int = 200) -> List[Dict[str, Any]]:
+def calculate_indicators_batch(candles: list[dict[str, Any]], lookback: int = 200) -> list[dict[str, Any]]:
     """Calculate indicators for each candle where enough history exists.
 
     For each candle at index i (where i >= lookback), computes indicators
@@ -57,7 +57,7 @@ def calculate_indicators_batch(candles: List[Dict[str, Any]], lookback: int = 20
         if len(prev_highs) > 0 and price > prev_highs.max():
             structure = "BREAKOUT"
         else:
-            last5 = close[max(0, i - 4): i + 1]
+            last5 = close[max(0, i - 4) : i + 1]
             if len(last5) >= 3 and last5[-1] > last5[-3]:
                 structure = "BULLISH"
             elif len(last5) >= 3 and last5[-1] < last5[-3]:
@@ -70,30 +70,32 @@ def calculate_indicators_batch(candles: List[Dict[str, Any]], lookback: int = 20
         u, bl = bb_upper[i], bb_lower[i]
         bb_pos = (price - bl) / (u - bl) if (u - bl) != 0 else 0.5
 
-        results.append({
-            "timestamp": int(df.iloc[i]["timestamp"]),
-            "indicators": {
-                "price": float(price),
-                "heatmap": heatmap,
-                "structure": structure,
-                "rsi": _safe_float(rsi_arr[i], 50),
-                "macd_hist": _safe_float(macd_hist_[i]),
-                "adx": _safe_float(adx_arr[i], 20),
-                "volume_ratio": _safe_float(vol_ratio, 1.0),
-                "atr_ratio": _safe_float(atr_ratio, 1.0),
-                "bb_pos": _safe_float(bb_pos, 0.5),
-            },
-            "atr_raw": _safe_float(atr_arr[i]),
-        })
+        results.append(
+            {
+                "timestamp": int(df.iloc[i]["timestamp"]),
+                "indicators": {
+                    "price": float(price),
+                    "heatmap": heatmap,
+                    "structure": structure,
+                    "rsi": _safe_float(rsi_arr[i], 50),
+                    "macd_hist": _safe_float(macd_hist_[i]),
+                    "adx": _safe_float(adx_arr[i], 20),
+                    "volume_ratio": _safe_float(vol_ratio, 1.0),
+                    "atr_ratio": _safe_float(atr_ratio, 1.0),
+                    "bb_pos": _safe_float(bb_pos, 0.5),
+                },
+                "atr_raw": _safe_float(atr_arr[i]),
+            }
+        )
 
     return results
 
 
 def calculate_multi_tf_indicators(
-    candles_by_tf: Dict[str, List[Dict[str, Any]]],
+    candles_by_tf: dict[str, list[dict[str, Any]]],
     base_tf: str = "1h",
     lookback: int = 200,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Calculate indicators for all timeframes, aligned to base_tf timestamps.
 
     For each base_tf candle, finds the most recent candle at or before that
@@ -103,11 +105,16 @@ def calculate_multi_tf_indicators(
     if base_tf not in candles_by_tf:
         raise ValueError(f"Base timeframe '{base_tf}' not in candles_by_tf")
 
-    _TF_LOOKBACK: Dict[str, int] = {
-        "5m": 40, "15m": 40, "30m": 40, "4h": 40, "1d": 40, "1w": 30,
+    _TF_LOOKBACK: dict[str, int] = {
+        "5m": 40,
+        "15m": 40,
+        "30m": 40,
+        "4h": 40,
+        "1d": 40,
+        "1w": 30,
     }
 
-    ind_by_tf: Dict[str, List[Dict[str, Any]]] = {}
+    ind_by_tf: dict[str, list[dict[str, Any]]] = {}
     for tf, candles in candles_by_tf.items():
         n = len(candles)
         tf_lookback = lookback if tf == base_tf else min(_TF_LOOKBACK.get(tf, 40), n - 1)
@@ -123,12 +130,11 @@ def calculate_multi_tf_indicators(
     if base_tf not in ind_by_tf:
         raise ValueError(f"Not enough candles for base timeframe '{base_tf}'")
 
-    htf_sorted: Dict[str, List[Dict[str, Any]]] = {
-        tf: sorted(pts, key=lambda p: p["timestamp"])
-        for tf, pts in ind_by_tf.items() if tf != base_tf
+    htf_sorted: dict[str, list[dict[str, Any]]] = {
+        tf: sorted(pts, key=lambda p: p["timestamp"]) for tf, pts in ind_by_tf.items() if tf != base_tf
     }
 
-    def _find_latest_at_or_before(sorted_points: List[Dict], ts: int) -> Optional[Dict]:
+    def _find_latest_at_or_before(sorted_points: list[dict], ts: int) -> dict | None:
         lo, hi, best = 0, len(sorted_points) - 1, None
         while lo <= hi:
             mid = (lo + hi) // 2
@@ -141,15 +147,17 @@ def calculate_multi_tf_indicators(
 
     results = []
     for point in ind_by_tf[base_tf]:
-        multi_ind: Dict[str, Any] = {base_tf: point["indicators"]}
+        multi_ind: dict[str, Any] = {base_tf: point["indicators"]}
         for tf, sorted_pts in htf_sorted.items():
             match = _find_latest_at_or_before(sorted_pts, point["timestamp"])
             if match:
                 multi_ind[tf] = match["indicators"]
-        results.append({
-            "timestamp": point["timestamp"],
-            "indicators": multi_ind,
-            "atr_raw": point["atr_raw"],
-        })
+        results.append(
+            {
+                "timestamp": point["timestamp"],
+                "indicators": multi_ind,
+                "atr_raw": point["atr_raw"],
+            }
+        )
 
     return results

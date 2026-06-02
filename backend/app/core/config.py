@@ -1,18 +1,24 @@
 import os
-from pydantic_settings import BaseSettings
+
 from dotenv import load_dotenv
+from pydantic_settings import BaseSettings
 
 load_dotenv()
+
 
 class Settings(BaseSettings):
     # Spot Credentials
     BINANCE_API_KEY: str = os.getenv("BINANCE_API_KEY", "").strip().strip("'").strip('"')
     BINANCE_API_SECRET: str = os.getenv("BINANCE_API_SECRET", "").strip().strip("'").strip('"')
-    
+
     # Lead Trading / Futures Credentials
-    LEAD_API_KEY: str = (os.getenv("LEAD_API_KEY") or os.getenv("BINANCE_COPY_TRADING_KEY") or "").strip().strip("'").strip('"')
-    LEAD_API_SECRET: str = (os.getenv("LEAD_API_SECRET") or os.getenv("BINANCE_COPY_TRADING_SECRET") or "").strip().strip("'").strip('"')
-    
+    LEAD_API_KEY: str = (
+        (os.getenv("LEAD_API_KEY") or os.getenv("BINANCE_COPY_TRADING_KEY") or "").strip().strip("'").strip('"')
+    )
+    LEAD_API_SECRET: str = (
+        (os.getenv("LEAD_API_SECRET") or os.getenv("BINANCE_COPY_TRADING_SECRET") or "").strip().strip("'").strip('"')
+    )
+
     OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
     LANGGRAPH_URL: str = os.getenv("LANGGRAPH_URL", "http://localhost:2024")
     LLM_MODEL: str = os.getenv("LLM_MODEL", "qwen2.5:14b")
@@ -21,6 +27,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         extra = "ignore"
+
 
 settings = Settings()
 

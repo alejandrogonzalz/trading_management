@@ -1,8 +1,6 @@
 """Feature extraction and dataset utilities shared by all ML models."""
 
 import json
-from pathlib import Path
-from typing import Tuple
 
 import numpy as np
 
@@ -11,9 +9,19 @@ _STRUCTURE_MAP = {"BEARISH": 0, "RANGE": 1, "BULLISH": 2, "BREAKOUT": 3}
 _NUMERIC_KEYS = ["price", "rsi", "macd_hist", "adx", "volume_ratio", "atr_ratio", "bb_pos"]
 
 _TF_MINUTES = {
-    "1m": 1, "3m": 3, "5m": 5, "15m": 15, "30m": 30,
-    "1h": 60, "2h": 120, "4h": 240, "8h": 480,
-    "1d": 1440, "3d": 4320, "1w": 10080, "1M": 43200,
+    "1m": 1,
+    "3m": 3,
+    "5m": 5,
+    "15m": 15,
+    "30m": 30,
+    "1h": 60,
+    "2h": 120,
+    "4h": 240,
+    "8h": 480,
+    "1d": 1440,
+    "3d": 4320,
+    "1w": 10080,
+    "1M": 43200,
 }
 
 
@@ -84,14 +92,14 @@ def _load_dataset(path: str) -> list[dict]:
 
 def _temporal_split(
     samples: list[dict], train_frac: float = 0.70, val_frac: float = 0.15
-) -> Tuple[list[dict], list[dict], list[dict]]:
+) -> tuple[list[dict], list[dict], list[dict]]:
     n = len(samples)
     train_end = int(n * train_frac)
     val_end = int(n * (train_frac + val_frac))
     return samples[:train_end], samples[train_end:val_end], samples[val_end:]
 
 
-def _samples_to_xy(samples: list[dict], timeframes: list[str] | None = None) -> Tuple[np.ndarray, np.ndarray]:
+def _samples_to_xy(samples: list[dict], timeframes: list[str] | None = None) -> tuple[np.ndarray, np.ndarray]:
     # Infer once so every sample is encoded with the same TF order and vector length.
     if timeframes is None:
         timeframes = _infer_timeframes(samples)

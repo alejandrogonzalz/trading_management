@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [dev, main]
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   lint:
     name: Lint (ruff)
@@ -16,8 +19,8 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install ruff
-      - run: ruff check langgraph/ backend/
-      - run: ruff format --check langgraph/ backend/
+      - run: ruff check langgraph/ backend/ --exclude="*.ipynb"
+      - run: ruff format --check langgraph/ backend/ --exclude="*.ipynb"
 
   test-langgraph:
     name: Tests — LangGraph
@@ -34,7 +37,7 @@ jobs:
           wget -q http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz
           tar -xzf ta-lib-0.4.0-src.tar.gz
           cd ta-lib && sudo ./configure --prefix=/usr && sudo make && sudo make install
-          cd .. && rm -rf ta-lib ta-lib-0.4.0-src.tar.gz
+          cd .. && sudo rm -rf ta-lib ta-lib-0.4.0-src.tar.gz
 
       - name: Install Python deps
         run: |
@@ -61,7 +64,7 @@ jobs:
           wget -q http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz
           tar -xzf ta-lib-0.4.0-src.tar.gz
           cd ta-lib && sudo ./configure --prefix=/usr && sudo make && sudo make install
-          cd .. && rm -rf ta-lib ta-lib-0.4.0-src.tar.gz
+          cd .. && sudo rm -rf ta-lib ta-lib-0.4.0-src.tar.gz
 
       - name: Install Python deps
         run: pip install -r backend/requirements.txt

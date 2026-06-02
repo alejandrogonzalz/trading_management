@@ -1,9 +1,9 @@
 import time
-import os
-import json
-from typing import Dict, Any, Optional, List
+from typing import Any
+
 from app.db.database import db_session
 from app.db.models import SpotTrade
+
 
 def save_trade_metadata(client_order_id: str, symbol: str, tp_price: float, sl_price: float, side: str):
     """Saves or updates trade metadata in SQLite."""
@@ -18,7 +18,7 @@ def save_trade_metadata(client_order_id: str, symbol: str, tp_price: float, sl_p
                 side=side,
                 timestamp=time.time(),
                 status="ACTIVE",
-                orders=[]
+                orders=[],
             )
             db_session.add(trade)
         else:
@@ -27,13 +27,14 @@ def save_trade_metadata(client_order_id: str, symbol: str, tp_price: float, sl_p
             trade.sl = sl_price
             trade.side = side
             trade.status = "ACTIVE"
-        
+
         db_session.commit()
     except Exception as e:
         db_session.rollback()
         print(f"Error saving trade metadata: {e}")
     finally:
         db_session.remove()
+
 
 def add_order_to_trade(client_order_id: str, order_id: int, order_type: str, role: str):
     """Adds a specific Binance order ID to the trade's tracking list."""
@@ -43,12 +44,14 @@ def add_order_to_trade(client_order_id: str, order_id: int, order_type: str, rol
             # SQLAlchemy mutable JSON doesn't always detect changes in list.append
             # We re-assign to ensure it detects the change.
             new_orders = list(trade.orders) if trade.orders else []
-            new_orders.append({
-                "id": order_id,
-                "type": order_type,
-                "role": role, # 'TP', 'SL', or 'ENTRY'
-                "status": "NEW"
-            })
+            new_orders.append(
+                {
+                    "id": order_id,
+                    "type": order_type,
+                    "role": role,  # 'TP', 'SL', or 'ENTRY'
+                    "status": "NEW",
+                }
+            )
             trade.orders = new_orders
             db_session.commit()
     except Exception as e:
@@ -57,7 +60,8 @@ def add_order_to_trade(client_order_id: str, order_id: int, order_type: str, rol
     finally:
         db_session.remove()
 
-def get_trade_metadata(client_order_id: str) -> Optional[Dict[str, Any]]:
+
+def get_trade_metadata(client_order_id: str) -> dict[str, Any] | None:
     """Retrieves trade metadata from SQLite."""
     try:
         trade = db_session.query(SpotTrade).filter(SpotTrade.id == client_order_id).first()
@@ -68,9 +72,9 @@ def get_trade_metadata(client_order_id: str) -> Optional[Dict[str, Any]]:
             trade = db_session.query(SpotTrade).filter(SpotTrade.orders.contains([{"id": client_order_id}])).first()
             if not trade:
                 # Manual fallback if .contains doesn't work as expected with this specific JSON structure
-                all_active = db_session.query(SpotTrade).filter(SpotTrade.status != 'CLOSED').all()
+                all_active = db_session.query(SpotTrade).filter(SpotTrade.status != "CLOSED").all()
                 for t in all_active:
-                    if any(str(o.get('id')) == str(client_order_id) for o in t.orders):
+                    if any(str(o.get("id")) == str(client_order_id) for o in t.orders):
                         trade = t
                         break
 
@@ -80,7 +84,8 @@ def get_trade_metadata(client_order_id: str) -> Optional[Dict[str, Any]]:
     finally:
         db_session.remove()
 
-def _model_to_dict(trade: SpotTrade) -> Dict[str, Any]:
+
+def _model_to_dict(trade: SpotTrade) -> dict[str, Any]:
     return {
         "id": trade.id,
         "symbol": trade.symbol,
@@ -99,17 +104,19 @@ def _model_to_dict(trade: SpotTrade) -> Dict[str, Any]:
         "exit_fee_asset": trade.exit_fee_asset,
         "close_time": trade.close_time,
         "timestamp": trade.timestamp,
-        "error_msg": trade.error_msg
+        "error_msg": trade.error_msg,
     }
 
-def _load_trades() -> Dict[str, Any]:
+
+def _load_trades() -> dict[str, Any]:
     try:
         trades = db_session.query(SpotTrade).all()
         return {t.id: _model_to_dict(t) for t in trades}
     finally:
         db_session.remove()
 
-def _save_trades(trades: Dict[str, Any]):
+
+def _save_trades(trades: dict[str, Any]):
     """Compatibility function to save bulk updates."""
     try:
         for tid, data in trades.items():
@@ -117,12 +124,12 @@ def _save_trades(trades: Dict[str, Any]):
             if not trade:
                 trade = SpotTrade(id=tid)
                 db_session.add(trade)
-            
+
             # Update fields from data
             for key, value in data.items():
-                if hasattr(trade, key) and key != 'id':
+                if hasattr(trade, key) and key != "id":
                     setattr(trade, key, value)
-        
+
         db_session.commit()
     except Exception as e:
         db_session.rollback()

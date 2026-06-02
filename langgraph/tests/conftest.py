@@ -1,4 +1,5 @@
 """Configure sys.path so all test subfolders can import langgraph packages."""
+
 import sys
 from pathlib import Path
 

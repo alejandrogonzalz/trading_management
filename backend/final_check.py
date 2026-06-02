@@ -1,6 +1,6 @@
-import requests
 import sqlite3
-import json
+
+import requests
 
 print("=== Final System Check ===")
 # 1. Open orders endpoint
@@ -11,9 +11,7 @@ if resp.status_code == 200:
     position_entries = [o for o in data if o.get("type") == "POSITION"]
     print(f"POSITION entries: {len(position_entries)}")
     for pos in position_entries:
-        print(
-            f"  {pos['symbol']}: origQty={pos.get('origQty')}, price={pos.get('price')}"
-        )
+        print(f"  {pos['symbol']}: origQty={pos.get('origQty')}, price={pos.get('price')}")
 else:
     print(f"Error fetching open orders: {resp.status_code}")
 
@@ -30,7 +28,7 @@ cursor.close()
 conn.close()
 
 # 3. Formatting test
-from app.services.binance_service import format_price, format_quantity
+from app.services.binance_service import format_price
 
 pepe_price = 0.00000358
 formatted = format_price("PEPEUSDT", pepe_price)

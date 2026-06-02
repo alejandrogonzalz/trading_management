@@ -7,9 +7,8 @@ Options:
 3. Close position via market sell
 """
 
-import sqlite3
-import sys
 import json
+import sqlite3
 from datetime import datetime
 
 
@@ -54,9 +53,7 @@ def list_corrupted_trades():
         print(f"   TP: ${tp:.8f}, SL: ${sl:.8f}")
         print(f"   Error: {error_msg}")
         print(f"   Orders: {len(orders)} (Roles: {[o.get('role') for o in orders]})")
-        print(
-            f"   Time: {datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')}"
-        )
+        print(f"   Time: {datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')}")
         trades.append(
             {
                 "id": id_val,
@@ -129,8 +126,9 @@ def add_missing_orders_to_trade(trade_id, tp_price, sl_price):
 
 def market_close_trade(trade_id):
     """Market close the position (call the existing API endpoint)."""
-    import requests
     import os
+
+    import requests
     from dotenv import load_dotenv
 
     load_dotenv()
@@ -198,9 +196,7 @@ def main():
 
                 if choice == "1":
                     update_trade_status(trade["id"], "MANUAL_CONTROL")
-                    print(
-                        "Trade set to MANUAL_CONTROL. You can now manage it manually in the UI."
-                    )
+                    print("Trade set to MANUAL_CONTROL. You can now manage it manually in the UI.")
 
                 elif choice == "2":
                     # Re-calculate TP/SL based on original values or current price
@@ -212,9 +208,7 @@ def main():
                         add_missing_orders_to_trade(trade["id"], tp, sl)
 
                 elif choice == "3":
-                    confirm = input(
-                        f"Market close {trade['quantity']} {trade['symbol']}? (yes/no): "
-                    )
+                    confirm = input(f"Market close {trade['quantity']} {trade['symbol']}? (yes/no): ")
                     if confirm.lower() == "yes":
                         market_close_trade(trade["id"])
                     else:

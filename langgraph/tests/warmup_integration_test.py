@@ -1,7 +1,8 @@
-import requests
 import json
 import os
 import time
+
+import requests
 
 API_BASE = "http://localhost:8001"
 LANGGRAPH_BASE = "http://localhost:2024"
@@ -25,7 +26,7 @@ def run_analysis(run_num):
     url = f"{LANGGRAPH_BASE}/analyze"
     scenario_path = os.path.join("langgraph", "tests", "scenarios", "strong_bullish.json")
 
-    with open(scenario_path, "r") as f:
+    with open(scenario_path) as f:
         payload = json.load(f)
 
     start = time.time()

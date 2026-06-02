@@ -1,20 +1,23 @@
-import time
 import json
-from typing import Any, Dict
+import time
+from typing import Any
+
+from pydantic import BaseModel
+
 from app.db.database import db_session
 from app.db.models import AuditLog
-from pydantic import BaseModel
+
 
 def log_api_call(method: str, endpoint: str, request_data: Any, response_data: Any, status_code: int = 200):
     """Logs an API interaction to SQLite audit collection."""
-    
+
     # Robust serialization for SDK/Pydantic objects
     def serialize(obj):
         if isinstance(obj, BaseModel):
             return obj.model_dump()
-        if hasattr(obj, 'to_dict'):
+        if hasattr(obj, "to_dict"):
             return obj.to_dict()
-        if hasattr(obj, '__dict__'):
+        if hasattr(obj, "__dict__"):
             try:
                 return json.loads(json.dumps(obj, default=lambda o: o.__dict__))
             except:
@@ -38,9 +41,9 @@ def log_api_call(method: str, endpoint: str, request_data: Any, response_data: A
             endpoint=endpoint,
             request=serializable_req,
             response=serializable_res,
-            status=status_code
+            status=status_code,
         )
-        
+
         db_session.add(entry)
         db_session.commit()
     except Exception as e:
@@ -49,6 +52,7 @@ def log_api_call(method: str, endpoint: str, request_data: Any, response_data: A
     finally:
         db_session.remove()
 
+
 def get_recent_logs(limit: int = 100):
     """Retrieves most recent logs from SQLite."""
     try:
@@ -56,16 +60,18 @@ def get_recent_logs(limit: int = 100):
         # Convert to dict for API compatibility
         result = []
         for log in logs:
-            result.append({
-                "id": log.id,
-                "timestamp_str": log.timestamp_str,
-                "timestamp": log.timestamp,
-                "method": log.method,
-                "endpoint": log.endpoint,
-                "request": log.request,
-                "response": log.response,
-                "status": log.status
-            })
+            result.append(
+                {
+                    "id": log.id,
+                    "timestamp_str": log.timestamp_str,
+                    "timestamp": log.timestamp,
+                    "method": log.method,
+                    "endpoint": log.endpoint,
+                    "request": log.request,
+                    "response": log.response,
+                    "status": log.status,
+                }
+            )
         return result
     finally:
         db_session.remove()

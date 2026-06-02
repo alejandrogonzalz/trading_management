@@ -1,13 +1,17 @@
 """Shared prompt builders — single source of truth for generator_node, backtest, and fine-tuning export."""
 
 import json
-from typing import Any, Dict, Literal
+from typing import Any, Literal
 
 
 def build_system_prompt(mode: Literal["SPOT", "FUTURES"] = "FUTURES") -> str:
     mode_context = "SPOT (Long Only, No Leverage)" if mode == "SPOT" else "FUTURES (Long/Short, Leverage 1-50x)"
     spot_rule = "- If SPOT: Bias MUST be LONG. Leverage MUST be null.\n" if mode == "SPOT" else ""
-    futures_rule = "- If FUTURES: Bias can be LONG or SHORT. Recommend leverage (1-50) based on volatility.\n" if mode == "FUTURES" else ""
+    futures_rule = (
+        "- If FUTURES: Bias can be LONG or SHORT. Recommend leverage (1-50) based on volatility.\n"
+        if mode == "FUTURES"
+        else ""
+    )
     return (
         f"You are a Senior Technical Analyst for a {mode_context} trading system.\n"
         "Analyze the provided multi-timeframe indicators and generate a high-confluence trade setup.\n\n"
@@ -17,7 +21,7 @@ def build_system_prompt(mode: Literal["SPOT", "FUTURES"] = "FUTURES") -> str:
     )
 
 
-def build_user_prompt(symbol: str, indicators: Dict[str, Any]) -> str:
+def build_user_prompt(symbol: str, indicators: dict[str, Any]) -> str:
     return (
         f"Symbol: {symbol}\n"
         f"Indicators: {json.dumps(indicators)}\n\n"

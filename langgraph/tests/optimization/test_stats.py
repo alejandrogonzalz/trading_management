@@ -83,8 +83,8 @@ def test_align_results_by_sample_keys_reordered():
         "sample_keys": ["X@2", "X@1"],
     }
     ca, cb, va, vb = align_results(res_a, res_b)
-    assert ca == [1, 0]   # A: LONG==LONG (✓), SHORT!=LONG (✗)
-    assert cb == [1, 0]   # B aligned by key: LONG==LONG (✓), SHORT!=LONG (✗)
+    assert ca == [1, 0]  # A: LONG==LONG (✓), SHORT!=LONG (✗)
+    assert cb == [1, 0]  # B aligned by key: LONG==LONG (✓), SHORT!=LONG (✗)
     assert va == [1.0, -1.0]
     assert vb == [0.5, -2.0]
 

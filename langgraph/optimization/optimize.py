@@ -27,16 +27,19 @@ from optimization.pipeline import DEFAULT_DATASET, RESULTS_DIR, OptimizerPipelin
 def main():
     parser = argparse.ArgumentParser(description="Hyperparameter optimization")
     parser.add_argument(
-        "--model", required=True,
+        "--model",
+        required=True,
         choices=["xgboost", "random_forest", "lstm", "qlora"],
     )
     parser.add_argument("--config", required=True, help="Path to YAML config")
     parser.add_argument(
-        "--dataset", default=str(DEFAULT_DATASET),
+        "--dataset",
+        default=str(DEFAULT_DATASET),
         help="Path to labeled JSONL dataset",
     )
     parser.add_argument(
-        "--output-dir", default=str(RESULTS_DIR),
+        "--output-dir",
+        default=str(RESULTS_DIR),
         help="Results output directory",
     )
     args = parser.parse_args()

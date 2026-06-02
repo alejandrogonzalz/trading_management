@@ -7,13 +7,13 @@ Splits temporally (not randomly) into train/val/test sets.
 import json
 from collections import Counter
 from pathlib import Path
-from typing import Dict, Any, List, Literal
+from typing import Any, Literal
 
 from agent.prompts import build_system_prompt, build_user_prompt
 from backtest.models.features import _temporal_split
 
 
-def _generate_reasoning(bias: str, indicators: Dict[str, Any]) -> str:
+def _generate_reasoning(bias: str, indicators: dict[str, Any]) -> str:
     parts = []
     rsi = indicators.get("rsi", 50)
     adx = indicators.get("adx", 20)
@@ -48,7 +48,7 @@ def _generate_reasoning(bias: str, indicators: Dict[str, Any]) -> str:
     )
 
 
-def build_training_example(sample: Dict[str, Any], mode: Literal["SPOT", "FUTURES"] = "FUTURES") -> Dict[str, Any]:
+def build_training_example(sample: dict[str, Any], mode: Literal["SPOT", "FUTURES"] = "FUTURES") -> dict[str, Any]:
     """Convert one labeled sample to chat-format training example."""
     symbol = sample.get("symbol", "BTCUSDT")
     indicators = sample["indicators"]
@@ -85,10 +85,10 @@ def build_training_example(sample: Dict[str, Any], mode: Literal["SPOT", "FUTURE
 
 
 def temporal_split(
-    samples: List[Dict[str, Any]],
+    samples: list[dict[str, Any]],
     train_ratio: float = 0.70,
     val_ratio: float = 0.15,
-) -> tuple[List[Dict], List[Dict], List[Dict]]:
+) -> tuple[list[dict], list[dict], list[dict]]:
     """DEPRECATED — sorts globally by timestamp before splitting.
 
     Do NOT use for fine-tuning exports: it produces a DIFFERENT partition than
@@ -104,7 +104,7 @@ def temporal_split(
     return sorted_samples[:train_end], sorted_samples[train_end:val_end], sorted_samples[val_end:]
 
 
-def print_stats(samples: List[Dict], split_name: str) -> None:
+def print_stats(samples: list[dict], split_name: str) -> None:
     if not samples:
         print(f"  {split_name}: 0 samples")
         return
@@ -124,7 +124,7 @@ def export_training_data(
     dataset_path: str,
     output_dir: str,
     mode: Literal["SPOT", "FUTURES"] = "FUTURES",
-) -> Dict[str, int]:
+) -> dict[str, int]:
     """Read labeled JSONL, build chat examples, split, write files."""
     samples = []
     with open(dataset_path) as f:
