@@ -102,7 +102,7 @@ class LLMBacktestRunner:
 
         print(f"LLM backtest: {len(samples)} samples | provider={os.getenv('LLM_PROVIDER')} | mode={self.mode}")
 
-        predictions, actuals, trade_results = [], [], []
+        predictions, actuals, trade_results, sample_keys = [], [], [], []
         errors = 0
         start = time.time()
 
@@ -133,6 +133,7 @@ class LLMBacktestRunner:
             prediction.setdefault("confidence", 5)
             predictions.append(prediction)
             actuals.append(label)
+            sample_keys.append(f"{symbol}@{sample['timestamp']}")
 
             candle_idx = ts_idx_map.get(symbol, {}).get(sample["timestamp"])
             if candle_idx is not None and candle_idx + 1 < len(candles_map.get(symbol, [])):
@@ -166,6 +167,7 @@ class LLMBacktestRunner:
             "predictions": predictions,
             "actuals": actuals,
             "trade_results": trade_results,
+            "sample_keys": sample_keys,
         }
 
         out = _save_result(result, self.tag)
@@ -253,7 +255,7 @@ class MLBacktestRunner:
             lstm_sequences = torch.tensor(seqs)
 
         test_offset = len(_train) + len(_val)
-        predictions, actuals, trade_results = [], [], []
+        predictions, actuals, trade_results, sample_keys = [], [], [], []
         errors = 0
 
         for i, sample in enumerate(test):
@@ -285,6 +287,7 @@ class MLBacktestRunner:
 
             predictions.append(prediction)
             actuals.append(label)
+            sample_keys.append(f"{symbol}@{sample['timestamp']}")
 
             candle_idx = ts_idx_map.get(symbol, {}).get(sample["timestamp"])
             if candle_idx is not None and candle_idx + 1 < len(candles_map.get(symbol, [])):
@@ -319,6 +322,7 @@ class MLBacktestRunner:
             "predictions": predictions,
             "actuals": actuals,
             "trade_results": trade_results,
+            "sample_keys": sample_keys,
         }
 
         out = _save_result(result, self.tag)

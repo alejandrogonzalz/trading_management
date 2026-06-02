@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Dict, Any, List, Literal
 
 from agent.prompts import build_system_prompt, build_user_prompt
+from backtest.models.features import _temporal_split
 
 
 def _generate_reasoning(bias: str, indicators: Dict[str, Any]) -> str:
@@ -88,6 +89,14 @@ def temporal_split(
     train_ratio: float = 0.70,
     val_ratio: float = 0.15,
 ) -> tuple[List[Dict], List[Dict], List[Dict]]:
+    """DEPRECATED — sorts globally by timestamp before splitting.
+
+    Do NOT use for fine-tuning exports: it produces a DIFFERENT partition than
+    the ML/LLM runners (which use backtest.models.features._temporal_split with
+    no sort), which would invalidate the paired McNemar / t-test comparison.
+    export_training_data() now uses the unified _temporal_split. Kept only for
+    backward compatibility.
+    """
     sorted_samples = sorted(samples, key=lambda s: s.get("timestamp", 0))
     n = len(sorted_samples)
     train_end = int(n * train_ratio)
@@ -128,7 +137,11 @@ def export_training_data(
         print("No samples found in dataset.")
         return {"train": 0, "val": 0, "test": 0}
 
-    train, val, test = temporal_split(samples)
+    # Use the SAME split convention as the ML/LLM runners (no global sort, raw
+    # file order) so the fine-tuning train/val/test partitions are identical to
+    # those of LSTM/XGBoost. This is what makes the paired McNemar / t-test
+    # comparison across models valid.
+    train, val, test = _temporal_split(samples)
 
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)

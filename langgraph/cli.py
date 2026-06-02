@@ -74,6 +74,11 @@ def cmd_export_training_data(args):
     )
 
 
+def cmd_compare_stats(args):
+    from optimization.stats_tests import compare as compare_stats
+    compare_stats(args.a, args.b)
+
+
 def cmd_train_ml(args):
     runner = MLBacktestRunner(
         dataset_path=args.dataset,
@@ -118,6 +123,11 @@ def main():
     p.add_argument("--baseline", required=True)
     p.add_argument("--candidate", required=True)
 
+    # compare-stats
+    p = sub.add_parser("compare-stats", help="McNemar + paired t-test between two result JSONs")
+    p.add_argument("--a", required=True, help="Result JSON for model A")
+    p.add_argument("--b", required=True, help="Result JSON for model B")
+
     # export-training-data
     p = sub.add_parser("export-training-data", help="Export labeled dataset as chat-format JSONL for fine-tuning")
     p.add_argument("--dataset", required=True)
@@ -140,6 +150,7 @@ def main():
         "prepare-dataset": cmd_prepare_dataset,
         "run-backtest": cmd_run_backtest,
         "compare": cmd_compare,
+        "compare-stats": cmd_compare_stats,
         "export-training-data": cmd_export_training_data,
         "train-ml": cmd_train_ml,
     }

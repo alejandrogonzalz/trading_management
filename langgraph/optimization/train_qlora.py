@@ -28,7 +28,11 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from agent.prompts import build_system_prompt, build_user_prompt
 from backtest.export import export_training_data, build_training_example
+from backtest.evaluation.metrics import compute_all_metrics
+from backtest.evaluation.runner import _load_candles_map, CANDLES_DIR
+from backtest.evaluation.simulate import _parse_prediction, simulate_trade
 from backtest.models.features import _load_dataset, _temporal_split
 
 logging.basicConfig(
@@ -238,94 +242,110 @@ class QLoRATrainer:
     def evaluate(self) -> Dict[str, Any]:
         """Evaluate the fine-tuned model on the test split.
 
-        Generates predictions for each test sample and computes
-        direction accuracy, matching the MLBacktestRunner output format.
+        Mirrors LLMBacktestRunner exactly so the result is comparable to the
+        other models: same temporal test split, same prompts, full prediction
+        parsing (bias + entry/tp/sl), trade simulation against future candles,
+        and the same metric set (direction accuracy, win rate, profit factor,
+        Sharpe, max drawdown).
+
+        Critically, it emits one prediction per test sample (a fallback on
+        parse failure rather than skipping) and stores ``sample_keys`` so the
+        paired McNemar / t-test can align this model against the others.
         """
+        import torch
         from unsloth import FastLanguageModel
 
         log.info("Evaluating on test set...")
         FastLanguageModel.for_inference(self.model)
 
-        test_path = TRAINING_DATA_DIR / "test.jsonl"
-        test_examples = []
-        with open(test_path) as f:
-            for line in f:
-                line = line.strip()
-                if line:
-                    test_examples.append(json.loads(line))
+        # Use the SAME labeled dataset + temporal split convention as the ML/LLM
+        # runners (no sort) so the test set — and therefore the paired stats —
+        # are aligned with LSTM/XGBoost/zero-shot results.
+        all_samples = _load_dataset(DATASET_PATH)
+        _train, _val, test = _temporal_split(all_samples)
 
         max_samples = self.cfg.get("max_eval_samples")
-        if max_samples and max_samples < len(test_examples):
-            test_examples = test_examples[:max_samples]
-            log.info(f"  Evaluating on first {max_samples} samples (of {len(test_examples)} total)")
+        if max_samples and max_samples < len(test):
+            test = test[:max_samples]
+            log.info(f"  Evaluating on first {max_samples} test samples")
+        log.info(f"  Test samples: {len(test)}")
 
-        correct = 0
-        total = 0
-        predictions = []
-        actuals = []
-        errors = 0
+        candles_map, ts_idx_map = _load_candles_map(CANDLES_DIR)
+        system_prompt = build_system_prompt(self.cfg["mode"])
 
-        for i, ex in enumerate(test_examples):
+        predictions: List[Dict[str, Any]] = []
+        actuals: List[Dict[str, Any]] = []
+        trade_results: List[Dict[str, Any]] = []
+        sample_keys: List[str] = []
+        parse_errors = 0
+
+        for i, sample in enumerate(test):
             if (i + 1) % 100 == 0:
-                log.info(f"  Progress: {i + 1}/{len(test_examples)} ({correct}/{total} correct)")
+                log.info(f"  Progress: {i + 1}/{len(test)} ({parse_errors} parse errors)")
 
-            messages = ex["messages"]
-            actual_response = json.loads(messages[-1]["content"])
-            actual_bias = actual_response["bias"]
+            symbol = sample.get("symbol", "BTCUSDT")
+            label = sample["label"]
+            indicators = sample["indicators"]
+            if indicators and not isinstance(next(iter(indicators.values())), dict):
+                indicators = {"1h": indicators}
 
-            # Build input (system + user only)
-            input_messages = messages[:2]
+            user_prompt = build_user_prompt(symbol, indicators)
             input_text = self.tokenizer.apply_chat_template(
-                input_messages, tokenize=False, add_generation_prompt=True
+                [{"role": "system", "content": system_prompt},
+                 {"role": "user", "content": user_prompt}],
+                tokenize=False, add_generation_prompt=True,
             )
             inputs = self.tokenizer(input_text, return_tensors="pt").to(self.model.device)
 
-            with __import__("torch").no_grad():
+            with torch.no_grad():
                 output_ids = self.model.generate(
                     **inputs,
                     max_new_tokens=256,
                     do_sample=False,  # greedy decoding — deterministic, reproducible
                 )
-
-            # Decode only the generated tokens
             generated = self.tokenizer.decode(
                 output_ids[0][inputs["input_ids"].shape[1]:],
                 skip_special_tokens=True,
             )
 
-            # Parse the prediction
-            predicted_bias = self._parse_bias(generated)
-            if predicted_bias is None:
-                errors += 1
-                continue
+            # Full prediction parse (bias + entry/tp/sl). On failure, fall back
+            # to a bias-only prediction so the sample still counts toward the
+            # paired comparison (its trade simulates as ERROR, pnl 0).
+            prediction = _parse_prediction(generated)
+            if prediction is None:
+                parse_errors += 1
+                bias_kw = self._parse_bias(generated)
+                prediction = {"bias": bias_kw or "LONG", "confidence": 0}
+            prediction.setdefault("confidence", 5)
 
-            total += 1
-            predictions.append(predicted_bias)
-            actuals.append(actual_bias)
-            if predicted_bias == actual_bias:
-                correct += 1
+            predictions.append(prediction)
+            actuals.append(label)
+            sample_keys.append(f"{symbol}@{sample['timestamp']}")
 
-        accuracy = correct / total if total > 0 else 0.0
-        log.info(f"  Test accuracy: {accuracy:.4f} ({correct}/{total})")
-        log.info(f"  Parse errors: {errors}")
+            candle_idx = ts_idx_map.get(symbol, {}).get(sample["timestamp"])
+            if candle_idx is not None and candle_idx + 1 < len(candles_map.get(symbol, [])):
+                future = candles_map[symbol][candle_idx + 1: candle_idx + 25]
+                trade_results.append(simulate_trade(prediction, future))
+            else:
+                trade_results.append({"outcome": "ERROR", "pnl_pct": 0, "hold_bars": 0})
 
-        # Compute detailed metrics
-        from sklearn.metrics import f1_score, precision_score, recall_score
-        y_true = [1 if b == "LONG" else 0 for b in actuals]
-        y_pred = [1 if b == "LONG" else 0 for b in predictions]
+        metrics = compute_all_metrics(predictions, actuals, trade_results) if predictions else {}
+        accuracy = metrics.get("direction_accuracy", 0.0)
+        log.info(f"  Test accuracy: {accuracy:.4f}  win_rate={metrics.get('win_rate', 0):.4f}  "
+                 f"profit_factor={metrics.get('profit_factor', 0):.3f}")
+        log.info(f"  Parse errors: {parse_errors}")
 
         return {
             "accuracy": accuracy,
-            "f1_macro": float(f1_score(y_true, y_pred, average="macro")),
-            "precision_macro": float(precision_score(y_true, y_pred, average="macro")),
-            "recall_macro": float(recall_score(y_true, y_pred, average="macro")),
-            "total_evaluated": total,
-            "errors": errors,
-            "correct": correct,
-            # Per-sample predictions/actuals — required for McNemar + paired t-test
-            # against the other models (matches LLMBacktestRunner output schema)
+            "metrics": metrics,
+            "total_evaluated": len(predictions),
+            "errors": parse_errors,
+            # Per-sample arrays — required for the paired McNemar + t-test.
+            # Same schema as LLMBacktestRunner (predictions are dicts with bias).
             "predictions": predictions,
             "actuals": actuals,
+            "trade_results": trade_results,
+            "sample_keys": sample_keys,
         }
 
     def _parse_bias(self, text: str) -> Optional[str]:
@@ -379,9 +399,13 @@ class QLoRATrainer:
 
         elapsed = time.time() - t0
 
-        # Assemble final result in standard format
+        # Assemble final result. Per-sample arrays (predictions/actuals/
+        # trade_results/sample_keys) live at the TOP level — the same schema as
+        # LLMBacktestRunner — so stats_tests.compare() and analyze_results can
+        # read them directly for the paired McNemar / t-test.
         result = {
             "model": "qlora_qwen25_7b",
+            "tag": "qlora_qwen25_7b",
             "ensemble_type": "single",
             "strategy": "fine_tuning",
             "best_score": test_metrics["accuracy"],
@@ -399,7 +423,17 @@ class QLoRATrainer:
                 "train_loss": train_info["train_loss"],
                 "eval_loss": train_info["eval_loss"],
             },
-            "test_metrics": test_metrics,
+            "test_metrics": {
+                "accuracy": test_metrics["accuracy"],
+                "total_evaluated": test_metrics["total_evaluated"],
+                "errors": test_metrics["errors"],
+                **test_metrics["metrics"],
+            },
+            "metrics": test_metrics["metrics"],
+            "predictions": test_metrics["predictions"],
+            "actuals": test_metrics["actuals"],
+            "trade_results": test_metrics["trade_results"],
+            "sample_keys": test_metrics["sample_keys"],
             "data_counts": counts,
             "train_info": train_info,
             "elapsed_seconds": round(elapsed, 1),
@@ -479,9 +513,13 @@ def main():
     result = trainer.run()
 
     # Print summary
+    m = result["metrics"]
     print(f"\n{'=' * 60}")
     print(f"  RESULT: Test Accuracy = {result['test_metrics']['accuracy']:.4f}")
-    print(f"  F1 Macro = {result['test_metrics']['f1_macro']:.4f}")
+    print(f"  Win Rate = {m.get('win_rate', 0):.4f}  "
+          f"Profit Factor = {m.get('profit_factor', 0):.3f}")
+    print(f"  Sharpe = {m.get('sharpe_ratio', 0):.3f}  "
+          f"Max Drawdown = {m.get('max_drawdown', 0):.2f}%")
     print(f"  Time = {result['elapsed_seconds']:.0f}s")
     print(f"{'=' * 60}")
 

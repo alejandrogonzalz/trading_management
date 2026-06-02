@@ -276,6 +276,15 @@ Output: `results/{model}_optimization.json` with best_params, all_results, score
 ### `analyze_results.py`
 Loads result JSONs from 3-4 models → comparison table + matplotlib charts
 
+### `stats_tests.py` — Statistical significance (thesis validation)
+Pure-Python McNemar (exact binomial) + paired t-test (normal approx). Aligns two
+result JSONs by `sample_keys` (intersection) or positional fallback. All runners
+(`LLMBacktestRunner`, `MLBacktestRunner`, `QLoRATrainer.evaluate`) now emit
+`sample_keys` + per-sample `predictions`/`actuals`/`trade_results` so the
+comparison is paired and valid. **All models share the same temporal split**
+(`features._temporal_split`, no sort) — `export_training_data` was unified to use
+it so the fine-tuned model's test set matches LSTM/XGBoost.
+
 ---
 
 ## CLI Commands (`langgraph/cli.py`)
@@ -290,6 +299,7 @@ python -m cli train-ml --model xgboost --dataset backtest/data/labeled/dataset.j
 python -m cli train-ml --model lstm --dataset backtest/data/labeled/dataset.jsonl --serialize
 python -m cli export-training-data --dataset backtest/data/labeled/dataset.jsonl --output training_data/
 python -m cli compare --baseline results/baseline.json --candidate results/ml-xgboost.json
+python -m cli compare-stats --a optimization/results/qlora_optimization.json --b backtest/data/results/ml-lstm.json
 ```
 
 ---

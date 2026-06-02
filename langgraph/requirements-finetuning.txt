@@ -1,0 +1,25 @@
+# QLoRA fine-tuning dependencies (GPU machine only) — NOT needed for the
+# backtest/optimization pipeline or the agent. Install on the RTX 5070 Ti box:
+#
+#   pip install -r requirements-finetuning.txt
+#
+# Unsloth pulls a CUDA build of torch + bitsandbytes; install it FIRST so it
+# resolves the right CUDA wheels, then the rest with --no-deps to avoid clobbering.
+#
+#   pip install "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git"
+#   pip install --no-deps trl peft accelerate bitsandbytes
+#
+# The pins below are the versions verified to train Qwen 2.5 7B in 4-bit within
+# ~10 GB VRAM. Bump only together — Unsloth/TRL/transformers are tightly coupled.
+
+unsloth @ git+https://github.com/unslothai/unsloth.git
+trl>=0.8.6,<0.10
+peft>=0.11.0
+accelerate>=0.30.0
+bitsandbytes>=0.43.0
+transformers>=4.43.0,<4.46
+datasets>=2.19.0
+
+# torch is installed by Unsloth with the matching CUDA build; pinned here for
+# reference only. Do NOT install the CPU wheel on the GPU box.
+# torch>=2.3.0
