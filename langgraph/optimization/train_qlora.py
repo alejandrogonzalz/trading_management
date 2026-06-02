@@ -198,11 +198,23 @@ class QLoRATrainer:
         train_result = self.trainer.train()
         elapsed = time.time() - t0
 
+        # Pull the best eval_loss from the trainer's log history (load_best_model_at_end
+        # restores the checkpoint with the lowest eval_loss).
+        eval_losses = [
+            rec["eval_loss"]
+            for rec in self.trainer.state.log_history
+            if "eval_loss" in rec
+        ]
+        best_eval_loss = min(eval_losses) if eval_losses else None
+
         log.info(f"  Training completed in {elapsed:.1f}s ({elapsed / 60:.1f} min)")
         log.info(f"  Final train loss: {train_result.training_loss:.4f}")
+        if best_eval_loss is not None:
+            log.info(f"  Best eval loss: {best_eval_loss:.4f}")
 
         return {
             "train_loss": train_result.training_loss,
+            "eval_loss": best_eval_loss,
             "train_runtime_seconds": elapsed,
             "total_steps": train_result.global_step,
         }
@@ -272,8 +284,7 @@ class QLoRATrainer:
                 output_ids = self.model.generate(
                     **inputs,
                     max_new_tokens=256,
-                    temperature=0.1,
-                    do_sample=False,
+                    do_sample=False,  # greedy decoding — deterministic, reproducible
                 )
 
             # Decode only the generated tokens
@@ -311,6 +322,10 @@ class QLoRATrainer:
             "total_evaluated": total,
             "errors": errors,
             "correct": correct,
+            # Per-sample predictions/actuals — required for McNemar + paired t-test
+            # against the other models (matches LLMBacktestRunner output schema)
+            "predictions": predictions,
+            "actuals": actuals,
         }
 
     def _parse_bias(self, text: str) -> Optional[str]:
@@ -380,7 +395,10 @@ class QLoRATrainer:
                 "gradient_accumulation_steps": self.cfg["gradient_accumulation_steps"],
                 "max_seq_length": self.cfg["max_seq_length"],
             },
-            "val_metrics": {"train_loss": train_info["train_loss"]},
+            "val_metrics": {
+                "train_loss": train_info["train_loss"],
+                "eval_loss": train_info["eval_loss"],
+            },
             "test_metrics": test_metrics,
             "data_counts": counts,
             "train_info": train_info,
