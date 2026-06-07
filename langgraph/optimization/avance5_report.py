@@ -83,6 +83,7 @@ AVANCE4_MODELS = ["lstm", "xgboost", "random_forest", "svm", "adaboost", "logist
 
 # ── Loader ───────────────────────────────────────────────────────────────────
 
+
 def load_results(results_dir: Path) -> tuple[dict, dict]:
     """Return (avance4_results, avance5_results) dicts keyed by model name."""
     all_files = list(results_dir.glob("*_optimization.json"))
@@ -98,6 +99,7 @@ def load_results(results_dir: Path) -> tuple[dict, dict]:
 
 
 # ── Metric extraction ────────────────────────────────────────────────────────
+
 
 def _get_metrics(result: dict, split: str = "test") -> dict:
     """Extract accuracy/f1/auc from a result dict (handles both schemas)."""
@@ -121,6 +123,7 @@ def _fmt(v, fmt=".4f"):
 
 
 # ── Print functions ──────────────────────────────────────────────────────────
+
 
 def print_ensemble_architectures(a5: dict):
     print(f"\n{'═' * 72}")
@@ -157,23 +160,33 @@ def print_comparison_table(a4: dict, a5: dict):
         vm = _get_metrics(result, "val")
         tm = _get_metrics(result, "test")
         elapsed = result.get("elapsed_seconds", 0)
-        rows.append({
-            "name": name, "group": "A4",
-            "val_acc": vm["accuracy"], "test_acc": tm["accuracy"],
-            "f1": tm["f1_macro"], "auc": tm["auc_roc"],
-            "elapsed": elapsed,
-        })
+        rows.append(
+            {
+                "name": name,
+                "group": "A4",
+                "val_acc": vm["accuracy"],
+                "test_acc": tm["accuracy"],
+                "f1": tm["f1_macro"],
+                "auc": tm["auc_roc"],
+                "elapsed": elapsed,
+            }
+        )
 
     for name, result in a5.items():
         vm = _get_metrics(result, "val")
         tm = _get_metrics(result, "test")
         elapsed = result.get("elapsed_seconds", 0)
-        rows.append({
-            "name": name, "group": "A5",
-            "val_acc": vm["accuracy"], "test_acc": tm["accuracy"],
-            "f1": tm["f1_macro"], "auc": tm["auc_roc"],
-            "elapsed": elapsed,
-        })
+        rows.append(
+            {
+                "name": name,
+                "group": "A5",
+                "val_acc": vm["accuracy"],
+                "test_acc": tm["accuracy"],
+                "f1": tm["f1_macro"],
+                "auc": tm["auc_roc"],
+                "elapsed": elapsed,
+            }
+        )
 
     rows.sort(key=lambda r: r["test_acc"] or r["val_acc"] or 0, reverse=True)
 
@@ -241,9 +254,11 @@ def print_best_params_detail(a5: dict):
 
 # ── Plots ────────────────────────────────────────────────────────────────────
 
+
 def save_plots(a4: dict, a5: dict, out_dir: Path):
     try:
         import matplotlib
+
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
         import numpy as np
@@ -285,14 +300,24 @@ def save_plots(a4: dict, a5: dict, out_dir: Path):
     ax.set_title("Test Accuracy — All Models")
     ax.set_ylim(max(0, min(test_accs) - 0.05), min(1.0, max(test_accs) + 0.05))
     for bar, acc in zip(bars, test_accs):
-        ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.003,
-                f"{acc:.3f}", ha="center", va="bottom", fontsize=7)
+        ax.text(
+            bar.get_x() + bar.get_width() / 2,
+            bar.get_height() + 0.003,
+            f"{acc:.3f}",
+            ha="center",
+            va="bottom",
+            fontsize=7,
+        )
 
     from matplotlib.patches import Patch
-    ax.legend(handles=[
-        Patch(color="#3498db", label="Avance 4 (individual)"),
-        Patch(color="#e74c3c", label="Avance 5 (ensemble)"),
-    ], fontsize=8)
+
+    ax.legend(
+        handles=[
+            Patch(color="#3498db", label="Avance 4 (individual)"),
+            Patch(color="#e74c3c", label="Avance 5 (ensemble)"),
+        ],
+        fontsize=8,
+    )
 
     # ── Plot 2: F1 + AUC for ensembles only
     ax = axes[1]
@@ -332,6 +357,7 @@ def save_plots(a4: dict, a5: dict, out_dir: Path):
 
 # ── Main ─────────────────────────────────────────────────────────────────────
 
+
 def main():
     parser = argparse.ArgumentParser(description="Avance 5 results report")
     parser.add_argument("--results-dir", default=str(RESULTS_DIR), help="Path to optimization/results/")
@@ -347,8 +373,7 @@ def main():
 
     if not a5:
         print(
-            f"No ensemble result files found in {results_dir}.\n"
-            "Run  python optimization/run_ensembles.py  first.",
+            f"No ensemble result files found in {results_dir}.\nRun  python optimization/run_ensembles.py  first.",
             file=sys.stderr,
         )
         sys.exit(1)
