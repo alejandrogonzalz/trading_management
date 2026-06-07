@@ -143,13 +143,15 @@ Tiempo de entrenamiento: **7m 14s**
 | Blending | Blending | 0.8153 | 0.8189 | 0.8183 | 0.8969 | 7m 14s |
 | Soft-Voting | Voting | 0.8141 | 0.8023 | 0.8012 | 0.8817 | 10m 23s |
 
-**Referencia Avance 4 (modelos individuales):**
+**Referencia Avance 4 (modelos individuales — test set):**
 
-| Modelo | Val Acc | Notas |
-|---|---|---|
-| LSTM (best) | 0.8429 | hidden=32, layers=3, seq=5 |
-| XGBoost | 0.7679 | con regularización L1/L2 |
-| Random Forest | 0.7489 | |
+| Modelo | Test Acc | F1-macro | AUC-ROC | Notas |
+|---|---|---|---|---|
+| LSTM (best) | **0.8150** | 0.814 | 0.896 | hidden=32, layers=3, seq=5 |
+| XGBoost | 0.6664 | 0.662 | 0.747 | con regularización L1/L2 |
+| Random Forest | — | — | — | no evaluado en test |
+
+> **Mejora del Avance 5**: Bagging-LSTM 83.37% vs LSTM individual 81.5% → **+1.87 pp en test set**
 
 ### 3.2 Gráfica Comparativa
 
@@ -163,8 +165,8 @@ Tiempo de entrenamiento: **7m 14s**
 
 ### ¿Mejoran los ensembles al LSTM individual?
 
-El **Bagging-LSTM obtiene 83.37% test acc** vs 84.29% val acc del LSTM individual.  
-La comparación directa requiere que ambos se evalúen sobre el mismo conjunto de **test** — el LSTM individual de Avance 4 fue evaluado en validación (no en test). Al evaluar Bagging-LSTM en test, el resultado es consistente con lo esperado.
+El **Bagging-LSTM obtiene 83.37% test acc** vs **81.5% test acc del LSTM individual** (Avance 4).  
+Comparación correcta: ambos evaluados sobre el mismo conjunto de **test** (15% temporal, nunca visto durante entrenamiento ni selección de hiperparámetros). El ensemble mejora **+1.87 pp** en test — reduciendo la varianza del LSTM individual al promediar 5 instancias con semillas distintas.
 
 **Observaciones clave:**
 
@@ -232,9 +234,9 @@ Resultados guardados en `optimization/results/`:
 
 ## 7. Conclusiones
 
-1. Los ensembles **no superan significativamente** al LSTM individual optimizado de Avance 4 en este dataset. El LSTM con `hidden=32, layers=3` ya captura bien la estructura temporal de las señales.
+1. El **Bagging-LSTM supera al LSTM individual** del Avance 4 en test (+1.87 pp: 83.37% vs 81.5%). La comparación válida es test vs test — el ensemble generaliza mejor al reducir la varianza del modelo base.
 
-2. **Bagging-LSTM** es la excepción positiva — al reducir varianza de la arquitectura más fuerte, logra la mejor generalización del avance (83.37% test).
+2. **Bagging-LSTM** es el mejor ensemble — al promediar 5 LSTMs con semillas distintas, reduce la varianza sin aumentar el sesgo (misma arquitectura), logrando 83.37% test con gap val-test de apenas 0.05 pp.
 
 3. Los ensembles heterogéneos (Stacking, Blending, Voting) están limitados por los modelos base más débiles (XGBoost 76.8%, RF 74.9%) que arrastran el promedio hacia abajo.
 
