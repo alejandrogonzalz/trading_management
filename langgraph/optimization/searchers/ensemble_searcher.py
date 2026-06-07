@@ -176,7 +176,12 @@ class AdaBoostSearcher(BaseSearcher, _DataMixin):
         t0 = time.time()
 
         base = DecisionTreeClassifier(max_depth=2, random_state=random_state)
-        ada = AdaBoostClassifier(estimator=base, random_state=random_state, algorithm="SAMME")
+        import sklearn
+
+        ada_kwargs = {"estimator": base, "random_state": random_state}
+        if tuple(int(x) for x in sklearn.__version__.split(".")[:2]) < (1, 4):
+            ada_kwargs["algorithm"] = "SAMME"
+        ada = AdaBoostClassifier(**ada_kwargs)
 
         tscv = TimeSeriesSplit(n_splits=cfg.get("cv_splits", 3))
         search = GridSearchCV(ada, param_grid, cv=tscv, scoring="accuracy", n_jobs=-1, verbose=0)
