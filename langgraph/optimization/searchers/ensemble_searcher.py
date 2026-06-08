@@ -139,6 +139,7 @@ class BaggingLSTMSearcher(BaseSearcher, _DataMixin):
         metrics_val = self._evaluate(data["y_val"], (ensemble_val > 0.5).astype(int), ensemble_val)
         metrics_test = self._evaluate(data["y_test"], (ensemble_test > 0.5).astype(int), ensemble_test)
 
+        y_pred_test = (ensemble_test > 0.5).astype(int)
         log.info(f"  Result: val={metrics_val['accuracy']:.4f} test={metrics_test['accuracy']:.4f} ({elapsed:.1f}s)")
 
         return {
@@ -151,6 +152,10 @@ class BaggingLSTMSearcher(BaseSearcher, _DataMixin):
             "test_metrics": metrics_test,
             "elapsed_seconds": round(elapsed, 1),
             "timestamp": datetime.now().isoformat(),
+            # Per-sample arrays for post-hoc analysis (ROC, CM, PR curve)
+            "test_y_true": data["y_test"].tolist(),
+            "test_y_pred": y_pred_test.tolist(),
+            "test_y_proba": ensemble_test.tolist(),
         }
 
 

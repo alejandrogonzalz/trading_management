@@ -1,7 +1,7 @@
 # Avance 5 — Modelos Ensemble
 
 **Proyecto**: Sistema Híbrido de Trading: Comparación LLM vs ML  
-**Dataset**: 56,161 señales etiquetadas · 12 símbolos · 18 meses · 3 timeframes  
+**Dataset**: 56,161 señales etiquetadas · 12 símbolos · 18 meses · 2 timeframes (1h / 4h)  
 **Split temporal**: 70% entrenamiento / 15% validación / 15% prueba (sin mezcla)
 
 ---
@@ -13,8 +13,8 @@ Se implementaron **5 arquitecturas** de dos categorías:
 
 | Categoría | Modelos |
 |---|---|
-| Homogéneo | Bagging-LSTM |
-| Heterogéneo | AdaBoost, Soft-Voting, Stacking (OOF), Blending |
+| Homogéneo | Bagging-LSTM, AdaBoost |
+| Heterogéneo | Soft-Voting, Stacking (OOF), Blending |
 
 ---
 
@@ -39,7 +39,7 @@ Semilla 44  → LSTM → P(LONG|x) ┘
 | `hidden_size` | 32 |
 | `num_layers` | 3 |
 | `sequence_length` | 5 |
-| Tiempo de entrenamiento | 11m 35s |
+| Tiempo de entrenamiento | 9m 55s |
 
 ---
 
@@ -54,7 +54,17 @@ Boosting secuencial sobre *decision stumps* (árboles de profundidad 2). Cada ro
 | `n_estimators` | [100, 200, 300] |
 | `learning_rate` | [0.01, 0.05, 0.1, 0.5] |
 
-> **Nota:** Requiere `scikit-learn ≥ 1.4` (el parámetro `algorithm` fue eliminado en esa versión). Los resultados de esta corrida fallaron por incompatibilidad de versión — ya corregido en el repositorio.
+**Mejores parámetros:** `n_estimators=200`, `learning_rate=0.05`
+
+| Métrica | Val | Test |
+|---|---|---|
+| Accuracy | 0.6340 | 0.6182 |
+| F1-macro | 0.6284 | 0.6136 |
+| AUC-ROC | 0.7010 | 0.6961 |
+
+Tiempo de entrenamiento: **3m 02s**
+
+AdaBoost sobre *stumps* es el ensemble de peor desempeño (61.82% test): los árboles de profundidad 2 no capturan la estructura temporal que el LSTM sí aprovecha. Se incluye para cubrir la estrategia homogénea de *boosting* y contrastarla contra el *bagging*.
 
 ---
 
@@ -138,18 +148,21 @@ Tiempo de entrenamiento: **7m 14s**
 
 | Modelo | Tipo | Val Acc | Test Acc | F1-macro | AUC-ROC | Tiempo |
 |---|---|---|---|---|---|---|
-| **Bagging-LSTM** | Bagging | **0.8332** | **0.8337** | **0.8330** | **0.9157** | 11m 35s |
-| Stacking (OOF) | Stacking | 0.8171 | 0.8164 | 0.8158 | 0.8961 | 35m 32s |
-| Blending | Blending | 0.8153 | 0.8189 | 0.8183 | 0.8969 | 7m 14s |
-| Soft-Voting | Voting | 0.8141 | 0.8023 | 0.8012 | 0.8817 | 10m 23s |
+| **Bagging-LSTM** | Bagging (homogéneo) | **0.8332** | **0.8337** | **0.8330** | **0.9157** | 9m 55s |
+| Blending | Blending (heterogéneo) | 0.8153 | 0.8189 | 0.8183 | 0.8969 | 7m 14s |
+| Stacking (OOF) | Stacking (heterogéneo) | 0.8171 | 0.8164 | 0.8158 | 0.8961 | 35m 32s |
+| Soft-Voting | Voting (heterogéneo) | 0.8141 | 0.8023 | 0.8012 | 0.8817 | 10m 23s |
+| AdaBoost | Boosting (homogéneo) | 0.6340 | 0.6182 | 0.6136 | 0.6961 | 3m 02s |
 
-**Referencia Avance 4 (modelos individuales):**
+**Referencia Avance 4 (modelos individuales — test set):**
 
-| Modelo | Val Acc | Notas |
-|---|---|---|
-| LSTM (best) | 0.8429 | hidden=32, layers=3, seq=5 |
-| XGBoost | 0.7679 | con regularización L1/L2 |
-| Random Forest | 0.7489 | |
+| Modelo | Test Acc | F1-macro | AUC-ROC | Notas |
+|---|---|---|---|---|
+| LSTM (best) | **0.8150** | 0.814 | 0.896 | hidden=32, layers=3, seq=5 |
+| XGBoost | 0.6664 | 0.662 | 0.747 | con regularización L1/L2 |
+| Random Forest | — | — | — | no evaluado en test |
+
+> **Mejora del Avance 5**: Bagging-LSTM 83.37% vs LSTM individual 81.5% → **+1.87 pp en test set**
 
 ### 3.2 Gráfica Comparativa
 
@@ -163,8 +176,8 @@ Tiempo de entrenamiento: **7m 14s**
 
 ### ¿Mejoran los ensembles al LSTM individual?
 
-El **Bagging-LSTM obtiene 83.37% test acc** vs 84.29% val acc del LSTM individual.  
-La comparación directa requiere que ambos se evalúen sobre el mismo conjunto de **test** — el LSTM individual de Avance 4 fue evaluado en validación (no en test). Al evaluar Bagging-LSTM en test, el resultado es consistente con lo esperado.
+El **Bagging-LSTM obtiene 83.37% test acc** vs **81.5% test acc del LSTM individual** (Avance 4).  
+Comparación correcta: ambos evaluados sobre el mismo conjunto de **test** (15% temporal, nunca visto durante entrenamiento ni selección de hiperparámetros). El ensemble mejora **+1.87 pp** en test — reduciendo la varianza del LSTM individual al promediar 5 instancias con semillas distintas.
 
 **Observaciones clave:**
 
@@ -232,10 +245,10 @@ Resultados guardados en `optimization/results/`:
 
 ## 7. Conclusiones
 
-1. Los ensembles **no superan significativamente** al LSTM individual optimizado de Avance 4 en este dataset. El LSTM con `hidden=32, layers=3` ya captura bien la estructura temporal de las señales.
+1. El **Bagging-LSTM supera al LSTM individual** del Avance 4 en test (+1.87 pp: 83.37% vs 81.5%). La comparación válida es test vs test — el ensemble generaliza mejor al reducir la varianza del modelo base.
 
-2. **Bagging-LSTM** es la excepción positiva — al reducir varianza de la arquitectura más fuerte, logra la mejor generalización del avance (83.37% test).
+2. **Bagging-LSTM** es el mejor ensemble — al promediar 5 LSTMs con semillas distintas, reduce la varianza sin aumentar el sesgo (misma arquitectura), logrando 83.37% test con gap val-test de apenas 0.05 pp.
 
-3. Los ensembles heterogéneos (Stacking, Blending, Voting) están limitados por los modelos base más débiles (XGBoost 76.8%, RF 74.9%) que arrastran el promedio hacia abajo.
+3. Los ensembles heterogéneos (Stacking, Blending, Voting) están limitados por los modelos base más débiles: XGBoost cae a 66.6% en test (76.8% en validación) y Random Forest queda en ~74.9% en validación. El meta-modelo de Stacking lo confirma al asignar coeficiente 6.63 al LSTM contra 1.72 de XGBoost — aprende a confiar casi solo en el LSTM e ignorar a los predictores débiles.
 
 4. Para la comparación final de la tesis, el modelo a contrastar con el LLM zero-shot y QLoRA es el **Bagging-LSTM** como representante del enfoque ML.
