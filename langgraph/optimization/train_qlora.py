@@ -59,14 +59,14 @@ class QLoRATrainer:
 
     DEFAULT_CONFIG = {
         "model_name": "unsloth/Qwen2.5-7B-Instruct-bnb-4bit",
-        "max_seq_length": 1024,
+        "max_seq_length": 512,
         "learning_rate": 0.00002,
         "lora_rank": 16,
         "lora_alpha": 32,
         "lora_dropout": 0.0,
         "epochs": 3,
-        "batch_size": 2,
-        "gradient_accumulation_steps": 8,
+        "batch_size": 1,
+        "gradient_accumulation_steps": 16,
         "warmup_steps": 50,
         "weight_decay": 0.01,
         "seed": 42,
