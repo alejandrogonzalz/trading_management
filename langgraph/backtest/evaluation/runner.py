@@ -91,6 +91,7 @@ class LLMBacktestRunner:
             os.environ["LLM_MODEL"] = self.model
 
         from agent.llm_factory import get_llm_provider
+
         llm = get_llm_provider()
         samples = _load_jsonl(self.dataset_path)
         if self.max_samples:
