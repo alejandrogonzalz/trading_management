@@ -79,6 +79,7 @@ class QLoRATrainer:
         "mode": "FUTURES",
         "max_steps": None,  # cap optimizer steps (smoke tests); None = full epochs
         "max_eval_samples": None,
+        "resume": False,  # resume from latest checkpoint-N in output_dir if present
         "output_dir": str(MODELS_DIR / "qlora_qwen25_7b"),
     }
 
@@ -176,6 +177,25 @@ class QLoRATrainer:
 
         return Dataset.from_dict({"text": texts})
 
+    def _resume_checkpoint(self) -> str | None:
+        """Return the latest checkpoint-N dir to resume from, or None for a fresh run.
+
+        Honors cfg['resume']: checkpoints save every save_steps (250), so an
+        interrupted long run can pick up from the last one instead of restarting
+        at step 0. Falls back to a fresh start (with a warning) if --resume was
+        passed but no checkpoint exists yet.
+        """
+        if not self.cfg.get("resume"):
+            return None
+        from transformers.trainer_utils import get_last_checkpoint
+
+        last = get_last_checkpoint(self.cfg["output_dir"]) if Path(self.cfg["output_dir"]).is_dir() else None
+        if last:
+            log.info(f"  Resuming from checkpoint: {last}")
+            return last
+        log.warning("  --resume set but no checkpoint found in output_dir; starting fresh")
+        return None
+
     def train(self) -> dict[str, Any]:
         """Run SFT training with early stopping based on validation loss."""
         from transformers import TrainingArguments
@@ -240,7 +260,7 @@ class QLoRATrainer:
 
         log.info("Starting training...")
         t0 = time.time()
-        train_result = self.trainer.train()
+        train_result = self.trainer.train(resume_from_checkpoint=self._resume_checkpoint())
         elapsed = time.time() - t0
 
         # Pull the best eval_loss from the trainer's log history (load_best_model_at_end
@@ -520,6 +540,9 @@ def parse_args():
     parser.add_argument("--batch-size", type=int, help="Per-device batch size")
     parser.add_argument("--max-eval", type=int, help="Max samples to evaluate (for quick testing)")
     parser.add_argument("--max-steps", type=int, help="Cap optimizer steps (smoke test the training loop)")
+    parser.add_argument(
+        "--resume", action="store_true", help="Resume from the latest checkpoint-N in output_dir if present"
+    )
     parser.add_argument("--model", type=str, help="Model name/path (default: Qwen2.5-7B-Instruct-bnb-4bit)")
     return parser.parse_args()
 
@@ -547,6 +570,8 @@ def main():
         config["max_eval_samples"] = args.max_eval
     if args.max_steps:
         config["max_steps"] = args.max_steps
+    if args.resume:
+        config["resume"] = True
     if args.model:
         config["model_name"] = args.model
 

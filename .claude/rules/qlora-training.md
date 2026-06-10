@@ -3,6 +3,10 @@
 Fine-tunes Qwen 2.5 7B (4-bit) with Unsloth for trade-direction prediction.
 Script: `langgraph/optimization/train_qlora.py`. Venv: `langgraph/.venv-finetuning/`.
 
+> **Status & roadmap** (where we are, the SageMaker plan, what's left) lives in
+> [`docs/QLORA_FINETUNING.md` §0](../../docs/QLORA_FINETUNING.md). This file is the
+> commands/constraints reference.
+
 ## Run it (local, RTX 5070 Ti 16GB)
 
 ```powershell
@@ -12,7 +16,17 @@ cd C:\Users\alex\projects\trading_management\langgraph
 
 # Smoke test the loop (3 steps, tiny eval) before a long run:
 .\.venv-finetuning\Scripts\python.exe optimization\train_qlora.py --max-steps 3 --max-eval 10
+
+# Resume an interrupted run from the latest checkpoint-N in output_dir:
+.\.venv-finetuning\Scripts\python.exe optimization\train_qlora.py --epochs 3 --resume 2>&1 | Tee-Object -FilePath logs\qlora_train.log
 ```
+
+**Crash recovery:** checkpoints save every 250 steps (`save_total_limit=3`). If a
+run dies mid-way, just re-launch with the same args plus `--resume` — it picks up
+from the last `checkpoint-N` instead of restarting at step 0. Without `--resume`
+the run starts fresh. (Note: a leftover smoke-test `checkpoint-3` in `output_dir`
+counts as a checkpoint — delete it before a real `--resume` if you don't want to
+resume from it.)
 
 Outputs: result JSON → `optimization/results/qlora_optimization.json`,
 adapters + GGUF → `backtest/data/models/qlora_qwen25_7b/`.

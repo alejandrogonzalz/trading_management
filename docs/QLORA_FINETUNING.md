@@ -2,6 +2,75 @@
 
 Diagrams explaining what fine-tuning produces, how the pipeline runs, and how the result plugs into production.
 
+> **Operational how-to** (commands, constraints, timing) lives in
+> [`.claude/rules/qlora-training.md`](../.claude/rules/qlora-training.md).
+> This file is the **conceptual + status/roadmap** reference.
+
+---
+
+## 0. Where we are now & where we're going (updated 2026-06-10)
+
+### Current state — no usable fine-tuned model yet
+- ✅ **Step-0 crash fixed** (`max_seq_length` 512 → 1024). The bug was deterministic
+  (every sample is ~877–933 tokens; Unsloth padding-free batching truncated
+  `input_ids` but not `labels`). It cannot recur — if step 0 passes, every later
+  step does the identical op on same-shaped data. Committed in `0ae0953`.
+- ⏸️ **Last local run stalled at step 92 / 2457** (~46 min in, `--epochs 1`,
+  Jun 9 23:23). Only `checkpoint-3` (from the smoke test) is on disk — **no
+  trained adapters, no `gguf/`, no `qlora_optimization.json` yet.**
+- 🐌 **Local is the bottleneck, not the code:** RTX 5070 Ti 16 GB forces
+  `batch_size=1`, and FlashAttention-2 won't install on Windows (`FA2 = False`,
+  eager attention). ~28 s/step → **~15–19 h per epoch.**
+
+### Target — decided
+| Decision | Choice | Why |
+|----------|--------|-----|
+| **Compute** | SageMaker **Notebook instance**, `ml.g6e.xlarge` (L40S 48 GB) | More VRAM → `batch_size=8`; Linux → FA2 works. ~1–2 h/epoch, a few dollars. Same `train_qlora.py` runs in the instance terminal — **no `.ipynb` needed.** |
+| **Scope** | **One** best config, **multi-epoch (2–3)** | Fastest path to a thesis-ready fine-tuned LLM. Not a full sweep. |
+| **Config** | `lora_rank=16, lora_alpha=32, lr=2e-5, epochs=3, batch_size=8` | The balanced combo from `optimization/configs/qlora.yaml` `recommended_configs`. |
+
+The end product is a single fine-tuned model **evaluated on the same 8,425 test
+samples** as LSTM/XGBoost/zero-shot, producing `qlora_optimization.json` for
+`compare-stats` (McNemar + paired t-test). See §5.
+
+### Roadmap — step by step
+
+**Phase 0 · Harden the script (before any paid run)**
+- [x] **`--resume`** → `trainer.train(resume_from_checkpoint=...)`. Checkpoints
+  already save every 250 steps (`save_total_limit=3`, `load_best_model_at_end`);
+  the new `--resume` flag finds the latest `checkpoint-N` in `output_dir` and
+  continues from it (falls back to a fresh start with a warning if none exists).
+  This is the real "don't break mid-run" safety net. ✅ done.
+
+**Phase 1 · SageMaker setup (one-time)**
+- [ ] Launch `ml.g6e.xlarge` Notebook instance (set an idle-shutdown lifecycle so it
+  can't bill 24/7 if you forget to stop it).
+- [ ] `git clone` repo, build a Linux venv, `pip install unsloth` (pulls a *working* FA2).
+- [ ] Confirm the startup banner shows **`FA2 = True`** — that's the speedup.
+
+**Phase 2 · Validate on the instance (cheap, ~$0.30)**
+- [ ] Smoke: `train_qlora.py --max-steps 3 --max-eval 10` → confirms venv + model load + step 0 passes.
+- [ ] Short: `--epochs 1 --batch-size 8` → watch first eval at step 250, confirm a `checkpoint-250/` actually writes and `eval_loss` drops.
+
+**Phase 3 · The real run**
+- [ ] `--epochs 3 --batch-size 8` (single best config). ~1–2 h/epoch → **~3–6 h, a few dollars.**
+- [ ] If interrupted, re-launch with `--resume` — picks up from the last `checkpoint-N`.
+
+**Phase 4 · Evaluate + integrate**
+- [ ] `evaluate()` runs on the held-out test split → `optimization/results/qlora_optimization.json`.
+- [ ] `python -m cli compare-stats --a results/qlora_optimization.json --b backtest/data/results/ml-lstm.json`.
+- [ ] *(optional)* Deploy the GGUF to Ollama (§4) and point `LLM_MODEL` at it.
+
+### Time / cost at a glance
+| Path | Per epoch | 3 epochs | $ | Frees machine? |
+|------|-----------|----------|---|----------------|
+| Local RTX 5070 Ti | ~15–19 h | ~2 days | "free" | ❌ ties up PC |
+| **SageMaker g6e.xlarge** | **~1–2 h** | **~3–6 h** | **~$6–12** | ✅ |
+
+> ⚠️ The diagrams below (§2) show the *original* `batch=4 / grad_accum=4 / eval-100 / A10G`
+> plan. The **live local** config is `batch=1 / grad_accum=16 / eval-250` (16 GB limit);
+> on **g6e** we go back up to `batch=8`. Treat §2 as conceptual flow, not exact values.
+
 ---
 
 ## 1. What fine-tuning actually is
