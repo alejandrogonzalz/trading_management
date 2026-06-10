@@ -8,7 +8,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from agent.llm_factory import get_llm_provider
 from agent.prompts import build_system_prompt, build_user_prompt
 from backtest.evaluation.metrics import compute_all_metrics
 from backtest.evaluation.simulate import _parse_prediction, simulate_trade
@@ -91,6 +90,7 @@ class LLMBacktestRunner:
         if self.model:
             os.environ["LLM_MODEL"] = self.model
 
+        from agent.llm_factory import get_llm_provider
         llm = get_llm_provider()
         samples = _load_jsonl(self.dataset_path)
         if self.max_samples:

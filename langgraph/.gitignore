@@ -3,6 +3,10 @@ __pycache__/
 *.pyc
 .pytest_cache/
 
+# Virtual environments
+.venv/
+.venv-finetuning/
+
 # Large data files — do not commit
 backtest/data/labeled/dataset.jsonl
 backtest/data/labeled/training/
@@ -10,3 +14,8 @@ backtest/data/labeled/training/
 # Optimization outputs — generated at runtime
 optimization/results/
 optimization/logs/
+
+# Fine-tuning generated artifacts
+training_data/
+unsloth_compiled_cache/
+logs/
