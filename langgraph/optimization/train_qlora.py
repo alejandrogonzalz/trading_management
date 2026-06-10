@@ -17,6 +17,7 @@ Requirements (GPU machine only):
 import argparse
 import json
 import logging
+import os
 import sys
 import time
 from datetime import datetime
@@ -24,6 +25,8 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -56,14 +59,14 @@ class QLoRATrainer:
 
     DEFAULT_CONFIG = {
         "model_name": "unsloth/Qwen2.5-7B-Instruct-bnb-4bit",
-        "max_seq_length": 2048,
+        "max_seq_length": 1024,
         "learning_rate": 0.00002,
         "lora_rank": 16,
         "lora_alpha": 32,
         "lora_dropout": 0.0,
         "epochs": 3,
-        "batch_size": 4,
-        "gradient_accumulation_steps": 4,
+        "batch_size": 2,
+        "gradient_accumulation_steps": 8,
         "warmup_steps": 50,
         "weight_decay": 0.01,
         "seed": 42,
