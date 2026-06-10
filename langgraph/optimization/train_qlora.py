@@ -59,7 +59,13 @@ class QLoRATrainer:
 
     DEFAULT_CONFIG = {
         "model_name": "unsloth/Qwen2.5-7B-Instruct-bnb-4bit",
-        "max_seq_length": 512,
+        # Full chat-templated examples (prompt + assistant JSON) span 877-933
+        # tokens across the dataset — the prompt alone is ~820. 1024 fits the
+        # longest sample with headroom and causes ZERO truncation, which is what
+        # avoids Unsloth's padding-free fused-CE crash (it truncates input_ids
+        # but not labels when a sequence exceeds max_seq_length). Do not lower
+        # this below 1024. batch_size=1 keeps 1024 within the 16GB RTX 5070 Ti.
+        "max_seq_length": 1024,
         "learning_rate": 0.00002,
         "lora_rank": 16,
         "lora_alpha": 32,
@@ -71,6 +77,7 @@ class QLoRATrainer:
         "weight_decay": 0.01,
         "seed": 42,
         "mode": "FUTURES",
+        "max_steps": None,  # cap optimizer steps (smoke tests); None = full epochs
         "max_eval_samples": None,
         "output_dir": str(MODELS_DIR / "qlora_qwen25_7b"),
     }
@@ -133,7 +140,16 @@ class QLoRATrainer:
         log.info(f"  Trainable params: {trainable:,} / {total:,} ({100 * trainable / total:.2f}%)")
 
     def _load_chat_dataset(self, split: str):
-        """Load a JSONL split into HuggingFace Dataset format."""
+        """Load a JSONL split into HuggingFace Dataset format.
+
+        Any example whose tokenized length exceeds ``max_seq_length`` is dropped
+        rather than fed to the trainer. Unsloth's padding-free batching truncates
+        an over-long sequence's ``input_ids`` but leaves its ``labels`` intact,
+        which crashes the fused cross-entropy loss with a batch-size mismatch
+        (the original failure mode). Filtering here makes that impossible for any
+        dataset, so the run is safe to leave unattended. With max_seq_length=1024
+        this drops 0 of the current samples (longest is 933 tokens).
+        """
         from datasets import Dataset
 
         path = TRAINING_DATA_DIR / f"{split}.jsonl"
@@ -144,11 +160,19 @@ class QLoRATrainer:
                 if line:
                     examples.append(json.loads(line))
 
-        # Convert chat messages to the format expected by SFTTrainer
+        max_len = self.cfg["max_seq_length"]
         texts = []
+        dropped = 0
         for ex in examples:
             text = self.tokenizer.apply_chat_template(ex["messages"], tokenize=False, add_generation_prompt=False)
+            n_tokens = len(self.tokenizer(text, add_special_tokens=False)["input_ids"])
+            if n_tokens > max_len:
+                dropped += 1
+                continue
             texts.append(text)
+
+        if dropped:
+            log.warning(f"  {split}: dropped {dropped}/{len(examples)} examples exceeding max_seq_length={max_len}")
 
         return Dataset.from_dict({"text": texts})
 
@@ -160,7 +184,13 @@ class QLoRATrainer:
         log.info("Loading datasets...")
         train_dataset = self._load_chat_dataset("train")
         val_dataset = self._load_chat_dataset("val")
-        log.info(f"  Train samples: {len(train_dataset)}, Val samples: {len(val_dataset)}")
+        # Cap the in-training eval set. A full 8.4k-sample eval at every eval_steps
+        # would add hours of forward passes to an already long run; a fixed 1000
+        # subset is enough to track eval_loss for best-checkpoint selection. The
+        # FINAL test metrics (evaluate()) still use the complete held-out split.
+        if len(val_dataset) > 1000:
+            val_dataset = val_dataset.select(range(1000))
+        log.info(f"  Train samples: {len(train_dataset)}, Val (eval subset): {len(val_dataset)}")
 
         effective_batch = self.cfg["batch_size"] * self.cfg["gradient_accumulation_steps"]
         total_steps = (len(train_dataset) // effective_batch) * self.cfg["epochs"]
@@ -168,9 +198,11 @@ class QLoRATrainer:
         log.info(f"  Total training steps: ~{total_steps}")
 
         output_dir = self.cfg["output_dir"]
+        max_steps = self.cfg.get("max_steps") or -1  # -1 = honor num_train_epochs
         training_args = TrainingArguments(
             output_dir=output_dir,
             num_train_epochs=self.cfg["epochs"],
+            max_steps=max_steps,
             per_device_train_batch_size=self.cfg["batch_size"],
             gradient_accumulation_steps=self.cfg["gradient_accumulation_steps"],
             learning_rate=self.cfg["learning_rate"],
@@ -180,10 +212,13 @@ class QLoRATrainer:
             fp16=False,
             bf16=True,
             logging_steps=25,
+            # eval at batch 1 (same as train) — batch 8 (the HF default) at ~900
+            # tokens would spike activation memory and risk OOM on 16GB.
+            per_device_eval_batch_size=1,
             eval_strategy="steps",
-            eval_steps=100,
+            eval_steps=250,
             save_strategy="steps",
-            save_steps=200,
+            save_steps=250,
             save_total_limit=3,
             load_best_model_at_end=True,
             metric_for_best_model="eval_loss",
@@ -484,6 +519,7 @@ def parse_args():
     parser.add_argument("--epochs", type=int, help="Number of training epochs")
     parser.add_argument("--batch-size", type=int, help="Per-device batch size")
     parser.add_argument("--max-eval", type=int, help="Max samples to evaluate (for quick testing)")
+    parser.add_argument("--max-steps", type=int, help="Cap optimizer steps (smoke test the training loop)")
     parser.add_argument("--model", type=str, help="Model name/path (default: Qwen2.5-7B-Instruct-bnb-4bit)")
     return parser.parse_args()
 
@@ -509,6 +545,8 @@ def main():
         config["batch_size"] = args.batch_size
     if args.max_eval:
         config["max_eval_samples"] = args.max_eval
+    if args.max_steps:
+        config["max_steps"] = args.max_steps
     if args.model:
         config["model_name"] = args.model
 
