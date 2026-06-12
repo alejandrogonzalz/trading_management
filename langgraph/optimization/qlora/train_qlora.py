@@ -28,7 +28,8 @@ import yaml
 
 os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+LANGGRAPH_ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(LANGGRAPH_ROOT))
 
 from agent.prompts import build_system_prompt, build_user_prompt
 from backtest.evaluation.metrics import compute_all_metrics
@@ -44,10 +45,10 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-DATASET_PATH = str(Path(__file__).resolve().parent.parent / "backtest" / "data" / "labeled" / "dataset.jsonl")
-TRAINING_DATA_DIR = Path(__file__).resolve().parent.parent / "training_data"
+DATASET_PATH = str(LANGGRAPH_ROOT / "backtest" / "data" / "labeled" / "dataset.jsonl")
+TRAINING_DATA_DIR = LANGGRAPH_ROOT / "training_data"
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
-MODELS_DIR = Path(__file__).resolve().parent.parent / "backtest" / "data" / "models"
+MODELS_DIR = LANGGRAPH_ROOT / "backtest" / "data" / "models"
 
 
 class QLoRATrainer:

@@ -5,7 +5,7 @@
 # Usage:
 #   cd trading_management/langgraph
 #   source .venv/bin/activate
-#   bash optimization/run_qlora_search.sh
+#   bash optimization/qlora/run_qlora_search.sh
 #
 # Expected time: ~15-30h total on ml.g6e.xlarge (L40S 48GB)
 # Expected cost: ~$30-60
@@ -13,7 +13,6 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 RESULTS_DIR="$SCRIPT_DIR/results"
 LOG_DIR="$SCRIPT_DIR/logs"
 TRAIN_SCRIPT="$SCRIPT_DIR/train_qlora.py"
@@ -120,7 +119,7 @@ else:
 
 echo ""
 echo "  Next steps:"
-echo "    1. git add optimization/results/qlora_config*.json"
+echo "    1. git add optimization/qlora/results/qlora_config*.json"
 echo "    2. git commit -m 'feat(qlora): hyperparameter search — 5 configs on SageMaker'"
 echo "    3. git push origin dev"
 echo "    4. STOP THE INSTANCE (you're paying ~\$2/hr right now)"

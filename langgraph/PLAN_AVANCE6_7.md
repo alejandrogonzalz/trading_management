@@ -21,9 +21,9 @@ GPU disponible: NVIDIA RTX 5070 Ti (16 GB VRAM) — el fine-tuning y la inferenc
 | Ensembles A5 (Bagging-LSTM, Stacking, Blending, Voting, AdaBoost) | `optimization/results/bagging_lstm_optimization.json` + otros |
 | Métricas clasificación de Bagging-LSTM (acc=83.37%, F1, AUC, per-sample arrays) | `optimization/results/bagging_lstm_optimization.json` |
 | Exportación datos fine-tuning | `backtest/export.py` → `training_data/{train,val,test}.jsonl` |
-| Script QLoRA trainer | `optimization/train_qlora.py` |
+| Script QLoRA trainer | `optimization/qlora/train_qlora.py` |
 | Framework estadístico (McNemar + t-test pareado) | `optimization/stats_tests.py` |
-| Guía SageMaker | `optimization/SAGEMAKER_GUIDE.md` |
+| Guía SageMaker | `optimization/qlora/SAGEMAKER_GUIDE.md` |
 | Infraestructura LLM (7 providers) | `agent/llm_factory.py` |
 
 ### ❌ Falta
@@ -76,7 +76,7 @@ batch_size: 4 (effective 16 con gradient_accumulation_steps=4)
 ```
 **Comando**:
 ```bash
-python optimization/train_qlora.py --lr 0.00002 --rank 16 --epochs 3 --batch-size 4
+python optimization/qlora/train_qlora.py --lr 0.00002 --rank 16 --epochs 3 --batch-size 4
 ```
 **Duración estimada**: 2–4 horas en RTX 5070 Ti  
 **Resultado**:
@@ -114,7 +114,7 @@ LLM_PROVIDER=ollama LLM_MODEL=qwen25-ft \
     --provider ollama --tag qlora-qwen7b
 ```
 **Alternativa**: `qlora_optimization.json` ya incluye la evaluación si `train_qlora.py` se corrió completo  
-**Archivo de referencia**: `optimization/train_qlora.py:evaluate()` — mismo split temporal, mismo parser JSON
+**Archivo de referencia**: `optimization/qlora/train_qlora.py:evaluate()` — mismo split temporal, mismo parser JSON
 
 ### PASO 6 — Pruebas estadísticas (McNemar + t-test)
 Comparaciones requeridas (pares):
@@ -213,7 +213,7 @@ Secciones propuestas:
 7. Privacidad de datos (datos financieros propietarios)
 
 **Proveedores a comparar** (todos 4 requeridos):
-- **AWS SageMaker** — referencia: `optimization/SAGEMAKER_GUIDE.md` ya en el repo; BedrockProvider ya implementado en `agent/llm_factory.py`
+- **AWS SageMaker** — referencia: `optimization/qlora/SAGEMAKER_GUIDE.md` ya en el repo; BedrockProvider ya implementado en `agent/llm_factory.py`
 - **Azure ML** — Azure OpenAI Service + fine-tuning managed
 - **GCP Vertex AI** — Model Garden + TPU access; GoogleProvider ya implementado en `agent/llm_factory.py`
 - **IBM Watson** — watsonx.ai; menor integración con Hugging Face
@@ -274,7 +274,7 @@ Secciones propuestas:
 2. [código] Extender runner para bagging-lstm
 3. python -m cli train-ml --model bagging-lstm --serialize --tag ml-bagging-lstm
 4. python -m cli export-training-data ...
-5. python optimization/train_qlora.py --lr 0.00002 --rank 16 --epochs 3
+5. python optimization/qlora/train_qlora.py --lr 0.00002 --rank 16 --epochs 3
 6. python -m cli run-backtest --provider ollama --model qwen2.5:7b --tag zero-shot-qwen7b
 7. python -m cli run-backtest --provider groq --tag zero-shot-llama70b
 8. python -m cli run-backtest --provider ollama --model qwen25-ft --tag qlora-qwen7b

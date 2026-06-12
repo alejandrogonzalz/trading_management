@@ -29,7 +29,7 @@ def main():
     parser.add_argument(
         "--model",
         required=True,
-        choices=["xgboost", "random_forest", "lstm", "qlora"],
+        choices=["xgboost", "random_forest", "lstm"],
     )
     parser.add_argument("--config", required=True, help="Path to YAML config")
     parser.add_argument(

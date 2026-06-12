@@ -1,7 +1,7 @@
 # QLoRA Fine-Tuning — Concepts, Hyperparameters & Running
 
 Fine-tunes Qwen 2.5 7B (4-bit) with Unsloth for trade-direction prediction.
-Script: `langgraph/optimization/train_qlora.py`. Venv: `langgraph/.venv-finetuning/`.
+Script: `langgraph/optimization/qlora/train_qlora.py`. Venv: `langgraph/.venv-finetuning/`.
 
 > **Status & roadmap** (where we are, the SageMaker plan, what's left) lives in
 > [`docs/QLORA_FINETUNING.md` §0](../../docs/QLORA_FINETUNING.md). This file is the
@@ -179,13 +179,13 @@ Ensures reproducible results across runs.
 ```powershell
 cd C:\Users\alex\projects\trading_management\langgraph
 # 1 epoch (recommended first pass), live output + saved log:
-.\.venv-finetuning\Scripts\python.exe optimization\train_qlora.py --epochs 1 2>&1 | Tee-Object -FilePath logs\qlora_train.log
+.\.venv-finetuning\Scripts\python.exe optimization\qlora\train_qlora.py --epochs 1 2>&1 | Tee-Object -FilePath logs\qlora_train.log
 
 # Smoke test the loop (3 steps, tiny eval) before a long run:
-.\.venv-finetuning\Scripts\python.exe optimization\train_qlora.py --max-steps 3 --max-eval 10
+.\.venv-finetuning\Scripts\python.exe optimization\qlora\train_qlora.py --max-steps 3 --max-eval 10
 
 # Resume an interrupted run from the latest checkpoint-N in output_dir:
-.\.venv-finetuning\Scripts\python.exe optimization\train_qlora.py --epochs 3 --resume 2>&1 | Tee-Object -FilePath logs\qlora_train.log
+.\.venv-finetuning\Scripts\python.exe optimization\qlora\train_qlora.py --epochs 3 --resume 2>&1 | Tee-Object -FilePath logs\qlora_train.log
 ```
 
 **Crash recovery:** checkpoints save every 250 steps (`save_total_limit=3`). If a
@@ -229,7 +229,7 @@ FlashAttention-2 installs cleanly on Linux. Both together typically cut a
 The dataset is tiny (`backtest/data/labeled/dataset.jsonl`, ~56k samples) so
 data transfer is trivial.
 
-Full step-by-step: see [`optimization/SAGEMAKER_GUIDE.md`](../../langgraph/optimization/SAGEMAKER_GUIDE.md).
+Full step-by-step: see [`optimization/qlora/SAGEMAKER_GUIDE.md`](../../langgraph/optimization/qlora/SAGEMAKER_GUIDE.md).
 
 ### Instance options
 | Instance | GPU | VRAM | ~$/hr | Notes |

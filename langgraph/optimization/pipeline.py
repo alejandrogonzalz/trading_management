@@ -51,8 +51,4 @@ class OptimizerPipeline:
             from .searchers.lstm_searcher import LSTMSearcher
 
             return LSTMSearcher()
-        if self.model == "qlora":
-            from .searchers.qlora_searcher import QLoRASearcher
-
-            return QLoRASearcher()
-        raise ValueError(f"Unknown model: {self.model}. Choose from: xgboost, random_forest, lstm, qlora")
+        raise ValueError(f"Unknown model: {self.model}. Choose from: xgboost, random_forest, lstm")

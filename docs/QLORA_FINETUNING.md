@@ -4,6 +4,7 @@ Diagrams explaining what fine-tuning produces, how the pipeline runs, and how th
 
 > **Operational how-to** (commands, constraints, timing) lives in
 > [`.claude/rules/qlora-training.md`](../.claude/rules/qlora-training.md).
+> **SageMaker guide** lives in [`optimization/qlora/SAGEMAKER_GUIDE.md`](../langgraph/optimization/qlora/SAGEMAKER_GUIDE.md).
 > This file is the **conceptual + status/roadmap** reference.
 
 ---
