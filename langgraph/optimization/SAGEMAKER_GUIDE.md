@@ -4,12 +4,14 @@ Step-by-step guide to fine-tune Qwen 2.5 7B using a SageMaker Notebook Instance.
 
 ## Cost Estimate
 
-| Instance | GPU | VRAM | Cost/hr | ~2.5 hrs training |
+| Instance | GPU | VRAM | Cost/hr | 3 epochs (~3-6h) |
 |----------|-----|------|---------|-------------------|
-| ml.g5.xlarge | A10G | 24GB | ~$1.41 | ~$3.50 |
-| ml.g5.2xlarge | A10G | 24GB | ~$1.90 | ~$4.75 |
+| **ml.g6e.xlarge** | L40S | 48GB | ~$2.00 | ~$6-12 |
+| ml.g5.xlarge | A10G | 24GB | ~$1.41 | ~$4-8 |
 
-**Total cost: ~$3-5 USD** for the full training run.
+**Recommended: `ml.g6e.xlarge`** — 48GB lets you run `batch_size=8` comfortably at
+`max_seq_length=1024`, and FlashAttention-2 installs cleanly on Linux (the real
+speedup). The g5.xlarge works but is tighter — use `batch_size=4` there.
 
 ---
 
@@ -18,9 +20,11 @@ Step-by-step guide to fine-tune Qwen 2.5 7B using a SageMaker Notebook Instance.
 1. Go to **AWS Console → SageMaker → Notebook Instances → Create**
 2. Configure:
    - **Name**: `qlora-trading`
-   - **Instance type**: `ml.g5.xlarge` (24GB A10G GPU)
-   - **Volume size**: 50 GB (model weights need space)
+   - **Instance type**: `ml.g6e.xlarge` (48GB L40S GPU)
+   - **Volume size**: 50 GB (model weights + checkpoints need space)
    - **IAM Role**: Create a new role or use an existing SageMaker role
+   - **Lifecycle config** (optional but recommended): set an idle-shutdown script
+     so the instance auto-stops after 60 min of inactivity
 3. Click **Create notebook instance**
 4. Wait for status to become **InService** (~3-5 min)
 
@@ -44,94 +48,127 @@ cd trading_management/langgraph
 python3 -m venv .venv --system-site-packages
 source .venv/bin/activate
 
-# Install training dependencies (see requirements-finetuning.txt for pins)
+# Install training dependencies
 pip install "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git"
 pip install --no-deps trl peft accelerate bitsandbytes
 pip install datasets scikit-learn pyyaml
 
-# Verify GPU is available
+# Verify GPU + FlashAttention-2
 python -c "import torch; print(f'GPU: {torch.cuda.get_device_name(0)}, VRAM: {torch.cuda.get_device_properties(0).total_mem / 1e9:.1f} GB')"
 ```
 
-> **Note on candle data**: the evaluation step simulates trades against future
-> candles (`backtest/data/candles/*.json`). If those files are not in the repo
-> (they are DVC-tracked / gitignored), upload them manually or skip trade
-> simulation with `--max-eval 0`. Direction accuracy is computed regardless.
+> **Confirm FA2**: when the model loads, the startup banner should show `FA2 = True`.
+> That's the main speedup vs local Windows (where FA2 won't install).
+
+> **Candle data**: the evaluation step simulates trades against future candles
+> (`backtest/data/candles/*.json`). If those files are not in the repo (DVC-tracked
+> / gitignored), upload them manually or skip trade simulation with `--max-eval 0`.
+> Direction accuracy is computed regardless.
 
 ---
 
-## Step 4: Run Training
+## Step 4: Smoke Test (~2 min, ~$0.05)
+
+Before committing to a multi-hour run, confirm the environment works:
 
 ```bash
-# Default config (recommended first run)
-python optimization/train_qlora.py
-
-# Or with specific hyperparameters
-python optimization/train_qlora.py --lr 0.00002 --rank 16 --alpha 32 --epochs 3
-
-# Or using the YAML config
-python optimization/train_qlora.py --config optimization/configs/qlora.yaml
-
-# Quick test (evaluate on 100 samples only)
-python optimization/train_qlora.py --max-eval 100 --epochs 1
+python optimization/train_qlora.py --max-steps 3 --max-eval 10
 ```
 
-### What the script does:
-1. **prepare_data** — splits `dataset.jsonl` with the same 70/15/15 temporal split
-   used by LSTM/XGBoost (no sort) → `training_data/{train,val,test}.jsonl` in
-   system/user/assistant chat format
-2. **load_model** — loads Qwen 2.5 7B in 4-bit quantization (~4-5 GB VRAM) and
-   applies LoRA adapters (rank=16, ~0.6% trainable params) on all attention +
-   MLP projection layers
-3. **train** — SFTTrainer: 3 epochs, effective batch=16, cosine LR, eval every
-   100 steps on val set, saves best checkpoint by eval_loss
-4. **save_model** — writes LoRA adapters + merged GGUF (Q4_K_M) for Ollama
-5. **evaluate** — rebuilds prompts from raw indicators (NOT from the training
-   JSONL), generates predictions with greedy decoding, runs `simulate_trade()`
-   against future candles, emits `sample_keys` for paired McNemar / t-test
-6. **save result** — writes `optimization/results/qlora_optimization.json` with
-   full metrics (accuracy, win_rate, profit_factor, Sharpe, drawdown) +
-   per-sample predictions/actuals/trade_results/sample_keys
-
-### Expected output:
-```
-Training completed in ~90-150 min
-Test accuracy: 0.XXXX
-Result saved: optimization/results/qlora_optimization.json
-Model saved: backtest/data/models/qlora_qwen25_7b/
-```
+This loads the model, runs 3 training steps, evaluates 10 samples, and exits.
+If it passes, the full run will too — the failure mode is always step 0.
 
 ---
 
-## Step 5: Push Results
+## Step 5: Run Training
+
+Use **tmux** so the job survives browser disconnects:
+
+```bash
+tmux new -s qlora
+
+# The real run: 3 epochs, batch_size=8 (fits in 48GB)
+python optimization/train_qlora.py --epochs 3 --batch-size 8 2>&1 | tee logs/qlora_sagemaker.log
+
+# Detach: Ctrl+B, D (safe to close browser)
+# Reattach later: tmux attach -t qlora
+```
+
+### What happens:
+1. **prepare_data** — splits `dataset.jsonl` with the same 70/15/15 temporal split
+   used by LSTM/XGBoost (no sort) → `training_data/{train,val,test}.jsonl`
+2. **load_model** — loads Qwen 2.5 7B in 4-bit (~4-5 GB VRAM) + LoRA adapters
+3. **train** — SFTTrainer: 3 epochs, effective batch=128 (8×16), cosine LR, eval
+   every 250 steps on val set, saves best checkpoint by eval_loss
+4. **save_model** — LoRA adapters + merged GGUF (Q4_K_M) for Ollama
+5. **evaluate** — greedy decoding on all 8,425 test samples, trade simulation,
+   emits `sample_keys` for paired McNemar / t-test
+6. **save result** → `optimization/results/qlora_optimization.json`
+
+### If the run is interrupted:
+
+```bash
+# Resume from the last checkpoint (saves every 250 steps)
+python optimization/train_qlora.py --epochs 3 --batch-size 8 --resume 2>&1 | tee -a logs/qlora_sagemaker.log
+```
+
+`--resume` finds the latest `checkpoint-N` in the output directory and continues
+from there. No work is lost.
+
+### Expected timing (ml.g6e.xlarge):
+- ~2-4 s/step (vs ~28 s/step local)
+- ~1-2 h per epoch
+- **~3-6 h total** for 3 epochs + evaluation
+
+---
+
+## Step 6: Push Results
 
 ```bash
 # Add results (NOT the model weights — too large for git)
 git add optimization/results/qlora_optimization.json
-git commit -m "feat(optimization): QLoRA fine-tuning results — Qwen 2.5 7B"
+git commit -m "feat(qlora): 3-epoch fine-tuning results — Qwen 2.5 7B on SageMaker"
 git push origin dev
 ```
 
 ---
 
-## Step 6: STOP THE INSTANCE
+## Step 7: STOP THE INSTANCE
 
-**IMPORTANT**: You pay while the instance is running ($1.41/hr = $34/day).
+**IMPORTANT**: You pay while the instance is running (~$2/hr = $48/day).
 
 1. Go to **SageMaker → Notebook Instances**
 2. Select `qlora-trading`
 3. Click **Stop**
 
+If you set up the idle-shutdown lifecycle config in Step 1, it auto-stops after
+60 min of no terminal/notebook activity — but don't rely on it alone.
+
+---
+
+## Step 8: Compare Results Locally
+
+Back on your machine:
+
+```bash
+cd langgraph
+git pull origin dev
+
+# Paired statistical test vs LSTM (the current winner at 81.5%)
+python -m cli compare-stats \
+  --a optimization/results/qlora_optimization.json \
+  --b backtest/data/results/ml-lstm.json
+```
+
 ---
 
 ## Optional: Deploy to Ollama
 
-If the fine-tuned model outperforms zero-shot, you can load the GGUF into Ollama:
+If the fine-tuned model outperforms zero-shot, load the GGUF into Ollama:
 
 ```bash
-# On your production machine (with Ollama installed)
-# Copy the GGUF file from SageMaker first
-ollama create trading-qwen -f Modelfile
+# Copy the GGUF file from SageMaker first (scp or S3)
+ollama create trading-qwen-ft -f Modelfile
 ```
 
 Where `Modelfile` contains:
@@ -141,42 +178,43 @@ PARAMETER temperature 0.1
 SYSTEM "You are a Senior Technical Analyst..."
 ```
 
+Then set `LLM_MODEL=trading-qwen-ft` in your environment — the agent uses it
+automatically via `llm_factory.py`.
+
 ---
 
 ## Troubleshooting
 
 | Issue | Fix |
 |-------|-----|
-| CUDA OOM | Reduce `--batch-size` to 2 or increase `gradient_accumulation_steps` |
-| Slow training | Check GPU util with `nvidia-smi` — if low, increase batch size |
-| Permission denied on git push | Configure git credentials: `git config credential.helper store` |
-| Model downloads slowly | First run downloads ~4GB of weights; subsequent runs use cache |
-| Instance won't start | Check service quota for ml.g5.xlarge in your region |
+| CUDA OOM | Reduce `--batch-size` to 4 (g5) or 2, increase `gradient_accumulation_steps` proportionally |
+| Slow training (low GPU util) | Check `nvidia-smi` — if GPU util < 80%, increase batch size |
+| FA2 = False in banner | Reinstall: `pip install flash-attn --no-build-isolation` |
+| Kernel/terminal dies | Use tmux (Step 5). Reattach with `tmux attach -t qlora` |
+| Interrupted mid-training | Re-run with `--resume` — picks up from last checkpoint |
+| Permission denied on git push | `git config credential.helper store` then push again |
+| Model downloads slowly | First run downloads ~4GB; cached afterwards |
+| Instance won't start | Check service quota for ml.g6e.xlarge in your region (request increase if needed) |
+| Checkpoint disk full | `save_total_limit=3` — only 3 checkpoints kept. If 50GB runs low, increase volume |
 
 ---
 
-## Running Multiple Configs
+## Running Multiple Configs (optional)
 
-To try all 5 recommended configs from `qlora.yaml`:
+To try different hyperparameter combos from `qlora.yaml`:
 
 ```bash
-# Config 1 (default — recommended)
-python optimization/train_qlora.py --lr 0.00002 --rank 16 --alpha 32 --epochs 2
+# Config 1 (default — recommended first)
+python optimization/train_qlora.py --lr 0.00002 --rank 16 --alpha 32 --epochs 3 --batch-size 8
 
-# Config 2
+# Config 2 (aggressive LR, smaller rank)
 python optimization/train_qlora.py --lr 0.00005 --rank 8 --alpha 16 --epochs 3 --batch-size 8
 
-# Config 3
-python optimization/train_qlora.py --lr 0.00001 --rank 32 --alpha 64 --epochs 2
-
-# Config 4
-python optimization/train_qlora.py --lr 0.0001 --rank 16 --alpha 32 --epochs 1 --batch-size 8
-
-# Config 5
-python optimization/train_qlora.py --lr 0.00005 --rank 16 --alpha 32 --epochs 2
+# Config 3 (conservative, large rank)
+python optimization/train_qlora.py --lr 0.00001 --rank 32 --alpha 64 --epochs 2 --batch-size 8
 ```
 
-Each run overwrites `qlora_optimization.json`. To keep all results, rename between runs:
+Each run overwrites `qlora_optimization.json`. Rename between runs to keep all:
 ```bash
 cp optimization/results/qlora_optimization.json optimization/results/qlora_config1.json
 ```
