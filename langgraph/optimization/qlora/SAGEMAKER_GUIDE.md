@@ -39,32 +39,31 @@ speedup). The g5.xlarge works but is tighter — use `batch_size=4` there.
 
 ## Step 3: Clone and Setup
 
+**IMPORTANT**: Clone into `~/SageMaker/` — it's the only persistent volume. Everything
+else is wiped on stop/start.
+
 ```bash
-# Clone repo
+cd ~/SageMaker
 git clone https://github.com/alejandrogonzalz/trading_management.git
 cd trading_management/langgraph
 
-# Run the automated setup script (installs everything + verifies)
+# Run the automated setup script (installs everything + pulls data + verifies)
 bash optimization/qlora/sagemaker_setup.sh
 ```
 
-Or manually:
-```bash
-python3 -m venv .venv --system-site-packages
-source .venv/bin/activate
-pip install "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git"
-pip install --no-deps trl peft accelerate bitsandbytes
-pip install datasets scikit-learn pyyaml tqdm matplotlib httpx
-python -c "import torch; print(f'GPU: {torch.cuda.get_device_name(0)}, VRAM: {torch.cuda.get_device_properties(0).total_mem / 1e9:.1f} GB')"
-```
+The setup script handles:
+- GPU + Python version verification
+- venv creation with pinned TRL/transformers versions (API-compatible)
+- DVC install + `dvc pull` for the dataset and candles
+- HuggingFace cache in the persistent volume
+- FA2 + Unsloth + SFTTrainer API compatibility check
 
 > **Confirm FA2**: when the model loads, the startup banner should show `FA2 = True`.
 > That's the main speedup vs local Windows (where FA2 won't install).
 
-> **Candle data**: the evaluation step simulates trades against future candles
-> (`backtest/data/candles/*.json`). If those files are not in the repo (DVC-tracked
-> / gitignored), upload them manually or skip trade simulation with `--max-eval 0`.
-> Direction accuracy is computed regardless.
+> **Dataset**: `dataset.jsonl` is DVC-tracked. The setup script pulls it automatically.
+> If DVC pull fails (IAM permissions), upload the file manually via JupyterLab to
+> `backtest/data/labeled/dataset.jsonl`.
 
 ---
 
