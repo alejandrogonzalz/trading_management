@@ -19,3 +19,4 @@ optimization/logs/
 training_data/
 unsloth_compiled_cache/
 logs/
+backtest/data/models/qlora_qwen25_7b/
