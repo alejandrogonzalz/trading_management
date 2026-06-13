@@ -199,7 +199,7 @@ class QLoRATrainer:
 
     def train(self) -> dict[str, Any]:
         """Run SFT training with early stopping based on validation loss."""
-        from transformers import TrainingArguments
+        import trl
         from trl import SFTTrainer
 
         log.info("Loading datasets...")
@@ -220,44 +220,86 @@ class QLoRATrainer:
 
         output_dir = self.cfg["output_dir"]
         max_steps = self.cfg.get("max_steps") or -1  # -1 = honor num_train_epochs
-        training_args = TrainingArguments(
-            output_dir=output_dir,
-            num_train_epochs=self.cfg["epochs"],
-            max_steps=max_steps,
-            per_device_train_batch_size=self.cfg["batch_size"],
-            gradient_accumulation_steps=self.cfg["gradient_accumulation_steps"],
-            learning_rate=self.cfg["learning_rate"],
-            weight_decay=self.cfg["weight_decay"],
-            warmup_steps=self.cfg["warmup_steps"],
-            lr_scheduler_type="cosine",
-            fp16=False,
-            bf16=True,
-            logging_steps=25,
-            # eval at batch 1 (same as train) — batch 8 (the HF default) at ~900
-            # tokens would spike activation memory and risk OOM on 16GB.
-            per_device_eval_batch_size=1,
-            eval_strategy="steps",
-            eval_steps=250,
-            save_strategy="steps",
-            save_steps=250,
-            save_total_limit=3,
-            load_best_model_at_end=True,
-            metric_for_best_model="eval_loss",
-            greater_is_better=False,
-            seed=self.cfg["seed"],
-            report_to="none",
-        )
 
-        self.trainer = SFTTrainer(
-            model=self.model,
-            tokenizer=self.tokenizer,
-            train_dataset=train_dataset,
-            eval_dataset=val_dataset,
-            args=training_args,
-            dataset_text_field="text",
-            max_seq_length=self.cfg["max_seq_length"],
-            packing=False,
-        )
+        trl_major = int(trl.__version__.split(".")[1]) if trl.__version__.startswith("0.") else 99
+        log.info(f"  TRL version: {trl.__version__} (using {'new' if trl_major >= 12 else 'legacy'} API)")
+
+        if trl_major >= 12:
+            # TRL >= 0.12: SFTConfig replaces TrainingArguments, params moved into config
+            from trl import SFTConfig
+            sft_config = SFTConfig(
+                output_dir=output_dir,
+                num_train_epochs=self.cfg["epochs"],
+                max_steps=max_steps,
+                per_device_train_batch_size=self.cfg["batch_size"],
+                gradient_accumulation_steps=self.cfg["gradient_accumulation_steps"],
+                learning_rate=self.cfg["learning_rate"],
+                weight_decay=self.cfg["weight_decay"],
+                warmup_steps=self.cfg["warmup_steps"],
+                lr_scheduler_type="cosine",
+                fp16=False,
+                bf16=True,
+                logging_steps=25,
+                per_device_eval_batch_size=1,
+                eval_strategy="steps",
+                eval_steps=250,
+                save_strategy="steps",
+                save_steps=250,
+                save_total_limit=3,
+                load_best_model_at_end=True,
+                metric_for_best_model="eval_loss",
+                greater_is_better=False,
+                seed=self.cfg["seed"],
+                report_to="none",
+                dataset_text_field="text",
+                max_seq_length=self.cfg["max_seq_length"],
+                packing=False,
+            )
+            self.trainer = SFTTrainer(
+                model=self.model,
+                processing_class=self.tokenizer,
+                train_dataset=train_dataset,
+                eval_dataset=val_dataset,
+                args=sft_config,
+            )
+        else:
+            # TRL < 0.12: legacy API with TrainingArguments + params in SFTTrainer
+            from transformers import TrainingArguments
+            training_args = TrainingArguments(
+                output_dir=output_dir,
+                num_train_epochs=self.cfg["epochs"],
+                max_steps=max_steps,
+                per_device_train_batch_size=self.cfg["batch_size"],
+                gradient_accumulation_steps=self.cfg["gradient_accumulation_steps"],
+                learning_rate=self.cfg["learning_rate"],
+                weight_decay=self.cfg["weight_decay"],
+                warmup_steps=self.cfg["warmup_steps"],
+                lr_scheduler_type="cosine",
+                fp16=False,
+                bf16=True,
+                logging_steps=25,
+                per_device_eval_batch_size=1,
+                eval_strategy="steps",
+                eval_steps=250,
+                save_strategy="steps",
+                save_steps=250,
+                save_total_limit=3,
+                load_best_model_at_end=True,
+                metric_for_best_model="eval_loss",
+                greater_is_better=False,
+                seed=self.cfg["seed"],
+                report_to="none",
+            )
+            self.trainer = SFTTrainer(
+                model=self.model,
+                tokenizer=self.tokenizer,
+                train_dataset=train_dataset,
+                eval_dataset=val_dataset,
+                args=training_args,
+                dataset_text_field="text",
+                max_seq_length=self.cfg["max_seq_length"],
+                packing=False,
+            )
 
         log.info("Starting training...")
         t0 = time.time()
