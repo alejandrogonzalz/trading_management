@@ -136,9 +136,16 @@ Cambios complementarios:
   solape de régimen entre activos correlacionados).
 
 > ⚠️ **Consecuencia:** corregir el split **invalida los resultados ya
-> entrenados** (LSTM/XGBoost/RF/QLoRA). Para que la comparación de la tesis siga
-> siendo válida, hay que re-entrenar/re-evaluar todos los modelos con el nuevo
-> split.
+> entrenados** (LSTM/XGBoost/RF, **ensembles incl. Bagging-LSTM** y QLoRA). Para que
+> la comparación de la tesis siga siendo válida, hay que re-entrenar/re-evaluar todos
+> los modelos con el nuevo split.
+>
+> 📓 **Avance 5 también está afectado.** `optimization/searchers/ensemble_searcher.py`
+> usa el mismo `_temporal_split`, así que el **Bagging-LSTM (83.37% test, modelo final
+> de Avance 5)** arrastra el mismo leakage. Además, el notebook `Avance5.ipynb` afirma
+> "ausencia de sobreajuste" porque val (83.32%) ≈ test (83.37%) — pero eso es un **falso
+> negativo**: con un split contaminado, val y test son dos slices con leak, así que su
+> parecido NO prueba generalización. Re-ejecutar el notebook tras el fix.
 
 ---
 

@@ -64,8 +64,11 @@ def _temporal_split(samples, train_frac=0.70, val_frac=0.15,
 
 **Limpieza relacionada:** en `backtest/export.py`, **eliminar** la función
 `temporal_split` marcada DEPRECATED (ordenaba por timestamp pero sin embargo; ya no
-aporta y confunde). `export_training_data` y `train_qlora.py::evaluate` heredan el fix
-porque ambos llaman `_temporal_split` — **no tocar esos dos**.
+aporta y confunde). Heredan el fix automáticamente (todos llaman `_temporal_split`),
+**no tocarlos**: `export_training_data`, `train_qlora.py::evaluate`, y
+`optimization/searchers/ensemble_searcher.py::_DataMixin._load_all` (línea ~29) — este
+último es el que alimenta a **Bagging-LSTM y todos los ensembles**, así que el fix
+también limpia el modelo ganador de Avance 5. Ver Tarea 7.
 
 **Alternativa (documentar, no usar como primaria):** split temporal *por símbolo* +
 embargo → test balanceado entre activos pero retiene solape de régimen cross-asset. El
@@ -171,15 +174,101 @@ mantener una copia canónica para `compare-stats`.
 
 ---
 
+## Tarea 7 — Re-entrenar modelos ML/ensemble + re-ejecutar notebook Avance 5
+**Por qué:** los ensembles (`optimization/searchers/ensemble_searcher.py`) usan el MISMO
+`_temporal_split` (vía `_DataMixin._load_all`), así que el **Bagging-LSTM — el modelo
+final de Avance 5 (83.37% test)** está medido bajo el mismo leakage que el QLoRA. El fix
+de la Tarea 1 los limpia automáticamente, pero **hay que re-entrenarlos y re-ejecutar el
+notebook** para que los números sean válidos.
+
+**Ojo — falso negativo en el notebook actual.** `Avance5.ipynb` (celda 12) afirma
+"ausencia de sobreajuste" porque val (83.32%) ≈ test (83.37%). Eso **no prueba nada** con
+el split contaminado: val y test son dos slices con leak (mismo régimen de calendario),
+así que su parecido es esperable y NO evidencia de generalización. Tras el fix hay que
+**re-evaluar esa afirmación** con el gap real sobre un test temporal limpio.
+
+**Diferencia con QLoRA:** los ensembles SÍ evalúan el test completo (~8 425, sin
+`--max-eval`), así que su test = cola de los últimos ~3 símbolos (LINK/MATIC/NEAR), no 1
+solo como el QLoRA — pero sigue siendo posicional/por-símbolo, no temporal. Igual de
+inválido para la tesis.
+
+**Qué hacer:**
+1. Re-correr `optimization/run_ensembles.py` (Bagging-LSTM + el resto) con el split nuevo.
+2. Re-ejecutar `Avance5.ipynb` de punta a punta (celda 4 re-genera el split; celdas 7-24
+   re-generan tablas, gráficas y conclusiones). Verificar que las celdas tengan output
+   antes de comitear (regla del proyecto: notebooks ejecutados).
+3. Actualizar las conclusiones del notebook con el gap train−test real y, si cambia, el
+   modelo ganador.
+
+> **Paralelizable en SageMaker:** el QLoRA (Tarea 6) es el job pesado de GPU; los
+> ensembles (Bagging-LSTM hidden=32) son ligeros y corren en CPU. Se pueden lanzar **en
+> paralelo** en la misma instancia sin competir por VRAM — aprovecha eso.
+
+---
+
 ## Tarea 6 — Re-ejecución operativa (post-cambios)
 1. `dvc pull` de `backtest/data/labeled/dataset.jsonl` **y** `backtest/data/candles/`
    (sin las velas, el backtest da win_rate/PF/Sharpe = 0).
 2. Re-exportar training data (hereda el split nuevo) — lo hace `train_qlora.py` solo.
-3. Re-entrenar barato en CPU: LSTM / XGBoost / RF (minutos–~1h) → resultados nuevos.
+3. Re-entrenar barato en CPU: LSTM / XGBoost / RF / **ensembles (Bagging-LSTM)** →
+   resultados nuevos (ver Tarea 7).
 4. Re-entrenar **1 QLoRA en SageMaker** (`run_cloud.sh`); opcional **1 local**
-   (`run_local.sh`).
+   (`run_local.sh`). Puede correr en paralelo con el paso 3 (Tarea 7).
 5. Re-correr **zero-shot** sobre el test nuevo (`LLMBacktestRunner`, provider Groq/Ollama).
-6. `compare-stats` (McNemar + t-test) alineado por `sample_keys`.
+6. Re-ejecutar `Avance5.ipynb` y `compare-stats` (McNemar + t-test) alineado por
+   `sample_keys` entre TODOS los modelos (incluido Bagging-LSTM y QLoRA).
+
+---
+
+## Apéndice A — Cómo verificar overfitting (fine-tuning y modelos ML)
+
+> **Principio honesto:** no se puede demostrar "0% overfitting". Se acumula evidencia
+> con varios checks independientes hasta concluir "sin señales". **Prerrequisito:** todos
+> estos checks solo valen DESPUÉS del fix del split (Tarea 1) — con test contaminado, un
+> gap chico es un **falso negativo** (justo lo que pasa hoy en `Avance5.ipynb`).
+
+### A.1 Umbrales de lectura (aplican a ambos)
+
+| Check | Overfitting | Sano |
+|-------|-------------|------|
+| Gap `train_acc − test_acc` | > ~10 pp | < ~3-5 pp |
+| Curva train vs val loss | train baja, val **sube/diverge** | val plana o bajando con train |
+| `val_acc` vs `test_acc` (split limpio) | muy distintos | parecidos |
+| vs **baseline heurístico** | modelo ≈ baseline | modelo ≫ baseline |
+| Walk-forward (varias ventanas) | accuracy cae/oscila mucho | estable (std baja, sin tendencia ↓) |
+
+### A.2 Para el FINE-TUNING (QLoRA) — `train_qlora.py`
+1. **Curva de loss** (Tarea 3.3): plot de `train_loss` y `eval_loss` por step desde
+   `trainer.state.log_history`. Señal de overfit = `eval_loss` empieza a subir mientras
+   `train_loss` sigue bajando. El mejor checkpoint es el del mínimo `eval_loss`.
+2. **Gap de accuracy** (Tarea 3.2): `_predict_split` sobre subconjuntos de train/val/test
+   → reportar `train_acc, val_acc, test_acc, gap`.
+3. **Baseline heurístico** (Tarea 3.4): contraste obligatorio (clase mayoritaria = 51.1%,
+   no sirve; usa el heurístico de indicadores).
+4. **Walk-forward (opcional, caro):** cada fold = un fine-tune completo. Con presupuesto,
+   2-3 ventanas expansivas (entrena en [0,t1]→prueba [t1,t2]; [0,t2]→[t2,t3]). Si la
+   accuracy de test es estable entre ventanas → generaliza, no memoriza un régimen. Si el
+   presupuesto no da, basta 1 split temporal limpio + los checks 1-3.
+
+### A.3 Para los MODELOS ML (LSTM / ensembles / XGBoost) — más barato, hacer más
+1. **Gap train vs test directo:** predecir sobre train y test completos (es rápido) y
+   reportar el gap. Es la señal más directa.
+2. **Curva de aprendizaje por tamaño de datos:** re-entrenar con 25/50/75/100% del train
+   y graficar test_acc. Si se aplana → no está memorizando; si sube sin parar con más
+   datos → aún hay margen y poca memorización. Barato en ML, muy convincente.
+3. **Walk-forward / expanding-window (recomendado):** reusar `_temporal_split` en bucle o
+   `TimeSeriesSplit` para crear K ventanas y entrenar/evaluar en cada una. Reportar
+   `mean ± std` de accuracy. Std baja y sin tendencia a la baja = generaliza.
+4. **Curva train vs val loss por epoch (LSTM):** ya hay early stopping (patience=10);
+   persistir y graficar ambas losses por epoch para ver divergencia.
+5. **Desglose por símbolo y por sub-periodo** del test: si la accuracy se desploma en
+   ciertas monedas/tramos, el modelo es frágil (memoriza patrones) aunque el promedio
+   se vea bien. Aplica también al QLoRA.
+
+### A.4 Veredicto
+Concluir "sin overfitting" solo si: gap pequeño **Y** curvas no divergen **Y** modelo ≫
+baseline **Y** (idealmente) walk-forward estable — todo sobre el split temporal limpio.
+Cualquier check aislado puede engañar; la fuerza está en la combinación.
 
 ---
 
@@ -204,3 +293,6 @@ mantener una copia canónica para `compare-stats`.
 | `langgraph/optimization/qlora/run_cloud.sh` / `run_local.sh` | 4 — crear |
 | `langgraph/optimization/qlora/results/` (+ `archive/`) | 4 — archivar resultados viejos |
 | `.claude/steering-langgraph.md`, `.claude/rules/ml-conventions.md`, etc. | 5 — docs |
+| `langgraph/optimization/searchers/ensemble_searcher.py` | 7 — hereda fix (re-entrenar) |
+| `langgraph/optimization/run_ensembles.py` | 7 — re-correr ensembles |
+| `langgraph/Avance5.ipynb` | 7 — re-ejecutar + actualizar conclusiones/ganador |
