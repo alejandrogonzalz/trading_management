@@ -4,12 +4,12 @@
 Standalone Python research system (separate from Docker backend) for:
 1. **LangGraph Agent** — 3-node DAG for intelligent trade setup generation
 2. **Backtest Framework** — Evaluate LLM vs ML prediction quality against historical data
-3. **Optimization Pipeline** — Hyperparameter search for XGBoost, RF, LSTM
+3. **Optimization Pipeline** — Hyperparameter search for XGBoost, RF, LSTM, QLoRA
 4. **Dataset** — 56,161 labeled samples, 12 symbols, 18 months, 3 timeframes
 
 **Entry Point**: `langgraph/cli.py`
 **Agent API**: FastAPI on port 2024 (`langgraph/agent/main.py`)
-**Environment**: conda env `trading` (Python 3.11)
+**Environment**: `langgraph/.venv/` (Python 3.11) — activate with `source .venv/bin/activate`
 
 ---
 
@@ -273,6 +273,24 @@ Output: `results/{model}_optimization.json` with best_params, all_results, score
 
 `MLBacktestRunner` auto-loads `best_params` from this file when `--serialize` is not used.
 
+### QLoRA Fine-tuning (`optimization/qlora/`)
+```
+qlora/
+├── train_qlora.py         # Main training script (Unsloth + SFTTrainer)
+├── run_3configs.sh        # Sequential wrapper for 3 hyperparameter configs
+├── sagemaker_setup.sh     # SageMaker environment setup (venv, deps, GPU check)
+├── logs/                  # Training logs per config
+└── results/               # qlora_config*.json result files
+```
+
+Key details:
+- Base model: `unsloth/Qwen2.5-7B-Instruct-bnb-4bit` (4-bit quantized, LoRA in bf16)
+- Trains on chat-format JSONL exported by `backtest/export.py`
+- TRL version detection: SFTConfig for TRL>=0.12, legacy TrainingArguments otherwise
+- Evaluates on same temporal test split as LSTM/XGBoost (paired comparison)
+- Outputs: adapters, GGUF (Q8_0), and result JSON with predictions + trade metrics
+- See `.claude/rules/qlora-training.md` for full hyperparameter reference
+
 ### `analyze_results.py`
 Loads result JSONs from 3-4 models → comparison table + matplotlib charts
 
@@ -289,7 +307,7 @@ it so the fine-tuned model's test set matches LSTM/XGBoost.
 
 ## CLI Commands (`langgraph/cli.py`)
 ```bash
-# Activate conda env first: conda activate trading
+# Activate venv first: cd langgraph && source .venv/bin/activate
 
 python -m cli fetch-candles --symbols BTCUSDT,ETHUSDT --interval 1h --months 18 --timeframes "1h,4h,1d"
 python -m cli prepare-dataset --symbols BTCUSDT,ETHUSDT --interval 1h --timeframes "1h,4h,1d"
@@ -344,35 +362,58 @@ tests/
     └── test_optimization.py       # Optimization pipeline tests
 ```
 
-Run: `conda activate trading && python -m pytest tests/backtest/ -v`
+Run: `cd langgraph && source .venv/bin/activate && python -m pytest tests/backtest/ -v`
 
 ---
 
-## Current Status (2026-05-11)
+## Current Status (2026-06-13)
 
 ### Completed ✅
 - LangGraph agent (3 nodes) — production-ready, running on port 2024
 - Backtest framework — full CLI with 6 commands, refactored into clean subpackages
 - Shared prompts (`agent/prompts.py`) — single source used by graph, backtest, and fine-tuning export
 - Dataset: 56,161 samples (18 months, 12 symbols, 3 TFs)
-- Optimization round 1 complete:
-  - **LSTM: 84.29%** accuracy (winner, CPU, 73.5 min training)
-  - XGBoost: 76.79% (overfitting gap: 0.187)
-  - Random Forest: 74.89% (overfitting gap: 0.203)
+- ML optimization complete (Avance 4 + 5):
+  - **Bagging-LSTM: 83.37% test acc** (5 bags, hidden=32, layers=3, seq=5) — Avance 5 winner
+  - LSTM individual: 81.5% test acc (hidden=32, layers=3, seq_len=5, dropout=0.1, lr=0.001)
+  - Blending: 81.89% test acc (heterogeneous ensemble)
+  - SVM (RBF): 70.8% val acc
+  - XGBoost: 66.6% test acc (tuned with L1/L2 regularization)
+- DVC initialized — dataset, candles, models tracked in S3 (`s3://trading-management-dvc/`)
+- QLoRA config 1 trained on SageMaker (92% direction accuracy):
+  - lr=2e-5, rank=16, alpha=32, epochs=2, batch=2, grad_accum=8
+  - Model backed up: `s3://trading-management-dvc/models/qlora_config1/`
+  - Trade simulation eval re-running with candles
 
 ### Pending ⏳
-1. Evaluate LSTM winner on test set (~8,425 unseen samples)
-2. Serialize LSTM with `torch.save()` for deployment
-3. Second optimization round for XGB/RF (L1/L2 regularization)
-4. Initialize DVC for model versioning
-5. QLoRA fine-tuning of Qwen 2.5 7B (thesis requirement)
+1. QLoRA configs 2-3 (rank=8/lr=5e-5/epochs=3, rank=32/lr=1e-5/epochs=2)
+2. Zero-shot LLM backtest (Groq or Ollama)
+3. Statistical comparison: McNemar test + paired t-test across all models
+4. Integrate best fine-tuned model into LangGraph (GGUF → Ollama)
+5. Ensemble LSTM+LLM (if time permits)
+6. Thesis presentation + video demo (deadline ~2026-06-26)
 
-### Research Context
-This is part of a **master's thesis** research project:
-> "Can fine-tuning significantly improve LLM accuracy for crypto technical analysis while maintaining explainable reasoning?"
+### Research Context (Master's Thesis)
 
-4 models to compare: zero-shot LLM (ReAct/LangGraph agent), fine-tuned LLM (QLoRA), XGBoost, Random Forest, LSTM
-Statistical validation: McNemar test + paired t-test
+**Title**: Fine-Tuning de un LLM para Analisis Tecnico y Clasificacion de Setups en Criptomonedas
+**Program**: MNA (Maestria en IA Aplicada), Tecnologico de Monterrey, Abr-Jun 2026
+**Hypothesis**: A fine-tuned LLM will outperform the zero-shot baseline in direction accuracy and trade quality
+
+**Objectives**:
+1. Build labeled dataset (56K+ samples) from Binance historical candles + hindsight labeling
+2. Fine-tune Qwen 2.5 7B via QLoRA (local + SageMaker) — two infra approaches
+3. Evaluate 5 models: zero-shot LLM, fine-tuned LLM, XGBoost, SVM, LSTM
+4. Statistical validation: McNemar test + paired t-test (paired by sample_keys)
+5. Integrate best model into LangGraph agent
+6. (Optional) Ensemble LSTM + LLM — combines ML accuracy with LLM explainability
+
+**Success criteria**: at least one fine-tuned model beats zero-shot in accuracy; profit factor > 1.0; documented comparison with quantitative metrics. A negative result is academically valid if causes are analyzed.
+
+**Deliverables**: data pipeline, dataset, fine-tuned models (local + cloud), comparative evaluation, LangGraph integration, technical report, video demo, presentation
+
+**Evaluation metrics**: direction accuracy, precision/recall/F1, win rate, profit factor, Sharpe ratio, max drawdown, confidence calibration, latency, training cost
+
+Full proposal: `trading_management_docs/fine-tunning/propuesta/Definicion_Del_Proyecto_MNA.md`
 
 ---
 
