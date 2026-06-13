@@ -13,14 +13,16 @@
 |---|----------|-----------|
 | 1 | El "split temporal" **no es temporal**: corta por posición de archivo sobre un dataset **agrupado por símbolo**. | 🔴 Alta |
 | 2 | El test set evaluado fue **100% LINKUSDT** (1 solo activo), en una ventana de calendario que **solapa** con el periodo de entrenamiento de los activos correlacionados → **leakage de régimen de mercado**. | 🔴 Alta |
-| 3 | El 92% de accuracy se midió sobre **2000 muestras** (no las 8 425 del test) y con **métricas financieras = 0** (sin velas). No es representativo. | 🟠 Media |
-| 4 | El `bias` etiquetado es casi una **función determinista** de los indicadores del prompt → el 92% puede reflejar aprendizaje de la regla de etiquetado, no predicción de mercado. | 🟠 Media |
-| 5 | No hay **early stopping real**, ni accuracy de train/val, ni gap train/test, ni curvas de loss persistidas, ni baseline trivial. | 🟠 Media |
+| 3 | El 92% de accuracy se midió sobre **2000 muestras** (no las 8 425 del test) y con **métricas financieras = 0** (sin velas, por no hacer `dvc pull`). No es representativo. | 🟠 Media |
+| 4 | El 92% **no es demostrablemente overfitting ni memorización**: la generalización está **sin verificar** porque el test está contaminado por el leakage (#1, #2). | 🟠 Media |
+| 5 | No hay **early stopping real**, ni accuracy de train/val, ni gap train/test, ni curvas de loss persistidas, ni baseline heurístico → la pregunta "¿overfitted?" no se puede cerrar con los datos actuales. | 🟠 Media |
 
 **Conclusión rápida:** No hay solapamiento *literal* de muestras entre el conjunto
-de fine-tuning y el de evaluación (son slices disjuntos). Pero el particionamiento
-es metodológicamente incorrecto: no garantiza que "el agente nunca vea datos
-futuros", y la métrica de 92% no es defendible como está para la tesis.
+de fine-tuning y el de evaluación (son slices disjuntos), y **no hay evidencia de
+overfitting** (la `eval_loss` no diverge de la `train_loss`). El problema vinculante
+es otro: el particionamiento **no es temporal**, así que no garantiza que "el agente
+nunca vea datos futuros" y el 92% **no es creíble como medida de generalización**.
+Overfitting y leakage son problemas distintos — aquí lo que falla es el **leakage**.
 
 ---
 
@@ -140,28 +142,59 @@ Cambios complementarios:
 
 ---
 
-## 2. Overfitting / Memorización
+## 2. Overfitting — ¿está sobreajustado el modelo?
+
+**Veredicto: NO hay evidencia de que esté overfitted.** El problema real no es
+overfitting, es el leakage de la sección 1. Son conceptos distintos:
+- **Overfitting** = el modelo memoriza el train y falla en datos *nuevos*.
+- **Leakage** = el "test" no es independiente del train, así que una buena nota de
+  test **no es confiable** (aunque el modelo no esté sobreajustado).
+
+Aquí: el modelo *no* muestra overfitting, pero su test está contaminado → el 92% no
+prueba generalización.
 
 ### 2.1 Qué se mide hoy
 
 `optimization/qlora/train_qlora.py`:
 - Trackea `train_loss` y `eval_loss` (loss de validación). Resultado real:
-  `train_loss = 0.795`, `eval_loss = 0.787` → eval ≤ train, sin señal de
-  overfitting en la loss (pero solo 2 epochs).
+  `train_loss = 0.795`, `eval_loss = 0.787`. La eval **no diverge** de la train →
+  sin señal de overfitting. **Matiz:** `train_loss` es el *promedio de toda la
+  corrida* (incluye los primeros pasos con loss alta) y `eval_loss` es la del mejor
+  checkpoint → no son directamente comparables. Para concluir con rigor hace falta
+  la **curva** train-vs-eval por step, que hoy no se persiste.
 - `load_best_model_at_end=True` + `metric_for_best_model="eval_loss"`, pero
   **no hay `EarlyStoppingCallback`** → entrena los epochs completos y solo
   restaura el mejor checkpoint. El docstring dice "early stopping" pero no lo es.
-- Solo calcula **direction accuracy en test** al final. No hay accuracy de
-  validación ni de train, ni gap train/test, ni curvas persistidas.
+- Solo calcula **direction accuracy en test** al final. No hay accuracy de train ni
+  de val, ni **gap train−test** (la señal directa de memorización) → por eso la
+  pregunta "¿overfitted?" **no se puede cerrar** con los datos actuales.
 
-### 2.2 La señal sospechosa: 92%
+### 2.2 Sobre el 92% (corrección a una versión previa de este informe)
 
-El `bias` del label se genera por reglas deterministas sobre ATR/ADX/heatmap en el
-labeler, y el `reasoning` exportado también se construye por plantilla desde esos
-mismos indicadores (`export.py::_generate_reasoning`). El modelo recibe esos
-indicadores en el prompt → puede estar **aprendiendo la regla de etiquetado**, no
-prediciendo el mercado. Un 92% en cripto es una bandera roja que hay que descartar
-con un baseline.
+Una versión anterior afirmaba que el `bias` era "casi una función determinista de
+los indicadores del prompt" y que el modelo "memorizaba la regla de etiquetado".
+**Eso es incorrecto.** Verificado en `backtest/ingestion/labeler.py::label_candle`:
+el `bias` se deriva por **hindsight** — compara `max_up` vs `max_down` sobre las **24
+velas FUTURAS**. El modelo NO ve en el prompt la señal que genera el label; predice
+dirección futura genuina.
+
+Datos verificados sobre la corrida real:
+- **Balance de clases del test:** 1022 LONG / 978 SHORT → un clasificador de clase
+  mayoritaria saca solo **51.1%**. El 92% NO es un artefacto de desbalance; es
+  discriminación real muy por encima del azar.
+- **`errors: 0` parse errors** → el modelo aprendió a generar el JSON estructurado
+  correctamente (el *formato/razonamiento estructurado* sí generaliza).
+
+Entonces, ¿por qué el 92% no es creíble? Porque se midió **bajo leakage de régimen**
+(sección 1.4) y sobre **un único activo (LINK)**. Es un número *optimista* cuya
+generalización a mercado futuro y no visto **está sin verificar** — no es "falso" ni
+"memorización", simplemente no es confiable hasta corregir el split.
+
+Cómo *sí* contextualizarlo: dado que el baseline de clase mayoritaria es 51.1%, el
+contraste relevante es contra un **baseline heurístico** de indicadores
+(p. ej. `bias = LONG si heatmap ∈ {BULLISH, STRONG_BULLISH} else SHORT`). Si el
+fine-tuned ≫ heurístico → aporta poder predictivo real; si ≈ heurístico → la tarea
+(tras los filtros de calidad del labeler) es fácil y el 92% dice poco.
 
 ### 2.3 Instrumentación recomendada (a nivel de código)
 
@@ -178,19 +211,22 @@ con un baseline.
    `results/<tag>_loss_curve.json` y graficar train-vs-eval loss por step
    (reusar `optimization/io/plots.py`).
 
-4. **Baseline trivial** sobre el MISMO test:
+4. **Baseline heurístico** sobre el MISMO test:
    `bias = LONG si heatmap ∈ {BULLISH, STRONG_BULLISH} else SHORT`.
-   Si el baseline ≈ 90%, el 92% del fine-tuned **no demuestra poder predictivo** y
-   hay que reencuadrar la métrica de la tesis.
+   Comparar contra el fine-tuned: si la brecha es pequeña, el 92% aporta poco poder
+   predictivo; si es grande, el FT sí aprendió algo no trivial. (El baseline de clase
+   mayoritaria ya se sabe que es 51.1%, por eso el contraste útil es el heurístico.)
 
 5. **Significancia estadística**: `stats_tests.py` / `compare-stats` ya alinea por
    `sample_keys` (el script QLoRA ya emite `predictions`/`actuals`/`sample_keys`).
    Falta correr el **zero-shot sobre el MISMO test corregido** para el McNemar +
    t-test pareado.
 
-6. **Arreglar la simulación de trades**: `win_rate`/`profit_factor`/`Sharpe`
-   salieron en 0 porque faltaban las velas en SageMaker. Hacer `dvc pull` de
-   `backtest/data/candles/` antes de evaluar.
+6. **Arreglar la simulación de trades** (problema **operativo**, no bug de código):
+   `win_rate`/`profit_factor`/`Sharpe` salieron en 0 porque faltaban las velas en
+   SageMaker — no se hizo `dvc pull` de `backtest/data/candles/` (están gitignored /
+   trackeadas por DVC). Hacer `dvc pull` antes de evaluar y la simulación dará métricas
+   reales.
 
 7. **Validación cruzada correcta para series temporales**: no usar K-fold normal;
    usar **walk-forward / expanding-window con embargo** (purged CV estilo López de
@@ -206,7 +242,7 @@ con un baseline.
 - [ ] Re-entrenar/re-evaluar todos los modelos con el split corregido.
 - [ ] Añadir `EarlyStoppingCallback` + accuracy train/val/test + gap.
 - [ ] Persistir y graficar curvas de loss.
-- [ ] Añadir baseline trivial por reglas como punto de comparación.
+- [ ] Añadir baseline heurístico de indicadores como punto de comparación.
 - [ ] `dvc pull` de velas para que la simulación de trades dé métricas reales.
 - [ ] Correr zero-shot sobre el test corregido y ejecutar McNemar + t-test.
 - [ ] Documentar el protocolo de split (real, no posicional) en `ml-conventions.md`.
