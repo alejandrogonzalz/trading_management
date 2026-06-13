@@ -63,8 +63,8 @@ for i in "${!NAMES[@]}"; do
         --rank "$RANK" \
         --alpha "$ALPHA" \
         --epochs "$EP" \
-        --batch-size 4 \
-        --grad-accum 4 \
+        --batch-size 2 \
+        --grad-accum 8 \
         --max-eval 2000 \
         --output-dir "$OUTPUT_DIR" \
         2>&1 | tee "$LOG_FILE"; then
