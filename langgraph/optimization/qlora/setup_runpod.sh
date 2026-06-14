@@ -96,29 +96,31 @@ pip install --upgrade pip -q
 echo "  Activated: $(which python)"
 echo ""
 
-# 4. Install torch FIRST (pinned to the driver-compatible CUDA version)
-echo "[4/7] Installing PyTorch ${TORCH_VER}+${TORCH_CUDA} (matched to host driver)..."
-pip install torch==${TORCH_VER} torchvision torchaudio \
-    --index-url "https://download.pytorch.org/whl/${TORCH_CUDA}"
+# 4. Install utility deps FIRST (before Unsloth, so Unsloth controls final versions)
+echo "[4/7] Installing utility dependencies (DVC, scikit-learn, etc.)..."
+pip install "dvc[s3]" scikit-learn pyyaml tqdm matplotlib httpx -q
 echo ""
 
-# 5. Install Unsloth + training deps
-echo "[5/7] Installing Unsloth + training dependencies..."
+# 5. Install Unsloth LAST — it must have final say on torch/transformers/trl versions
+echo "[5/7] Installing Unsloth + training stack..."
 pip install "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git"
 
-# Re-pin torch in case Unsloth pulled a different CUDA build
-CURRENT_CUDA=$(python -c "import torch; print(torch.version.cuda)" 2>/dev/null || echo "none")
-if [ "$CURRENT_CUDA" != "12.4" ] && [ "$CURRENT_CUDA" != "none" ]; then
-    echo "  Unsloth overrode torch (now CUDA $CURRENT_CUDA). Re-pinning to ${TORCH_CUDA}..."
+# Verify torch can see the GPU; if not, force-reinstall the right CUDA build
+TORCH_OK=$(python -c "import torch; print('yes' if torch.cuda.is_available() else 'no')" 2>/dev/null || echo "no")
+if [ "$TORCH_OK" = "no" ]; then
+    echo "  torch.cuda not available — re-installing torch ${TORCH_VER}+${TORCH_CUDA}..."
     pip install --force-reinstall torch==${TORCH_VER} torchvision torchaudio \
         --index-url "https://download.pytorch.org/whl/${TORCH_CUDA}"
     pip install -U bitsandbytes
+    # Reinstall Unsloth since torch changed
+    pip install "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git"
 fi
 
-# Remove torchao — it's incompatible with torch <2.7 (uses register_constant API)
-# and we don't need it (bitsandbytes handles our 4-bit quantization, not torchao).
-echo "  Removing torchao (incompatible with torch 2.6, not needed for QLoRA)..."
-pip uninstall torchao -y 2>/dev/null || true
+# On torch <2.7, torchao crashes (register_constant API). Remove if broken.
+python -c "import torchao" 2>/dev/null || {
+    echo "  Removing broken torchao (not needed for QLoRA)..."
+    pip uninstall torchao -y 2>/dev/null || true
+}
 
 # FlashAttention-2 (optional — try to install, non-fatal)
 echo ""
@@ -128,9 +130,6 @@ if pip install flash-attn --no-build-isolation 2>/dev/null; then
 else
     echo "  FlashAttention-2: SKIPPED (Unsloth will use Triton kernels — slightly slower)"
 fi
-
-pip install "dvc[s3]" scikit-learn pyyaml tqdm matplotlib httpx -q
-echo "  Done."
 echo ""
 
 # 6. AWS CLI for DVC
