@@ -40,7 +40,7 @@ pay GPU while it's **running**. `terminate` deletes everything.
 
 | Field | Value |
 |-------|-------|
-| **AMI** | `Deep Learning OSS Nvidia Driver AMI GPU PyTorch 2.x (Ubuntu 22.04)` — search "Deep Learning OSS" in the AMI catalog, pick the newest **PyTorch** one. It ships a **matched** NVIDIA driver + CUDA toolkit, so FA2 compiles. |
+| **AMI** | `Deep Learning OSS Nvidia Driver AMI GPU PyTorch 2.x (Ubuntu 24.04)` — search "Deep Learning OSS" in the AMI catalog, pick the newest **PyTorch** one. It ships a **matched** NVIDIA driver + CUDA toolkit, so FA2 compiles. |
 | **Instance** | `g6e.xlarge` — L40S 48GB, Ada Lovelace `sm_89`, ~$1.86/hr on-demand |
 | **Storage** | 100 GB gp3 |
 | **Key pair** | your existing SSH key |
@@ -49,6 +49,11 @@ pay GPU while it's **running**. `terminate` deletes everything.
 
 > ⚠️ Choose the **OSS Nvidia Driver** AMI, not the "Base" AMI (Base has no driver).
 > For L40S (Ada) any DLAMI with CUDA ≥ 12.1 works; recent ones ship 12.4+.
+>
+> **Note:** on the DLAMI, `nvidia-smi` lives under `/opt/pytorch/bin/` — not in the
+> default PATH. The setup script adds it to `~/.bashrc` automatically, but on the
+> very first SSH login (before running setup) you may need `source /opt/pytorch/bin/activate`
+> or `export PATH="/opt/pytorch/bin:$PATH"` to see the GPU.
 
 ### Optional: launch from the AWS CLI
 
@@ -57,7 +62,7 @@ in your target region (add `--region us-east-1`). Find the AMI id with:
 
 ```bash
 aws ec2 describe-images --owners amazon \
-  --filters 'Name=name,Values=Deep Learning OSS Nvidia Driver AMI GPU PyTorch*Ubuntu 22.04*' \
+  --filters 'Name=name,Values=Deep Learning OSS Nvidia Driver AMI GPU PyTorch*Ubuntu*' \
   --query 'reverse(sort_by(Images,&CreationDate))[:3].[ImageId,Name]' --output table
 ```
 
@@ -268,6 +273,15 @@ Then set `LLM_MODEL=trading-qwen-ft` — the agent picks it up via `llm_factory.
 
 **Cloud — L40S (Ada `sm_89`)** is mature hardware; almost any recent DLAMI works.
 Just confirm `FA2 = True` and `get_device_capability() == (8, 9)`.
+
+Verified working configuration (Jun 2026):
+
+| Component | Version |
+|-----------|---------|
+| AMI | Deep Learning OSS Nvidia Driver AMI GPU PyTorch 2.11 (Ubuntu 24.04) |
+| Driver | 595.71.05 |
+| CUDA | 13.2 |
+| GPU | NVIDIA L40S, 46068 MiB |
 
 **Local — RTX 5070 Ti (Blackwell `sm_120`)** is *new* hardware; versions are
 make-or-break (see `run_local.sh`):
