@@ -59,12 +59,27 @@ mkdir -p "$LOG_DIR"
 cd "$LANGGRAPH_ROOT"
 
 TAG="qlora_cloud"
-# Instance-tunable knobs (defaults safe for a 48GB L40S without FlashAttention-2).
-# Override per instance, e.g. on an 80GB A100/H100: BATCH=8 GRAD_ACCUM=2 EVAL_BATCH=32
-BATCH="${BATCH:-2}"
-GRAD_ACCUM="${GRAD_ACCUM:-8}"
+# Auto-detect GPU VRAM and set optimal batch sizes.
+# Override with env vars if needed: BATCH=4 GRAD_ACCUM=4 bash run_cloud.sh
+VRAM_MB=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null | head -1 | tr -d ' ')
+VRAM_MB="${VRAM_MB:-0}"
+
+if [ -z "${BATCH+x}" ]; then
+    if [ "$VRAM_MB" -ge 70000 ]; then
+        # A100 80GB / H100 — plenty of room
+        BATCH=8; GRAD_ACCUM=2; EVAL_BATCH=32
+    elif [ "$VRAM_MB" -ge 40000 ]; then
+        # L40S 48GB / A6000 48GB
+        BATCH=2; GRAD_ACCUM=8; EVAL_BATCH=16
+    else
+        # 24GB cards (A10G, RTX 3090/4090)
+        BATCH=1; GRAD_ACCUM=16; EVAL_BATCH=8
+    fi
+else
+    GRAD_ACCUM="${GRAD_ACCUM:-$((16 / BATCH))}"
+    EVAL_BATCH="${EVAL_BATCH:-16}"
+fi
 MAX_EVAL="${MAX_EVAL:-3000}"
-EVAL_BATCH="${EVAL_BATCH:-16}"
 echo "============================================================"
 echo "  QLoRA — single cloud run ($TAG)"
 echo "  Started: $(date)"

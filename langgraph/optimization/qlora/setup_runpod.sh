@@ -143,7 +143,30 @@ if [[ "$FINAL_TORCH" != *"${TORCH_CUDA}"* ]] && [[ "$FINAL_TORCH" != "${TORCH_VE
     python -c "import torchao" 2>/dev/null || pip uninstall torchao -y 2>/dev/null || true
 fi
 
-echo "  FlashAttention-2: SKIPPED (Triton fallback — reliable, ~10% slower)"
+# FlashAttention-2: attempt install from pre-built wheel (safe — won't touch torch).
+# FA2 gives ~2x speedup on attention-heavy workloads. If it fails, Triton fallback works.
+# Key: use --no-deps so pip can't upgrade torch or remove unsloth during the attempt.
+echo "  Attempting FlashAttention-2 (pre-built wheel, --no-deps)..."
+if pip install flash-attn --no-build-isolation --no-deps 2>/dev/null; then
+    # flash-attn needs einops as a runtime dep
+    pip install einops -q 2>/dev/null || true
+    if python -c "import flash_attn; print(f'  FA2 v{flash_attn.__version__} installed')" 2>/dev/null; then
+        echo "  FlashAttention-2: OK"
+    else
+        echo "  FlashAttention-2: import failed — removing"
+        pip uninstall flash-attn -y 2>/dev/null || true
+    fi
+else
+    # Pre-built wheel not available for this torch/CUDA combo — try compile
+    echo "  No pre-built wheel. Trying source build (may take 5-10 min)..."
+    if CUDA_HOME=/usr/local/cuda MAX_JOBS=2 pip install flash-attn --no-build-isolation --no-deps 2>/dev/null; then
+        pip install einops -q 2>/dev/null || true
+        python -c "import flash_attn; print(f'  FA2 v{flash_attn.__version__} compiled')" 2>/dev/null || \
+            pip uninstall flash-attn -y 2>/dev/null || true
+    else
+        echo "  FlashAttention-2: SKIPPED (Triton fallback — ~20% slower, still fine)"
+    fi
+fi
 echo ""
 
 # ─── 5. AWS CLI ──────────────────────────────────────────────────────────────
