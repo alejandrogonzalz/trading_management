@@ -378,9 +378,24 @@ class QLoRATrainer:
         sample_keys: list[str] = []
         parse_errors = 0
 
+        # Generation is sequential (one greedy decode per sample), so it can run
+        # for a long time on the full test set with no output. Log progress at an
+        # interval that scales with the set size: every sample for tiny smoke-test
+        # runs (<20), otherwise ~20 updates total, capped at every 100.
+        total = len(samples)
+        log_every = 1 if total <= 20 else min(100, max(1, total // 20))
+        start_t = time.time()
+        log.info(f"  [{label}] generating predictions for {total} samples (log every {log_every})")
+
         for i, sample in enumerate(samples):
-            if (i + 1) % 100 == 0:
-                log.info(f"  [{label}] {i + 1}/{len(samples)} ({parse_errors} parse errors)")
+            if (i + 1) % log_every == 0 or (i + 1) == total:
+                elapsed = time.time() - start_t
+                rate = (i + 1) / elapsed if elapsed > 0 else 0.0
+                eta = (total - (i + 1)) / rate if rate > 0 else 0.0
+                log.info(
+                    f"  [{label}] {i + 1}/{total} "
+                    f"({parse_errors} parse errors, {rate:.2f} samples/s, ETA {eta:.0f}s)"
+                )
 
             symbol = sample.get("symbol", "BTCUSDT")
             label_obj = sample["label"]
