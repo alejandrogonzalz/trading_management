@@ -149,7 +149,8 @@ echo ""
 # ─── 5. AWS CLI ──────────────────────────────────────────────────────────────
 echo "[5/6] AWS CLI + tmux..."
 
-export PATH="/usr/local/bin:$HOME/.local/bin:$PATH"
+# APPEND (not prepend) so /usr/local/bin doesn't shadow the venv's python
+export PATH="$PATH:$HOME/.local/bin"
 hash -r
 if ! command -v aws &>/dev/null; then
     echo "  Installing AWS CLI v2..."
