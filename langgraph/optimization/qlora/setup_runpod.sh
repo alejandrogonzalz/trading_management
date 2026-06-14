@@ -53,26 +53,20 @@ CUDA_MINOR=$(echo "$DRIVER_CUDA" | cut -d. -f2)
 if [ "$CUDA_MAJOR" -gt 12 ] || ([ "$CUDA_MAJOR" -eq 12 ] && [ "$CUDA_MINOR" -ge 8 ]); then
     TORCH_CUDA="cu128"
     TORCH_VER="2.8.0"
-    TORCHAO_PIN=""
 elif [ "$CUDA_MAJOR" -eq 12 ] && [ "$CUDA_MINOR" -ge 6 ]; then
     TORCH_CUDA="cu126"
     TORCH_VER="2.7.0"
-    TORCHAO_PIN=""
 elif [ "$CUDA_MAJOR" -eq 12 ] && [ "$CUDA_MINOR" -ge 4 ]; then
     TORCH_CUDA="cu124"
     TORCH_VER="2.6.0"
-    # torchao >=0.9 uses torch 2.7+ APIs (register_constant). Pin to last torch-2.6-compatible.
-    TORCHAO_PIN="torchao==0.8.0"
 elif [ "$CUDA_MAJOR" -eq 12 ] && [ "$CUDA_MINOR" -ge 1 ]; then
     TORCH_CUDA="cu121"
     TORCH_VER="2.6.0"
-    TORCHAO_PIN="torchao==0.8.0"
 else
     echo "ERROR: CUDA $DRIVER_CUDA is too old (need >=12.1). Redeploy on a newer host."
     exit 1
 fi
 echo "  → Will install torch ${TORCH_VER}+${TORCH_CUDA}"
-[ -n "$TORCHAO_PIN" ] && echo "  → Will pin $TORCHAO_PIN (torch 2.6 compat)"
 echo ""
 
 # 2. Python
@@ -102,33 +96,29 @@ pip install --upgrade pip -q
 echo "  Activated: $(which python)"
 echo ""
 
-# 4. Install torch + torchao FIRST (pinned to the driver-compatible CUDA version)
+# 4. Install torch FIRST (pinned to the driver-compatible CUDA version)
 echo "[4/7] Installing PyTorch ${TORCH_VER}+${TORCH_CUDA} (matched to host driver)..."
 pip install torch==${TORCH_VER} torchvision torchaudio \
     --index-url "https://download.pytorch.org/whl/${TORCH_CUDA}"
-# Pin torchao BEFORE Unsloth can pull an incompatible version
-if [ -n "$TORCHAO_PIN" ]; then
-    echo "  Pinning $TORCHAO_PIN..."
-    pip install "$TORCHAO_PIN" --index-url "https://download.pytorch.org/whl/${TORCH_CUDA}" 2>/dev/null || \
-        pip install "$TORCHAO_PIN" || true
-fi
 echo ""
 
 # 5. Install Unsloth + training deps
 echo "[5/7] Installing Unsloth + training dependencies..."
 pip install "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git"
 
-# Re-pin torch + torchao in case Unsloth overrode them
+# Re-pin torch in case Unsloth pulled a different CUDA build
 CURRENT_CUDA=$(python -c "import torch; print(torch.version.cuda)" 2>/dev/null || echo "none")
-if [ "$CURRENT_CUDA" != "${TORCH_CUDA#cu}" ] && [ "$CURRENT_CUDA" != "12.4" ] && [ "$CURRENT_CUDA" != "none" ]; then
+if [ "$CURRENT_CUDA" != "12.4" ] && [ "$CURRENT_CUDA" != "none" ]; then
     echo "  Unsloth overrode torch (now CUDA $CURRENT_CUDA). Re-pinning to ${TORCH_CUDA}..."
     pip install --force-reinstall torch==${TORCH_VER} torchvision torchaudio \
         --index-url "https://download.pytorch.org/whl/${TORCH_CUDA}"
-    [ -n "$TORCHAO_PIN" ] && pip install --force-reinstall "$TORCHAO_PIN" \
-        --index-url "https://download.pytorch.org/whl/${TORCH_CUDA}" 2>/dev/null || \
-        pip install --force-reinstall "$TORCHAO_PIN" || true
     pip install -U bitsandbytes
 fi
+
+# Remove torchao — it's incompatible with torch <2.7 (uses register_constant API)
+# and we don't need it (bitsandbytes handles our 4-bit quantization, not torchao).
+echo "  Removing torchao (incompatible with torch 2.6, not needed for QLoRA)..."
+pip uninstall torchao -y 2>/dev/null || true
 
 # FlashAttention-2 (optional — try to install, non-fatal)
 echo ""
@@ -145,19 +135,22 @@ echo ""
 
 # 6. AWS CLI for DVC
 echo "[6/7] Checking AWS CLI + tmux..."
+export PATH="/usr/local/bin:$HOME/.local/bin:$PATH"
+hash -r
 if ! command -v aws &>/dev/null; then
     echo "  Installing AWS CLI v2 (standalone binary)..."
     curl -sL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
-    unzip -qo /tmp/awscliv2.zip -d /tmp && sudo /tmp/aws/install --update 2>/dev/null || \
+    unzip -qo /tmp/awscliv2.zip -d /tmp
+    sudo /tmp/aws/install --update 2>/dev/null || \
         /tmp/aws/install --install-dir "$HOME/.local/aws-cli" --bin-dir "$HOME/.local/bin" --update
     rm -rf /tmp/awscliv2.zip /tmp/aws
-    export PATH="$HOME/.local/bin:$PATH"
     hash -r
 fi
+echo "  aws: $(aws --version)"
 if aws sts get-caller-identity &>/dev/null; then
     echo "  AWS OK: $(aws sts get-caller-identity --query 'Arn' --output text)"
 else
-    echo "  ⚠ No AWS creds. Run 'aws configure' before 'dvc pull'."
+    echo "  ⚠ No AWS creds yet. Run 'aws configure' before 'dvc pull'."
 fi
 
 if command -v tmux &>/dev/null; then
