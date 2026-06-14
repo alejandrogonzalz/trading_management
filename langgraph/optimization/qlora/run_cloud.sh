@@ -65,9 +65,14 @@ VRAM_MB=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits 2>/d
 VRAM_MB="${VRAM_MB:-0}"
 
 if [ -z "${BATCH+x}" ]; then
-    if [ "$VRAM_MB" -ge 70000 ]; then
-        # A100 80GB / H100 — plenty of room
+    # Check if FlashAttention-2 is available (changes optimal batch size)
+    FA2=$(python -c "import flash_attn; print('yes')" 2>/dev/null || echo "no")
+    if [ "$VRAM_MB" -ge 70000 ] && [ "$FA2" = "yes" ]; then
+        # A100/H100 80GB WITH FA2 — linear attention, batch=8 is fast
         BATCH=8; GRAD_ACCUM=2; EVAL_BATCH=32
+    elif [ "$VRAM_MB" -ge 70000 ]; then
+        # A100/H100 80GB WITHOUT FA2 — quadratic attention, batch=4 is sweet spot
+        BATCH=4; GRAD_ACCUM=4; EVAL_BATCH=32
     elif [ "$VRAM_MB" -ge 40000 ]; then
         # L40S 48GB / A6000 48GB
         BATCH=2; GRAD_ACCUM=8; EVAL_BATCH=16
