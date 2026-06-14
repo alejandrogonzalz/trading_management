@@ -73,13 +73,20 @@ echo ""
 echo "[4/7] Installing training dependencies..."
 pip install "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git"
 
-# FA2 requires CUDA_HOME pointing to a toolkit with nvcc. The DLAMI runtime-only
-# images ship the driver but not nvcc; detect and install the toolkit if missing.
-echo "  Locating CUDA toolkit for FlashAttention-2..."
+# FA2 requires: (a) CUDA_HOME with nvcc, (b) Python dev headers, (c) ninja for
+# fast parallel compilation. The DLAMI runtime-only images often ship the driver
+# but not nvcc or Python.h; detect and install what's missing.
+echo "  Installing build prerequisites for FlashAttention-2..."
+sudo apt-get update -qq
+# Python dev headers (Python.h) — required for the C++ extension build
+sudo apt-get install -y python3-dev python3.12-dev -qq 2>/dev/null || true
+# ninja — parallel build (~3 min instead of ~15 min without it)
+pip install ninja -q
+
+# CUDA toolkit (nvcc) — needed for compiling CUDA kernels
 NVCC_PATH=$(find /usr/local -name "nvcc" -type f 2>/dev/null | head -1)
 if [ -z "$NVCC_PATH" ]; then
     echo "  nvcc not found — installing CUDA toolkit (this takes ~2 min)..."
-    sudo apt-get update -qq
     sudo apt-get install -y cuda-toolkit -qq 2>/dev/null || \
         sudo apt-get install -y nvidia-cuda-toolkit -qq 2>/dev/null || true
     NVCC_PATH=$(find /usr/local -name "nvcc" -type f 2>/dev/null | head -1)
