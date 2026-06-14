@@ -279,7 +279,7 @@ qlora/
 ├── train_qlora.py         # Main training script (Unsloth + SFTTrainer)
 ├── run_cloud.sh           # ONE cloud training run (SageMaker) on the fixed split
 ├── run_local.sh           # ONE local training run (RTX 5070 Ti), optional
-├── sagemaker_setup.sh     # SageMaker environment setup (venv, deps, GPU check)
+├── setup_ec2.sh           # GPU-instance setup (EC2 DLAMI; also works on SageMaker)
 ├── logs/                  # Training logs per run
 └── results/               # qlora_<tag>.json (+ archive/ for the invalid old sweep)
 ```

@@ -58,13 +58,18 @@ the other combos as a reference only.
 
 ## Infrastructure
 
-### SageMaker (primary training)
-- Instance: ml.g6e.xlarge — L40S 48GB (44GB usable), ~$2.35/hr
-- Path: `/home/sagemaker-user/trading_management/langgraph/`
-- Venv: `.venv/` (created by `sagemaker_setup.sh`, NO --system-site-packages)
-- No FlashAttention-2 (CUDA mismatch), no tmux — use nohup
-- ~8.7s/step (vs ~3-4s expected with FA2)
-- Git remote: SSH (ed25519 key configured)
+### EC2 g6e.xlarge + Deep Learning AMI (primary training — recommended)
+- GPU: NVIDIA L40S 48GB (Ada `sm_89`), ~$1.86/hr on-demand
+- AMI: `Deep Learning OSS Nvidia Driver AMI GPU PyTorch 2.x (Ubuntu 22.04)`
+- Venv: `.venv/` (created by `setup_ec2.sh`, NO --system-site-packages)
+- **FlashAttention-2 WORKS** (matched CUDA) → ~4-5s/step, ~5-7h for 3 epochs
+- Launch with `nohup` (tmux also available on raw EC2). STOP the instance when done.
+- Guide: `optimization/qlora/EC2_GUIDE.md` (includes EC2-vs-SageMaker cost analysis)
+
+### SageMaker Studio (fallback only)
+- ml.g6e.xlarge L40S 48GB, ~$2.00-2.35/hr — same `setup_ec2.sh` works here
+- No FA2 (container CUDA mismatch) → ~8.7s/step (~2x slower), no tmux → nohup
+- Use only if EC2 quota/access is blocked; EC2 is cheaper and faster
 
 ### Local (RTX 5070 Ti 16GB, Windows)
 - Path: `C:\Users\alex\projects\trading_management\langgraph`
@@ -101,7 +106,8 @@ the other combos as a reference only.
 | `optimization/qlora/train_qlora.py` | Main training + evaluation script |
 | `optimization/qlora/run_cloud.sh` | Single cloud run (SageMaker) on the fixed split |
 | `optimization/qlora/run_local.sh` | Single local run (RTX 5070 Ti), optional |
-| `optimization/qlora/sagemaker_setup.sh` | SageMaker env setup |
+| `optimization/qlora/setup_ec2.sh` | GPU-instance env setup (EC2 DLAMI; works on SageMaker too) |
+| `optimization/qlora/EC2_GUIDE.md` | Step-by-step EC2 walkthrough + cost analysis |
 | `optimization/qlora/results/qlora_<tag>.json` | Result JSON (+ canonical `qlora_optimization.json`) |
 | `optimization/qlora/results/archive/` | Invalid old sweep results (do NOT cite) |
 | `optimization/qlora/logs/` | Training logs per run |

@@ -22,10 +22,10 @@ optimization/
 │   └── qlora.yaml         ← QLoRA hyperparameter search space
 ├── qlora/                 ← QLoRA fine-tuning (self-contained)
 │   ├── train_qlora.py     ← Full pipeline: data → train → eval → save
-│   ├── sagemaker_setup.sh ← One-command SageMaker env setup
+│   ├── setup_ec2.sh       ← One-command GPU-instance env setup (EC2 DLAMI)
 │   ├── run_cloud.sh       ← ONE cloud training run on the fixed split
 │   ├── run_local.sh       ← ONE local training run (optional)
-│   ├── SAGEMAKER_GUIDE.md ← Step-by-step SageMaker walkthrough
+│   ├── EC2_GUIDE.md       ← Step-by-step EC2 walkthrough + cost analysis
 │   ├── README.md          ← QLoRA-specific docs
 │   ├── results/           ← Result JSONs (+ archive/ for the invalid old sweep)
 │   └── logs/              ← Training logs
@@ -106,8 +106,8 @@ result = pipeline.run()
 All QLoRA-specific code, scripts, and docs live in [`qlora/`](qlora/README.md).
 
 ```bash
-# SageMaker (recommended) — single model, not a sweep:
-bash optimization/qlora/sagemaker_setup.sh
+# EC2 g6e.xlarge (recommended — cheaper + FA2) — single model, not a sweep:
+bash optimization/qlora/setup_ec2.sh
 dvc pull backtest/data/labeled/dataset.jsonl backtest/data/candles
 nohup bash optimization/qlora/run_cloud.sh > optimization/qlora/logs/run_cloud.log 2>&1 &
 
@@ -115,4 +115,4 @@ nohup bash optimization/qlora/run_cloud.sh > optimization/qlora/logs/run_cloud.l
 .venv-finetuning\Scripts\python optimization\qlora\train_qlora.py --epochs 1 --tag qlora_local
 ```
 
-See [`qlora/SAGEMAKER_GUIDE.md`](qlora/SAGEMAKER_GUIDE.md) for the full walkthrough.
+See [`qlora/EC2_GUIDE.md`](qlora/EC2_GUIDE.md) for the full walkthrough + cost analysis.

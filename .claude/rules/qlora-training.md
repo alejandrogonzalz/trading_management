@@ -243,7 +243,7 @@ FlashAttention-2 installs cleanly on Linux. Both together typically cut a
 The dataset is tiny (`backtest/data/labeled/dataset.jsonl`, ~56k samples) so
 data transfer is trivial.
 
-Full step-by-step: see [`optimization/qlora/SAGEMAKER_GUIDE.md`](../../langgraph/optimization/qlora/SAGEMAKER_GUIDE.md).
+Full step-by-step + cost analysis: see [`optimization/qlora/EC2_GUIDE.md`](../../langgraph/optimization/qlora/EC2_GUIDE.md).
 
 ### Instance options
 | Instance | GPU | VRAM | ~$/hr | Notes |
@@ -256,10 +256,15 @@ Recommended: **ml.g6e.xlarge** (L40S 48GB) → `batch_size=8`,
 `gradient_accumulation_steps=16`, FA2 on. Expect ~1–2h/epoch, ~$6-12 for 3 epochs.
 
 ### Changes needed vs local
-- Raise `batch_size` to 8 (`--batch-size 8`).
+- Raise `batch_size`: **2** without FA2 (batch 4 OOMs on the backward pass — the
+  learned SageMaker ceiling), **try 4** once FA2 is confirmed (FA2 cuts peak VRAM).
+  `run_cloud.sh` uses `--batch-size 2 --grad-accum 8`; bump it only after a
+  `--max-steps 3` smoke test passes at the higher batch.
 - Confirm FA2 is active in the startup banner (`FA2 = True`).
 - `max_seq_length` stays 1024; the length/eval-batch constraints still hold.
-- Use tmux to protect the job from browser disconnects.
+- **No tmux on SageMaker Studio** — launch with `nohup ... &` so the job survives
+  browser disconnects (note the PID, follow `tail -f .../run_cloud.log`). On a raw
+  EC2 box tmux works too, but nohup is the portable default.
 
 ### Cost vs. local trade-off
 Local is "free" but ties up the workstation for ~2 days (3 epochs). SageMaker g6e is

@@ -7,10 +7,11 @@ Fine-tunes Qwen 2.5 7B (4-bit quantized) with LoRA adapters for crypto trade-dir
 ```
 qlora/
 ├── train_qlora.py       ← Main training script (self-contained pipeline)
-├── sagemaker_setup.sh   ← One-command SageMaker environment setup
-├── run_cloud.sh         ← ONE cloud training run (SageMaker) on the fixed split
+├── setup_ec2.sh         ← One-command GPU-instance setup (EC2 DLAMI; also SageMaker)
+├── run_cloud.sh         ← ONE cloud training run on the fixed split
 ├── run_local.sh         ← ONE local training run (RTX 5070 Ti), optional
-├── SAGEMAKER_GUIDE.md   ← Step-by-step SageMaker console walkthrough
+├── plot_overfitting.py  ← Overfitting dashboard from a result JSON
+├── EC2_GUIDE.md         ← Step-by-step EC2 walkthrough + cost analysis
 ├── README.md            ← This file
 ├── results/             ← Output JSONs (+ archive/ for the invalid old sweep)
 └── logs/                ← Training logs per run
