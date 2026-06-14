@@ -106,19 +106,25 @@ python -c "import torch; assert torch.cuda.is_available(), f'torch {torch.__vers
 echo "  torch OK: $(python -c "import torch; print(f'{torch.__version__} CUDA={torch.version.cuda} GPU={torch.cuda.get_device_name(0)}')")"
 echo ""
 
-# ─── 4. Unsloth (constrained so pip won't upgrade torch) ─────────────────────
-echo "[4/6] Unsloth + training stack..."
+# ─── 4. Unsloth + all deps (single constrained install) ──────────────────────
+echo "[4/6] Unsloth + training stack + utilities..."
 
-# Constraints file: prevents pip from upgrading torch to 2.12+ (which needs CUDA 13)
+# Constraints file: prevents ANY pip install from upgrading torch off the pinned
+# version. Without this, transitive deps (dvc → s3fs → aiobotocore → ...) can
+# trigger pip to pull torch from PyPI (2.12+cu13, incompatible with any driver).
 CONSTRAINTS=$(mktemp)
 cat > "$CONSTRAINTS" <<CONS
 torch==${TORCH_VER}
 torchvision
 torchaudio
 CONS
+export PIP_CONSTRAINT="$CONSTRAINTS"
 
+# Install everything in one pass so pip resolves all deps together
 pip install "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git" \
-    -c "$CONSTRAINTS"
+    "dvc[s3]" scikit-learn pyyaml tqdm matplotlib httpx
+
+unset PIP_CONSTRAINT
 rm -f "$CONSTRAINTS"
 
 # On torch <2.7, torchao uses APIs that don't exist. Remove it if broken.
@@ -127,17 +133,21 @@ if ! python -c "import torchao" 2>/dev/null; then
     pip uninstall torchao -y 2>/dev/null || true
 fi
 
-# NOTE: We do NOT attempt flash-attn installation.
-# pip install flash-attn --no-build-isolation resolves deps BEFORE building the
-# wheel. When the build fails (no nvcc, wrong CUDA), pip has already upgraded
-# torch and removed unsloth to "resolve conflicts". This is unfixable with pip.
-# Unsloth uses Triton kernels as fallback — ~10-20% slower, still perfectly fine.
+# Verify torch didn't get swapped
+FINAL_TORCH=$(python -c "import torch; print(torch.__version__)")
+if [[ "$FINAL_TORCH" != *"${TORCH_CUDA}"* ]] && [[ "$FINAL_TORCH" != "${TORCH_VER}"* ]]; then
+    echo "  ERROR: torch changed to $FINAL_TORCH after install! Re-pinning..."
+    pip install --force-reinstall "torch==${TORCH_VER}" torchvision torchaudio \
+        --index-url "https://download.pytorch.org/whl/${TORCH_CUDA}"
+    pip install --force-reinstall "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git"
+    python -c "import torchao" 2>/dev/null || pip uninstall torchao -y 2>/dev/null || true
+fi
+
 echo "  FlashAttention-2: SKIPPED (Triton fallback — reliable, ~10% slower)"
 echo ""
 
-# ─── 5. DVC + AWS CLI ────────────────────────────────────────────────────────
-echo "[5/6] DVC + AWS CLI + tmux..."
-pip install "dvc[s3]" scikit-learn pyyaml tqdm matplotlib httpx -q
+# ─── 5. AWS CLI ──────────────────────────────────────────────────────────────
+echo "[5/6] AWS CLI + tmux..."
 
 export PATH="/usr/local/bin:$HOME/.local/bin:$PATH"
 hash -r
