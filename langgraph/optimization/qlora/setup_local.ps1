@@ -133,7 +133,8 @@ Write-Host ""
 # 5. Install dependencies
 # ---------------------------------------------------------------------------
 Write-Host "[5/6] Installing training dependencies..." -ForegroundColor Yellow
-Write-Host "  This may take 10-15 minutes (downloads ~5 GB for PyTorch + model tools)."
+Write-Host "  This may take 15-20 minutes (downloads ~8 GB: PyTorch is fetched twice —"
+Write-Host "  Unsloth's CPU wheel, then the cu128 CUDA build that replaces it)."
 Write-Host ""
 
 # Unsloth from git — resolves its own torch, TRL, transformers, peft, bitsandbytes
@@ -143,6 +144,37 @@ if (-not $?) {
     Write-Host "  ERROR: Unsloth installation failed." -ForegroundColor Red
     Write-Host "  Check internet connection and that git is on PATH."
     exit 1
+}
+
+# CRITICAL (Windows): Unsloth resolves a CPU-only torch from PyPI. Unlike the EC2
+# Deep Learning AMI (which ships a matched CUDA driver so the CUDA wheel resolves
+# automatically), Windows has no CUDA in the wheel index, so we MUST reinstall the
+# CUDA 12.8 build explicitly. The RTX 5070 Ti is Blackwell (sm_120) and ONLY runs
+# on cu128 wheels — older CUDA builds won't even load the GPU.
+Write-Host "  Reinstalling PyTorch with CUDA 12.8 (cu128) for the RTX 5070 Ti..."
+& $pipExe install torch torchvision torchaudio `
+    --index-url https://download.pytorch.org/whl/cu128 --upgrade --force-reinstall
+if (-not $?) {
+    Write-Host "  ERROR: CUDA torch (cu128) installation failed." -ForegroundColor Red
+    Write-Host "  Retry manually: $pipExe install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128 --upgrade --force-reinstall"
+    exit 1
+}
+
+# Force-reinstalling torch can leave bitsandbytes linked against the old build.
+# Reinstall it against the fresh CUDA torch so 4-bit quantization works.
+Write-Host "  Reinstalling bitsandbytes against the CUDA torch build..."
+& $pipExe install bitsandbytes --upgrade --force-reinstall --quiet
+if (-not $?) {
+    Write-Host "  WARNING: bitsandbytes reinstall failed — 4-bit loading may break." -ForegroundColor Yellow
+}
+
+# torch's --force-reinstall pulls the LATEST fsspec, which breaks datasets
+# (needs <=2025.9.0) and s3fs/DVC (needs ==2025.9.0). Pin it back so dataset
+# loading and `dvc pull` work. 2025.9.0 satisfies torch, datasets, and s3fs.
+Write-Host "  Pinning fsspec==2025.9.0 (datasets + s3fs/DVC compatibility)..."
+& $pipExe install "fsspec[http]==2025.9.0" --quiet
+if (-not $?) {
+    Write-Host "  WARNING: fsspec pin failed — 'dvc pull' or dataset loading may break." -ForegroundColor Yellow
 }
 
 # Additional deps not included by Unsloth
@@ -176,7 +208,7 @@ if cuda_ok:
     print(f'  VRAM: {vram_gb:.1f} GB')
 else:
     print('  ERROR: CUDA not available. Training will not work.')
-    print('  Fix: pip install torch --index-url https://download.pytorch.org/whl/cu128 --upgrade')
+    print('  Fix: pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128 --upgrade --force-reinstall')
     sys.exit(1)
 
 import bitsandbytes
