@@ -33,7 +33,10 @@ echo "  GPU: $(nvidia-smi --query-gpu=name,memory.total --format=csv,noheader 2>
 echo "  Working dir: $PWD"
 echo "============================================================"
 
-# No --max-eval: evaluate the COMPLETE test split (representative, multi-symbol).
+# --max-eval 1500: the full test is 8,425 samples × ~15s/sample = ~35h (impractical).
+#   1500 samples ≈ ~136 per symbol (11 symbols) — enough for McNemar significance
+#   (p < 0.001 with >5pp delta) and representative per-symbol accuracy. ~6h eval.
+#   To eval more later: deploy GGUF to Ollama and use `run-backtest` (no GPU needed).
 # --diagnostic-samples 500: train/val accuracy probes for the overfitting gap.
 python "$SCRIPT_DIR/train_qlora.py" \
     --lr 0.00002 \
@@ -42,7 +45,7 @@ python "$SCRIPT_DIR/train_qlora.py" \
     --epochs 2 \
     --batch-size 2 \
     --grad-accum 8 \
-    --max-eval 1300 \
+    --max-eval 1500 \
     --diagnostic-samples 500 \
     --tag "$TAG" \
     --output-dir "backtest/data/models/$TAG" \
