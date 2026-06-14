@@ -57,18 +57,28 @@ Write-Host ""
 # ---------------------------------------------------------------------------
 Write-Host "[2/6] Checking Python..." -ForegroundColor Yellow
 
+# Resolve a BASE interpreter, never the venv we're about to delete in step 4.
+# If .venv-finetuning is active (or its Scripts dir is on PATH), "python" resolves
+# to its python.exe; recreating the venv then deletes that exe and the venv step
+# crashes with "is not recognized". Get-Command -All lets us skip any interpreter
+# living inside the target venv and fall through to the system Python.
+$venvFull = Join-Path (Get-Location).Path ".venv-finetuning"
+
 $pythonCmd = $null
 foreach ($candidate in @("python3.12", "python3.11", "python3.10", "python")) {
-    $cmd = Get-Command $candidate -ErrorAction SilentlyContinue
-    if ($cmd) {
-        $pythonCmd = $cmd.Source
-        break
+    foreach ($cmd in @(Get-Command $candidate -All -ErrorAction SilentlyContinue)) {
+        if ($cmd.Source -and ($cmd.Source -notlike "$venvFull*")) {
+            $pythonCmd = $cmd.Source
+            break
+        }
     }
+    if ($pythonCmd) { break }
 }
 
 if (-not $pythonCmd) {
-    Write-Host "  ERROR: Python 3.10+ not found on PATH." -ForegroundColor Red
-    Write-Host "  Install from https://www.python.org/downloads/ (check 'Add to PATH')"
+    Write-Host "  ERROR: Python 3.10+ not found on PATH (outside the venv)." -ForegroundColor Red
+    Write-Host "  Install from https://www.python.org/downloads/ (check 'Add to PATH'),"
+    Write-Host "  or run 'deactivate' if .venv-finetuning is active and retry."
     exit 1
 }
 
