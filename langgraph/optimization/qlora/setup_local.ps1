@@ -147,7 +147,13 @@ Write-Host "  This may take 15-20 minutes (downloads ~8 GB: PyTorch is fetched t
 Write-Host "  Unsloth's CPU wheel, then the cu128 CUDA build that replaces it)."
 Write-Host ""
 
-# Unsloth from git — resolves its own torch, TRL, transformers, peft, bitsandbytes
+# ORDERING MATTERS. The CUDA (cu128) torch reinstall MUST be the LAST step that
+# touches torch. Any package that depends on torch (bitsandbytes, etc.) will, when
+# installed/reinstalled afterward, pull a CPU torch from PyPI and silently clobber
+# the cu128 build — which is exactly what broke earlier runs. So: install
+# everything else first, then pin torch to cu128 last, then re-pin fsspec.
+
+# 5a. Unsloth from git — resolves its own torch, TRL, transformers, peft, bitsandbytes
 Write-Host "  Installing Unsloth (includes PyTorch, TRL, transformers, peft, bitsandbytes)..."
 & $pipExe install "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git"
 if (-not $?) {
@@ -156,12 +162,20 @@ if (-not $?) {
     exit 1
 }
 
-# CRITICAL (Windows): Unsloth resolves a CPU-only torch from PyPI. Unlike the EC2
-# Deep Learning AMI (which ships a matched CUDA driver so the CUDA wheel resolves
-# automatically), Windows has no CUDA in the wheel index, so we MUST reinstall the
-# CUDA 12.8 build explicitly. The RTX 5070 Ti is Blackwell (sm_120) and ONLY runs
-# on cu128 wheels — older CUDA builds won't even load the GPU.
-Write-Host "  Reinstalling PyTorch with CUDA 12.8 (cu128) for the RTX 5070 Ti..."
+# 5b. Additional deps not included by Unsloth (none of these depend on torch, but
+#     dvc[s3]/s3fs pins fsspec==2025.9.0 — that's fine, we re-pin it after torch too)
+Write-Host "  Installing DVC, scikit-learn, and utilities..."
+& $pipExe install "dvc[s3]" scikit-learn pyyaml tqdm matplotlib httpx --quiet
+if (-not $?) {
+    Write-Host "  WARNING: Some optional dependencies failed to install." -ForegroundColor Yellow
+}
+
+# 5c. CRITICAL (Windows): Unsloth resolves a CPU-only torch from PyPI. Unlike the EC2
+#     Deep Learning AMI (matched CUDA driver → CUDA wheel resolves automatically),
+#     Windows has no CUDA in the wheel index, so we MUST install the CUDA 12.8 build
+#     explicitly. The RTX 5070 Ti is Blackwell (sm_120) and ONLY runs on cu128 wheels.
+#     This is the LAST torch-touching step so nothing can clobber it afterward.
+Write-Host "  Installing PyTorch with CUDA 12.8 (cu128) for the RTX 5070 Ti (final torch step)..."
 & $pipExe install torch torchvision torchaudio `
     --index-url https://download.pytorch.org/whl/cu128 --upgrade --force-reinstall
 if (-not $?) {
@@ -170,28 +184,13 @@ if (-not $?) {
     exit 1
 }
 
-# Force-reinstalling torch can leave bitsandbytes linked against the old build.
-# Reinstall it against the fresh CUDA torch so 4-bit quantization works.
-Write-Host "  Reinstalling bitsandbytes against the CUDA torch build..."
-& $pipExe install bitsandbytes --upgrade --force-reinstall --quiet
-if (-not $?) {
-    Write-Host "  WARNING: bitsandbytes reinstall failed — 4-bit loading may break." -ForegroundColor Yellow
-}
-
-# torch's --force-reinstall pulls the LATEST fsspec, which breaks datasets
-# (needs <=2025.9.0) and s3fs/DVC (needs ==2025.9.0). Pin it back so dataset
-# loading and `dvc pull` work. 2025.9.0 satisfies torch, datasets, and s3fs.
+# 5d. torch's --force-reinstall pulls the LATEST fsspec, which breaks datasets
+#     (needs <=2025.9.0) and s3fs/DVC (needs ==2025.9.0). Re-pin it (no deps, so it
+#     can't drag torch back in). 2025.9.0 satisfies torch, datasets, and s3fs.
 Write-Host "  Pinning fsspec==2025.9.0 (datasets + s3fs/DVC compatibility)..."
-& $pipExe install "fsspec[http]==2025.9.0" --quiet
+& $pipExe install "fsspec[http]==2025.9.0" --no-deps --quiet
 if (-not $?) {
     Write-Host "  WARNING: fsspec pin failed — 'dvc pull' or dataset loading may break." -ForegroundColor Yellow
-}
-
-# Additional deps not included by Unsloth
-Write-Host "  Installing DVC, scikit-learn, and utilities..."
-& $pipExe install "dvc[s3]" scikit-learn pyyaml tqdm matplotlib httpx --quiet
-if (-not $?) {
-    Write-Host "  WARNING: Some optional dependencies failed to install." -ForegroundColor Yellow
 }
 
 Write-Host "  Done."
