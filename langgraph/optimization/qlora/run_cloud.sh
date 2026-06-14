@@ -44,7 +44,8 @@ python "$SCRIPT_DIR/train_qlora.py" \
     --grad-accum 8 \
     --diagnostic-samples 500 \
     --tag "$TAG" \
-    --output-dir "backtest/data/models/$TAG"
+    --output-dir "backtest/data/models/$TAG" \
+    "$@"
 
 echo ""
 echo "  DONE — $(date)"
