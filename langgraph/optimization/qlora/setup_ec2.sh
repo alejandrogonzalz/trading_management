@@ -50,14 +50,23 @@ fi
 nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader
 echo ""
 
-# 2. Python 3.10+ (the AMI ships 3.11/3.12)
-echo "[2/7] Checking Python..."
+# 2. Python 3.10+ (the AMI ships 3.11/3.12) + dev headers required by Triton
+echo "[2/7] Checking Python + installing dev headers..."
 PYTHON=""
 for candidate in python3.12 python3.11 python3.10; do
     command -v "$candidate" &>/dev/null && PYTHON="$candidate" && break
 done
 [ -z "$PYTHON" ] && PYTHON=$(command -v python3)
 echo "Using: $PYTHON ($($PYTHON --version))"
+
+# Triton JIT-compiles cuda_utils.c and needs Python.h (from the -dev package).
+# Without it the very first training step crashes with "Python.h: No such file".
+PYVER=$($PYTHON -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
+if command -v apt-get &>/dev/null; then
+    sudo apt-get install -y -q "python${PYVER}-dev" 2>/dev/null || \
+        sudo apt-get install -y -q python3-dev 2>/dev/null || \
+        echo "  WARNING: could not install python${PYVER}-dev — Triton may fail at runtime"
+fi
 echo ""
 
 # 3. Clean venv (no --system-site-packages — keep the base env's libs from leaking in)
