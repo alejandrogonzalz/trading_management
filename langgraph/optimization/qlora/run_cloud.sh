@@ -71,8 +71,9 @@ if [ -z "${BATCH+x}" ]; then
         # A100/H100 80GB WITH FA2 — linear attention, batch=8 is fast
         BATCH=8; GRAD_ACCUM=2; EVAL_BATCH=32
     elif [ "$VRAM_MB" -ge 70000 ]; then
-        # A100/H100 80GB WITHOUT FA2 — quadratic attention, batch=4 is sweet spot
-        BATCH=4; GRAD_ACCUM=4; EVAL_BATCH=32
+        # A100/H100 80GB WITHOUT FA2 — quadratic attention in padding-free mode
+        # batch=2 empirically fastest (~4.4s/step vs 6.4s at batch=4, 11s at batch=8)
+        BATCH=2; GRAD_ACCUM=8; EVAL_BATCH=32
     elif [ "$VRAM_MB" -ge 40000 ]; then
         # L40S 48GB / A6000 48GB
         BATCH=2; GRAD_ACCUM=8; EVAL_BATCH=16
