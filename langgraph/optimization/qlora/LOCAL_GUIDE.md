@@ -217,10 +217,18 @@ while ($true) { [System.Threading.Thread]::Sleep(60000); [System.Windows.Forms.S
 
 ## Step 5: Run the real training
 
-From the `langgraph/` directory:
+Use the `run_local.ps1` wrapper — it cd's to the langgraph root, runs `train_qlora.py`
+with the documented local config, creates the log dir, and tees all output to
+`optimization\qlora\logs\qlora_local.log`:
 
 ```powershell
 cd C:\Users\alex\projects\trading_management\langgraph
+.\optimization\qlora\run_local.ps1
+```
+
+This is the PowerShell equivalent of `run_local.sh`. The raw command it runs is:
+
+```powershell
 .\.venv-finetuning\Scripts\python.exe optimization\qlora\train_qlora.py `
   --lr 0.00005 --rank 8 --alpha 16 --epochs 1 --max-steps 1500 `
   --batch-size 1 --grad-accum 16 --max-eval 200 --diagnostic-samples 0 `
@@ -228,8 +236,32 @@ cd C:\Users\alex\projects\trading_management\langgraph
   2>&1 | Tee-Object -FilePath optimization\qlora\logs\qlora_local.log
 ```
 
-This is equivalent to `run_local.sh` but native PowerShell. Leave the terminal open
-overnight.
+### Keep it alive after closing the terminal (the "tmux" equivalent)
+
+Windows has no tmux, but `Start-Process` launches the run **detached** — it keeps
+going after you close the launching terminal. Because `run_local.ps1` always tees to
+`qlora_local.log`, the log is written whether or not a window is visible:
+
+```powershell
+cd C:\Users\alex\projects\trading_management\langgraph
+Start-Process powershell -WindowStyle Hidden -ArgumentList `
+  '-NoProfile','-ExecutionPolicy','Bypass','-File', `
+  'C:\Users\alex\projects\trading_management\langgraph\optimization\qlora\run_local.ps1'
+```
+
+Then follow the log from any terminal (this is your `tmux attach`; `Ctrl+C` only stops
+the tail, not the training):
+
+```powershell
+Get-Content C:\Users\alex\projects\trading_management\langgraph\optimization\qlora\logs\qlora_local.log -Wait -Tail 40
+```
+
+**Caveat vs tmux:** a detached process survives closing the terminal but **not** a
+full Windows log-off, restart, or sleep. Stay logged in and keep sleep disabled
+(Step 4) for the ~14h run. If it does die, resume from the last checkpoint (Step 7).
+
+If you prefer to watch it live instead, just run `.\optimization\qlora\run_local.ps1`
+in a terminal and leave it open overnight — same log file either way.
 
 ### What happens during training
 
@@ -270,16 +302,14 @@ Get-Process python* | Format-Table Id, CPU, WorkingSet64
 
 ## Step 7: If interrupted (crash, reboot, power loss)
 
-Checkpoints save every 250 steps. Resume from the last one:
+Checkpoints save every 250 steps. Resume from the last one — `run_local.ps1`
+forwards any extra flags to `train_qlora.py`, so just append `--resume`:
 
 ```powershell
-.\.venv-finetuning\Scripts\python.exe optimization\qlora\train_qlora.py `
-  --lr 0.00005 --rank 8 --alpha 16 --epochs 1 --max-steps 1500 `
-  --batch-size 1 --grad-accum 16 --max-eval 200 --diagnostic-samples 0 `
-  --tag qlora_local --output-dir backtest\data\models\qlora_local `
-  --resume `
-  2>&1 | Tee-Object -FilePath optimization\qlora\logs\qlora_local_resume.log
+.\optimization\qlora\run_local.ps1 --resume
 ```
+
+(Detached: add `--resume` as a final element in the `Start-Process` `-ArgumentList`.)
 
 `--resume` finds the last `checkpoint-N` in `--output-dir` and continues. No work
 is lost -- training picks up at the exact step where it stopped.
