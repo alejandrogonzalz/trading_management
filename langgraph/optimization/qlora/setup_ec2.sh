@@ -73,39 +73,16 @@ echo ""
 echo "[4/7] Installing training dependencies..."
 pip install "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git"
 
-# FA2 requires: (a) CUDA_HOME with nvcc, (b) Python dev headers, (c) ninja for
-# fast parallel compilation. The DLAMI runtime-only images often ship the driver
-# but not nvcc or Python.h; detect and install what's missing.
-echo "  Installing build prerequisites for FlashAttention-2..."
-sudo apt-get update -qq
-# Python dev headers (Python.h) — required for the C++ extension build
-sudo apt-get install -y python3-dev python3.12-dev -qq 2>/dev/null || true
-# ninja — parallel build (~3 min instead of ~15 min without it)
-pip install ninja -q
-
-# CUDA toolkit (nvcc) — needed for compiling CUDA kernels
-NVCC_PATH=$(find /usr/local -name "nvcc" -type f 2>/dev/null | head -1)
-if [ -z "$NVCC_PATH" ]; then
-    echo "  nvcc not found — installing CUDA toolkit (this takes ~2 min)..."
-    sudo apt-get install -y cuda-toolkit -qq 2>/dev/null || \
-        sudo apt-get install -y nvidia-cuda-toolkit -qq 2>/dev/null || true
-    NVCC_PATH=$(find /usr/local -name "nvcc" -type f 2>/dev/null | head -1)
-fi
-
-if [ -n "$NVCC_PATH" ]; then
-    export CUDA_HOME=$(dirname "$(dirname "$NVCC_PATH")")
-    echo "  CUDA_HOME=$CUDA_HOME (nvcc: $NVCC_PATH)"
-    # MAX_JOBS=2 limits parallel compilation to 2 cores — leaves headroom for SSH
-    # on small instances (4 vCPUs). Without this, FA2 compilation saturates all
-    # cores and freezes the machine for ~15 min (can't even Ctrl+C or SSH in).
-    MAX_JOBS=2 pip install flash-attn --no-build-isolation || \
-        echo "  WARNING: flash-attn build failed — training will run WITHOUT FA2 (slower)."
-    # Persist CUDA_HOME for future sessions
-    grep -q "CUDA_HOME" ~/.bashrc 2>/dev/null || \
-        echo "export CUDA_HOME=$CUDA_HOME" >> ~/.bashrc
-else
-    echo "  WARNING: nvcc not found even after toolkit install — FA2 skipped (training will be ~2-3x slower)."
-fi
+# FlashAttention-2 is OPTIONAL. It speeds up training ~2x but is notoriously
+# hard to compile (needs nvcc, Python.h, ninja, exact CUDA version match, and
+# uses ~5GB RAM per compiler process — easily freezes a 4-vCPU instance).
+# Unsloth falls back to Triton kernels without FA2 — slower but works fine.
+#
+# To install FA2 manually AFTER setup (at your own risk):
+#   sudo apt-get install -y python3.12-dev cuda-toolkit
+#   export CUDA_HOME=/usr/local/cuda
+#   MAX_JOBS=1 pip install ninja flash-attn --no-build-isolation
+echo "  FlashAttention-2: SKIPPED (optional — install manually if needed, see comments in this script)"
 
 pip install "dvc[s3]" scikit-learn pyyaml tqdm matplotlib httpx -q
 echo "  Done."
