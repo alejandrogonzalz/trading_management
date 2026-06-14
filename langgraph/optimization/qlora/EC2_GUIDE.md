@@ -50,6 +50,45 @@ pay GPU while it's **running**. `terminate` deletes everything.
 > ⚠️ Choose the **OSS Nvidia Driver** AMI, not the "Base" AMI (Base has no driver).
 > For L40S (Ada) any DLAMI with CUDA ≥ 12.1 works; recent ones ship 12.4+.
 
+### Optional: launch from the AWS CLI
+
+Faster than clicking through the console. Replace every `<...>` placeholder and run
+in your target region (add `--region us-east-1`). Find the AMI id with:
+
+```bash
+aws ec2 describe-images --owners amazon \
+  --filters 'Name=name,Values=Deep Learning OSS Nvidia Driver AMI GPU PyTorch*Ubuntu 22.04*' \
+  --query 'reverse(sort_by(Images,&CreationDate))[:3].[ImageId,Name]' --output table
+```
+
+```bash
+# 1. Security group (SSH in). Prefer YOUR_IP/32 over 0.0.0.0/0 (open to the world).
+SG_ID=$(aws ec2 create-security-group \
+  --group-name qlora-finetuning \
+  --description "QLoRA fine-tuning SSH access" \
+  --vpc-id <your-vpc-id> \
+  --query 'GroupId' --output text)
+
+aws ec2 authorize-security-group-ingress \
+  --group-id "$SG_ID" \
+  --ip-permissions '{"IpProtocol":"tcp","FromPort":22,"ToPort":22,"IpRanges":[{"CidrIp":"<YOUR_IP>/32"}]}'
+
+# 2. Launch: g6e.xlarge, DLAMI, 100GB gp3 root, public IP. (SnapshotId is inherited
+#    from the AMI — don't hardcode it.) --key-name is your existing EC2 key pair.
+aws ec2 run-instances \
+  --image-id <dlami-ami-id> \
+  --instance-type g6e.xlarge \
+  --key-name <your-key-pair> \
+  --block-device-mappings '{"DeviceName":"/dev/sda1","Ebs":{"DeleteOnTermination":true,"VolumeSize":100,"VolumeType":"gp3"}}' \
+  --network-interfaces '{"AssociatePublicIpAddress":true,"DeviceIndex":0,"Groups":["'"$SG_ID"'"]}' \
+  --count 1
+```
+
+> `<your-vpc-id>` → your default VPC (`aws ec2 describe-vpcs --query 'Vpcs[?IsDefault].VpcId'`).
+> `<YOUR_IP>` → `curl -s ifconfig.me`. `<your-key-pair>` → the name of a key pair you
+> already own (needed to SSH in). Attach the DVC IAM role with
+> `--iam-instance-profile Name=<your-profile>` if you use one.
+
 ---
 
 ## Step 1: Connect + clone

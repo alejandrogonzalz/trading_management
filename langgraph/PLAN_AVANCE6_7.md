@@ -23,7 +23,7 @@ GPU disponible: NVIDIA RTX 5070 Ti (16 GB VRAM) — el fine-tuning y la inferenc
 | Exportación datos fine-tuning | `backtest/export.py` → `training_data/{train,val,test}.jsonl` |
 | Script QLoRA trainer | `optimization/qlora/train_qlora.py` |
 | Framework estadístico (McNemar + t-test pareado) | `optimization/stats_tests.py` |
-| Guía SageMaker | `optimization/qlora/SAGEMAKER_GUIDE.md` |
+| Guía cloud GPU (EC2 + costos) | `optimization/qlora/EC2_GUIDE.md` |
 | Infraestructura LLM (7 providers) | `agent/llm_factory.py` |
 
 ### ❌ Falta
@@ -213,7 +213,7 @@ Secciones propuestas:
 7. Privacidad de datos (datos financieros propietarios)
 
 **Proveedores a comparar** (todos 4 requeridos):
-- **AWS SageMaker** — referencia: `optimization/qlora/SAGEMAKER_GUIDE.md` ya en el repo; BedrockProvider ya implementado en `agent/llm_factory.py`
+- **AWS (EC2 g6e.xlarge / SageMaker)** — referencia: `optimization/qlora/EC2_GUIDE.md` ya en el repo; BedrockProvider ya implementado en `agent/llm_factory.py`
 - **Azure ML** — Azure OpenAI Service + fine-tuning managed
 - **GCP Vertex AI** — Model Garden + TPU access; GoogleProvider ya implementado en `agent/llm_factory.py`
 - **IBM Watson** — watsonx.ai; menor integración con Hugging Face

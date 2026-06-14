@@ -25,23 +25,24 @@ optimization/configs/qlora.yaml  ← Hyperparameter reference (NOT swept anymore
 > `results/archive/` and must not be cited (trained on a contaminated split with
 > partial single-symbol eval). See `docs/AUDITORIA_QLORA_LEAKAGE_OVERFITTING.md`.
 
-## Quick Start (SageMaker)
+## Quick Start (EC2 g6e.xlarge — recommended)
 
 ```bash
-# On the SageMaker instance terminal:
-git clone https://github.com/alejandrogonzalz/trading_management.git
+# On the EC2 instance (Deep Learning AMI) terminal:
+git clone git@github.com:luisaga215/trading_management.git
 cd trading_management/langgraph
-bash optimization/qlora/sagemaker_setup.sh
+bash optimization/qlora/setup_ec2.sh
 
 # REQUIRED before training/eval — without candles, win_rate/PF/Sharpe come out 0:
 dvc pull backtest/data/labeled/dataset.jsonl backtest/data/candles
 
-# Then (single run):
+# Then (single run, nohup survives disconnects):
 source .venv/bin/activate
 nohup bash optimization/qlora/run_cloud.sh > optimization/qlora/logs/run_cloud.log 2>&1 &
 ```
 
-See [SAGEMAKER_GUIDE.md](SAGEMAKER_GUIDE.md) for the full walkthrough.
+See [EC2_GUIDE.md](EC2_GUIDE.md) for the full walkthrough + cost analysis (the same
+`setup_ec2.sh` also works on a SageMaker Studio terminal as a fallback).
 
 ## Quick Start (Local — Windows RTX 5070 Ti)
 
