@@ -28,7 +28,8 @@ import yaml
 
 os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+LANGGRAPH_ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(LANGGRAPH_ROOT))
 
 from agent.prompts import build_system_prompt, build_user_prompt
 from backtest.evaluation.metrics import compute_all_metrics
@@ -44,10 +45,10 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-DATASET_PATH = str(Path(__file__).resolve().parent.parent / "backtest" / "data" / "labeled" / "dataset.jsonl")
-TRAINING_DATA_DIR = Path(__file__).resolve().parent.parent / "training_data"
+DATASET_PATH = str(LANGGRAPH_ROOT / "backtest" / "data" / "labeled" / "dataset.jsonl")
+TRAINING_DATA_DIR = LANGGRAPH_ROOT / "training_data"
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
-MODELS_DIR = Path(__file__).resolve().parent.parent / "backtest" / "data" / "models"
+MODELS_DIR = LANGGRAPH_ROOT / "backtest" / "data" / "models"
 
 
 class QLoRATrainer:
@@ -198,7 +199,7 @@ class QLoRATrainer:
 
     def train(self) -> dict[str, Any]:
         """Run SFT training with early stopping based on validation loss."""
-        from transformers import TrainingArguments
+        import trl
         from trl import SFTTrainer
 
         log.info("Loading datasets...")
@@ -219,44 +220,86 @@ class QLoRATrainer:
 
         output_dir = self.cfg["output_dir"]
         max_steps = self.cfg.get("max_steps") or -1  # -1 = honor num_train_epochs
-        training_args = TrainingArguments(
-            output_dir=output_dir,
-            num_train_epochs=self.cfg["epochs"],
-            max_steps=max_steps,
-            per_device_train_batch_size=self.cfg["batch_size"],
-            gradient_accumulation_steps=self.cfg["gradient_accumulation_steps"],
-            learning_rate=self.cfg["learning_rate"],
-            weight_decay=self.cfg["weight_decay"],
-            warmup_steps=self.cfg["warmup_steps"],
-            lr_scheduler_type="cosine",
-            fp16=False,
-            bf16=True,
-            logging_steps=25,
-            # eval at batch 1 (same as train) — batch 8 (the HF default) at ~900
-            # tokens would spike activation memory and risk OOM on 16GB.
-            per_device_eval_batch_size=1,
-            eval_strategy="steps",
-            eval_steps=250,
-            save_strategy="steps",
-            save_steps=250,
-            save_total_limit=3,
-            load_best_model_at_end=True,
-            metric_for_best_model="eval_loss",
-            greater_is_better=False,
-            seed=self.cfg["seed"],
-            report_to="none",
-        )
 
-        self.trainer = SFTTrainer(
-            model=self.model,
-            tokenizer=self.tokenizer,
-            train_dataset=train_dataset,
-            eval_dataset=val_dataset,
-            args=training_args,
-            dataset_text_field="text",
-            max_seq_length=self.cfg["max_seq_length"],
-            packing=False,
-        )
+        trl_major = int(trl.__version__.split(".")[1]) if trl.__version__.startswith("0.") else 99
+        log.info(f"  TRL version: {trl.__version__} (using {'new' if trl_major >= 12 else 'legacy'} API)")
+
+        if trl_major >= 12:
+            # TRL >= 0.12: SFTConfig replaces TrainingArguments, params moved into config
+            from trl import SFTConfig
+            sft_config = SFTConfig(
+                output_dir=output_dir,
+                num_train_epochs=self.cfg["epochs"],
+                max_steps=max_steps,
+                per_device_train_batch_size=self.cfg["batch_size"],
+                gradient_accumulation_steps=self.cfg["gradient_accumulation_steps"],
+                learning_rate=self.cfg["learning_rate"],
+                weight_decay=self.cfg["weight_decay"],
+                warmup_steps=self.cfg["warmup_steps"],
+                lr_scheduler_type="cosine",
+                fp16=False,
+                bf16=True,
+                logging_steps=25,
+                per_device_eval_batch_size=1,
+                eval_strategy="steps",
+                eval_steps=250,
+                save_strategy="steps",
+                save_steps=250,
+                save_total_limit=3,
+                load_best_model_at_end=True,
+                metric_for_best_model="eval_loss",
+                greater_is_better=False,
+                seed=self.cfg["seed"],
+                report_to="none",
+                dataset_text_field="text",
+                max_seq_length=self.cfg["max_seq_length"],
+                packing=False,
+            )
+            self.trainer = SFTTrainer(
+                model=self.model,
+                processing_class=self.tokenizer,
+                train_dataset=train_dataset,
+                eval_dataset=val_dataset,
+                args=sft_config,
+            )
+        else:
+            # TRL < 0.12: legacy API with TrainingArguments + params in SFTTrainer
+            from transformers import TrainingArguments
+            training_args = TrainingArguments(
+                output_dir=output_dir,
+                num_train_epochs=self.cfg["epochs"],
+                max_steps=max_steps,
+                per_device_train_batch_size=self.cfg["batch_size"],
+                gradient_accumulation_steps=self.cfg["gradient_accumulation_steps"],
+                learning_rate=self.cfg["learning_rate"],
+                weight_decay=self.cfg["weight_decay"],
+                warmup_steps=self.cfg["warmup_steps"],
+                lr_scheduler_type="cosine",
+                fp16=False,
+                bf16=True,
+                logging_steps=25,
+                per_device_eval_batch_size=1,
+                eval_strategy="steps",
+                eval_steps=250,
+                save_strategy="steps",
+                save_steps=250,
+                save_total_limit=3,
+                load_best_model_at_end=True,
+                metric_for_best_model="eval_loss",
+                greater_is_better=False,
+                seed=self.cfg["seed"],
+                report_to="none",
+            )
+            self.trainer = SFTTrainer(
+                model=self.model,
+                tokenizer=self.tokenizer,
+                train_dataset=train_dataset,
+                eval_dataset=val_dataset,
+                args=training_args,
+                dataset_text_field="text",
+                max_seq_length=self.cfg["max_seq_length"],
+                packing=False,
+            )
 
         log.info("Starting training...")
         t0 = time.time()
@@ -281,7 +324,7 @@ class QLoRATrainer:
         }
 
     def save_model(self):
-        """Save the fine-tuned LoRA adapters."""
+        """Save the fine-tuned LoRA adapters (and optionally GGUF)."""
         output_dir = self.cfg["output_dir"]
         Path(output_dir).mkdir(parents=True, exist_ok=True)
 
@@ -289,10 +332,16 @@ class QLoRATrainer:
         self.model.save_pretrained(output_dir)
         self.tokenizer.save_pretrained(output_dir)
 
-        # Save merged GGUF for Ollama deployment (optional)
+    def save_gguf(self):
+        """Export merged GGUF for Ollama deployment. Non-fatal on failure."""
+        output_dir = self.cfg["output_dir"]
         gguf_path = Path(output_dir) / "gguf"
         log.info(f"Saving GGUF (Q4_K_M) to {gguf_path}/")
-        self.model.save_pretrained_gguf(str(gguf_path), self.tokenizer, quantization_method="q4_k_m")
+        try:
+            self.model.save_pretrained_gguf(str(gguf_path), self.tokenizer, quantization_method="q4_k_m")
+        except Exception as e:
+            log.warning(f"  GGUF export failed (non-fatal): {e}")
+            log.warning("  Adapters are saved — convert to GGUF manually later if needed.")
 
     def evaluate(self) -> dict[str, Any]:
         """Evaluate the fine-tuned model on the test split.
@@ -320,7 +369,11 @@ class QLoRATrainer:
         _train, _val, test = _temporal_split(all_samples)
 
         max_samples = self.cfg.get("max_eval_samples")
-        if max_samples and max_samples < len(test):
+        if max_samples is not None and max_samples < len(test):
+            if max_samples == 0:
+                log.info("  --max-eval 0: skipping evaluation")
+                return {"accuracy": 0, "metrics": {}, "total_evaluated": 0, "errors": 0,
+                        "predictions": [], "actuals": [], "trade_results": [], "sample_keys": []}
             test = test[:max_samples]
             log.info(f"  Evaluating on first {max_samples} test samples")
         log.info(f"  Test samples: {len(test)}")
@@ -450,10 +503,10 @@ class QLoRATrainer:
         # Step 3: Train
         train_info = self.train()
 
-        # Step 4: Save model
+        # Step 4: Save LoRA adapters
         self.save_model()
 
-        # Step 5: Evaluate on test set
+        # Step 5: Evaluate on test set (before GGUF so results are saved even if GGUF fails)
         test_metrics = self.evaluate()
 
         elapsed = time.time() - t0
@@ -499,12 +552,16 @@ class QLoRATrainer:
             "timestamp": datetime.now().isoformat(),
         }
 
-        # Save result
+        # Save result JSON (before GGUF — ensures results survive even if GGUF fails)
         RESULTS_DIR.mkdir(parents=True, exist_ok=True)
         out_path = RESULTS_DIR / "qlora_optimization.json"
         with open(out_path, "w") as f:
             json.dump(result, f, indent=2)
         log.info(f"\nResult saved: {out_path}")
+
+        # Step 6: GGUF export (optional, non-fatal)
+        self.save_gguf()
+
         log.info(f"Model saved: {self.cfg['output_dir']}")
         log.info(f"Total time: {elapsed:.1f}s ({elapsed / 60:.1f} min)")
 
@@ -540,6 +597,8 @@ def parse_args():
     parser.add_argument("--batch-size", type=int, help="Per-device batch size")
     parser.add_argument("--max-eval", type=int, help="Max samples to evaluate (for quick testing)")
     parser.add_argument("--max-steps", type=int, help="Cap optimizer steps (smoke test the training loop)")
+    parser.add_argument("--grad-accum", type=int, help="Gradient accumulation steps (default: 16)")
+    parser.add_argument("--output-dir", type=str, help="Output directory for model checkpoints/adapters")
     parser.add_argument(
         "--resume", action="store_true", help="Resume from the latest checkpoint-N in output_dir if present"
     )
@@ -566,10 +625,14 @@ def main():
         config["epochs"] = args.epochs
     if args.batch_size:
         config["batch_size"] = args.batch_size
-    if args.max_eval:
+    if args.max_eval is not None:
         config["max_eval_samples"] = args.max_eval
     if args.max_steps:
         config["max_steps"] = args.max_steps
+    if args.grad_accum:
+        config["gradient_accumulation_steps"] = args.grad_accum
+    if args.output_dir:
+        config["output_dir"] = args.output_dir
     if args.resume:
         config["resume"] = True
     if args.model:

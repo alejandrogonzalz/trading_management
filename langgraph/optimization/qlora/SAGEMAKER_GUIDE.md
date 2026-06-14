@@ -39,31 +39,31 @@ speedup). The g5.xlarge works but is tighter — use `batch_size=4` there.
 
 ## Step 3: Clone and Setup
 
+**IMPORTANT**: Clone into `~/SageMaker/` — it's the only persistent volume. Everything
+else is wiped on stop/start.
+
 ```bash
-# Clone repo
+cd ~/SageMaker
 git clone https://github.com/alejandrogonzalz/trading_management.git
 cd trading_management/langgraph
 
-# Create venv with system Python (3.10+ already available on SageMaker)
-python3 -m venv .venv --system-site-packages
-source .venv/bin/activate
-
-# Install training dependencies
-pip install "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git"
-pip install --no-deps trl peft accelerate bitsandbytes
-pip install datasets scikit-learn pyyaml
-
-# Verify GPU + FlashAttention-2
-python -c "import torch; print(f'GPU: {torch.cuda.get_device_name(0)}, VRAM: {torch.cuda.get_device_properties(0).total_mem / 1e9:.1f} GB')"
+# Run the automated setup script (installs everything + pulls data + verifies)
+bash optimization/qlora/sagemaker_setup.sh
 ```
+
+The setup script handles:
+- GPU + Python version verification
+- venv creation with pinned TRL/transformers versions (API-compatible)
+- DVC install + `dvc pull` for the dataset and candles
+- HuggingFace cache in the persistent volume
+- FA2 + Unsloth + SFTTrainer API compatibility check
 
 > **Confirm FA2**: when the model loads, the startup banner should show `FA2 = True`.
 > That's the main speedup vs local Windows (where FA2 won't install).
 
-> **Candle data**: the evaluation step simulates trades against future candles
-> (`backtest/data/candles/*.json`). If those files are not in the repo (DVC-tracked
-> / gitignored), upload them manually or skip trade simulation with `--max-eval 0`.
-> Direction accuracy is computed regardless.
+> **Dataset**: `dataset.jsonl` is DVC-tracked. The setup script pulls it automatically.
+> If DVC pull fails (IAM permissions), upload the file manually via JupyterLab to
+> `backtest/data/labeled/dataset.jsonl`.
 
 ---
 
@@ -72,7 +72,7 @@ python -c "import torch; print(f'GPU: {torch.cuda.get_device_name(0)}, VRAM: {to
 Before committing to a multi-hour run, confirm the environment works:
 
 ```bash
-python optimization/train_qlora.py --max-steps 3 --max-eval 10
+python optimization/qlora/train_qlora.py --max-steps 3 --max-eval 10
 ```
 
 This loads the model, runs 3 training steps, evaluates 10 samples, and exits.
@@ -86,9 +86,13 @@ Use **tmux** so the job survives browser disconnects:
 
 ```bash
 tmux new -s qlora
+source .venv/bin/activate
 
-# The real run: 3 epochs, batch_size=8 (fits in 48GB)
-python optimization/train_qlora.py --epochs 3 --batch-size 8 2>&1 | tee logs/qlora_sagemaker.log
+# Single config (3 epochs, batch=8):
+python optimization/qlora/train_qlora.py --epochs 3 --batch-size 8 2>&1 | tee optimization/qlora/logs/qlora_sagemaker.log
+
+# Or run the full 5-config hyperparameter search:
+bash optimization/qlora/run_qlora_search.sh
 
 # Detach: Ctrl+B, D (safe to close browser)
 # Reattach later: tmux attach -t qlora
@@ -103,13 +107,13 @@ python optimization/train_qlora.py --epochs 3 --batch-size 8 2>&1 | tee logs/qlo
 4. **save_model** — LoRA adapters + merged GGUF (Q4_K_M) for Ollama
 5. **evaluate** — greedy decoding on all 8,425 test samples, trade simulation,
    emits `sample_keys` for paired McNemar / t-test
-6. **save result** → `optimization/results/qlora_optimization.json`
+6. **save result** → `optimization/qlora/results/qlora_optimization.json`
 
 ### If the run is interrupted:
 
 ```bash
 # Resume from the last checkpoint (saves every 250 steps)
-python optimization/train_qlora.py --epochs 3 --batch-size 8 --resume 2>&1 | tee -a logs/qlora_sagemaker.log
+python optimization/qlora/train_qlora.py --epochs 3 --batch-size 8 --resume 2>&1 | tee -a optimization/qlora/logs/qlora_sagemaker.log
 ```
 
 `--resume` finds the latest `checkpoint-N` in the output directory and continues
@@ -126,7 +130,7 @@ from there. No work is lost.
 
 ```bash
 # Add results (NOT the model weights — too large for git)
-git add optimization/results/qlora_optimization.json
+git add optimization/qlora/results/qlora_optimization.json
 git commit -m "feat(qlora): 3-epoch fine-tuning results — Qwen 2.5 7B on SageMaker"
 git push origin dev
 ```
@@ -156,7 +160,7 @@ git pull origin dev
 
 # Paired statistical test vs LSTM (the current winner at 81.5%)
 python -m cli compare-stats \
-  --a optimization/results/qlora_optimization.json \
+  --a optimization/qlora/results/qlora_optimization.json \
   --b backtest/data/results/ml-lstm.json
 ```
 
@@ -199,22 +203,28 @@ automatically via `llm_factory.py`.
 
 ---
 
-## Running Multiple Configs (optional)
+## Running Multiple Configs
 
-To try different hyperparameter combos from `qlora.yaml`:
+Use the automated search script (runs all 5 configs sequentially):
 
 ```bash
-# Config 1 (default — recommended first)
-python optimization/train_qlora.py --lr 0.00002 --rank 16 --alpha 32 --epochs 3 --batch-size 8
-
-# Config 2 (aggressive LR, smaller rank)
-python optimization/train_qlora.py --lr 0.00005 --rank 8 --alpha 16 --epochs 3 --batch-size 8
-
-# Config 3 (conservative, large rank)
-python optimization/train_qlora.py --lr 0.00001 --rank 32 --alpha 64 --epochs 2 --batch-size 8
+bash optimization/qlora/run_qlora_search.sh
 ```
 
-Each run overwrites `qlora_optimization.json`. Rename between runs to keep all:
+Or manually:
 ```bash
-cp optimization/results/qlora_optimization.json optimization/results/qlora_config1.json
+# Config 1 (default — recommended first)
+python optimization/qlora/train_qlora.py --lr 0.00002 --rank 16 --alpha 32 --epochs 3 --batch-size 8
+
+# Config 2 (aggressive LR, smaller rank)
+python optimization/qlora/train_qlora.py --lr 0.00005 --rank 8 --alpha 16 --epochs 3 --batch-size 8
+
+# Config 3 (conservative, large rank)
+python optimization/qlora/train_qlora.py --lr 0.00001 --rank 32 --alpha 64 --epochs 2 --batch-size 8
+```
+
+Each run overwrites `qlora_optimization.json`. The search script auto-renames them.
+Manual rename:
+```bash
+cp optimization/qlora/results/qlora_optimization.json optimization/qlora/results/qlora_config1.json
 ```

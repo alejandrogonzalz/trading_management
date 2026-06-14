@@ -19,7 +19,15 @@ optimization/
 │   ├── xgboost.yaml       ← Round 2: reg_alpha, reg_lambda, max_depth ≤ 6
 │   ├── random_forest.yaml ← Round 2: max_depth ≤ 10, min_samples_leaf ≥ 10
 │   ├── lstm.yaml
-│   └── qlora.yaml
+│   └── qlora.yaml         ← QLoRA hyperparameter search space
+├── qlora/                 ← QLoRA fine-tuning (self-contained)
+│   ├── train_qlora.py     ← Full pipeline: data → train → eval → save
+│   ├── sagemaker_setup.sh ← One-command SageMaker env setup
+│   ├── run_qlora_search.sh ← Runs all 5 configs from qlora.yaml
+│   ├── SAGEMAKER_GUIDE.md ← Step-by-step SageMaker walkthrough
+│   ├── README.md          ← QLoRA-specific docs
+│   ├── results/           ← Per-config result JSONs
+│   └── logs/              ← Training logs
 ├── optimize.py            ← CLI entry point
 └── analyze_results.py     ← Cross-model comparison
 ```
@@ -92,70 +100,17 @@ result = pipeline.run()
 
 ---
 
-## QLoRA Fine-Tuning Setup (Windows — RTX 5070 Ti)
+## QLoRA Fine-Tuning
 
-Steps required to run `train_qlora.py` on a fresh Windows machine.
+All QLoRA-specific code, scripts, and docs live in [`qlora/`](qlora/README.md).
 
-### 1. Install AWS CLI and configure credentials
+```bash
+# SageMaker (recommended):
+bash optimization/qlora/sagemaker_setup.sh
+bash optimization/qlora/run_qlora_search.sh
 
-The labeled dataset is stored in a DVC S3 remote (`s3://trading-management-dvc/dvc`).
-AWS CLI is needed to pull it.
-
-```powershell
-# Download and install AWS CLI v2
-Invoke-WebRequest -Uri "https://awscli.amazonaws.com/AWSCLIV2.msi" -OutFile "$env:TEMP\AWSCLIV2.msi"
-Start-Process msiexec.exe -ArgumentList "/i $env:TEMP\AWSCLIV2.msi /quiet /norestart" -Wait
-# Restart terminal to pick up the new PATH, then:
-aws configure   # enter Access Key, Secret Key, region us-east-1, output json
-aws sts get-caller-identity   # confirm auth
+# Local (Windows):
+.venv-finetuning\Scripts\python optimization\qlora\train_qlora.py --epochs 3
 ```
 
-### 2. Install DVC + dvc-s3 in the finetuning venv
-
-```powershell
-.venv-finetuning\Scripts\pip install dvc dvc-s3
-```
-
-### 3. Pull the dataset
-
-```powershell
-# From the repo root:
-.venv-finetuning\Scripts\dvc pull langgraph/backtest/data/labeled/dataset.jsonl
-# Expected: "1 file fetched and 1 file added"
-# Verify:
-python -c "print(sum(1 for _ in open('langgraph/backtest/data/labeled/dataset.jsonl')))"
-# → 56161
-```
-
-### 4. Install CUDA-enabled PyTorch
-
-Unsloth installs `torch` during its own install, but on Windows it may resolve the
-`+cpu` wheel instead of a CUDA build. Always verify and fix before training:
-
-```powershell
-# Check — if output contains "+cpu", reinstall:
-.venv-finetuning\Scripts\python -c "import torch; print(torch.__version__, torch.cuda.is_available())"
-
-# Install CUDA 12.8 build (works with driver CUDA 13.x via backward compat):
-.venv-finetuning\Scripts\pip install torch torchvision torchaudio \
-    --index-url https://download.pytorch.org/whl/cu128 --upgrade
-
-# Verify CUDA is now available:
-.venv-finetuning\Scripts\python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))"
-# → True  NVIDIA GeForce RTX 5070 Ti
-```
-
-> **Why this happens**: Unsloth pulls the correct CUDA wheel on Linux/Colab, but on
-> Windows the pip resolver sometimes falls back to the CPU wheel when no explicit
-> `--index-url` is given. The `cu128` index works with any driver that supports
-> CUDA ≥ 12.8 (driver ≥ 525.x), including the 591.86 driver shipping with
-> CUDA 13.1.
-
-### 5. Run fine-tuning
-
-```powershell
-Set-Location langgraph
-.venv-finetuning\Scripts\python optimization/train_qlora.py --lr 0.00002 --rank 16 --epochs 3 --batch-size 4
-```
-
-Expected VRAM usage: ~10-13 GB (out of 16 GB), training ~4-8 h for 3 epochs.
+See [`qlora/SAGEMAKER_GUIDE.md`](qlora/SAGEMAKER_GUIDE.md) for the full walkthrough.

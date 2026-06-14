@@ -48,14 +48,16 @@ Full-stack crypto trading platform with GPU-accelerated AI, LangGraph agents, ba
 - **Backtest**: Historical evaluation of LLM vs ML predictions (56,161 labeled samples)
 - **Research**: Master's thesis comparing zero-shot LLM, fine-tuned LLM, XGB, RF, LSTM
 
-## Current Status (2026-06-01)
+## Current Status (2026-06-13)
 - **Production**: Backend + Frontend + Ollama running via Docker Compose
 - **LangGraph**: Agent running, 3-node graph tested
 - **Backtest**: Refactored into clean subpackages (`ingestion/`, `models/`, `evaluation/`)
-- **ML Results (Avance4)**: LSTM 81.5% test acc (winner), SVM 70.8%, XGBoost 66.6%
-- **LSTM Best Params**: hidden=32, layers=3, seq_len=5, dropout=0.1, lr=0.001
-- **Next**: Avance5 — ensemble models (stacking, voting, bagging-LSTM, blending)
-- **Pending**: QLoRA fine-tuning, DVC, full LLM vs ML thesis comparison
+- **ML Results (Avance5)**: Bagging-LSTM 83.37% test (winner), LSTM 81.5%, Blending 81.89%, XGBoost 66.6%
+- **Bagging-LSTM Best**: 5 bags, hidden=32, layers=3, seq=5, AUC-ROC=0.9157
+- **QLoRA Fine-tuning**: Config 1 trained on SageMaker (92% direction acc), configs 2-3 pending
+- **DVC**: Initialized, dataset + candles + models tracked in S3 (`s3://trading-management-dvc/`)
+- **Next**: Complete QLoRA configs, zero-shot LLM backtest, McNemar/t-test comparisons
+- **Pending**: LangGraph integration of fine-tuned model, ensemble LSTM+LLM, thesis presentation
 
 ---
 
@@ -64,6 +66,7 @@ Full-stack crypto trading platform with GPU-accelerated AI, LangGraph agents, ba
 @.claude/steering-backend.md
 @.claude/steering-frontend.md
 @.claude/steering-langgraph.md
+@.claude/steering-qlora.md
 
 ## Custom Commands
 
