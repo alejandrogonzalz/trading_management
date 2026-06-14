@@ -85,6 +85,13 @@ class QLoRATrainer:
         "mode": "FUTURES",
         "max_steps": None,  # cap optimizer steps (smoke tests); None = full epochs
         "max_eval_samples": None,
+        # Per-batch size for evaluation generation. 1 = the original exact
+        # per-sample greedy path. >1 batches prompts through a single padded
+        # generate() call — the throughput lever that turns an hours-long serial
+        # test eval into minutes. Safe on >=48GB GPUs at 16; try 32 on 80GB.
+        # Independent of the training batch_size (that's VRAM-bound on activations
+        # + gradients; eval has no gradients so it can go much wider).
+        "eval_batch_size": 1,
         # Subset size used to measure train/val direction accuracy for the
         # overfitting gap. The full test split is always evaluated; train/val are
         # capped because generation is expensive and a few hundred samples are
@@ -374,79 +381,103 @@ class QLoRATrainer:
         for paired stats. Trade simulation against future candles runs only when
         ``simulate=True`` (TEST); the gap probes need direction accuracy only.
         """
-        import torch
-
         predictions: list[dict[str, Any]] = []
         actuals: list[dict[str, Any]] = []
         trade_results: list[dict[str, Any]] = []
         sample_keys: list[str] = []
         parse_errors = 0
 
-        # Generation is sequential (one greedy decode per sample), so it can run
-        # for a long time on the full test set with no output. Log progress at an
-        # interval that scales with the set size: every sample for tiny smoke-test
-        # runs (<20), otherwise ~20 updates total, capped at every 100.
         total = len(samples)
-        log_every = 1 if total <= 20 else min(100, max(1, total // 20))
-        start_t = time.time()
-        log.info(f"  [{label}] generating predictions for {total} samples (log every {log_every})")
+        batch_size = max(1, int(self.cfg.get("eval_batch_size", 1) or 1))
 
-        for i, sample in enumerate(samples):
-            if (i + 1) % log_every == 0 or (i + 1) == total:
-                elapsed = time.time() - start_t
-                rate = (i + 1) / elapsed if elapsed > 0 else 0.0
-                eta = (total - (i + 1)) / rate if rate > 0 else 0.0
-                log.info(
-                    f"  [{label}] {i + 1}/{total} "
-                    f"({parse_errors} parse errors, {rate:.2f} samples/s, ETA {eta:.0f}s)"
-                )
-
+        # Pre-build the chat-templated prompt for every sample (strings only, so
+        # this is cheap) up front, so generation can run in batches. Normalize a
+        # single-TF indicator dict to the {"1h": {...}} shape the prompt builder
+        # expects — same guard the original per-sample loop applied.
+        prompts: list[str] = []
+        for sample in samples:
             symbol = sample.get("symbol", "BTCUSDT")
-            label_obj = sample["label"]
             indicators = sample["indicators"]
             if indicators and not isinstance(next(iter(indicators.values())), dict):
                 indicators = {"1h": indicators}
-
             user_prompt = build_user_prompt(symbol, indicators)
-            input_text = self.tokenizer.apply_chat_template(
-                [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
-                tokenize=False,
-                add_generation_prompt=True,
-            )
-            inputs = self.tokenizer(input_text, return_tensors="pt").to(self.model.device)
-
-            with torch.no_grad():
-                output_ids = self.model.generate(
-                    **inputs,
-                    max_new_tokens=256,
-                    do_sample=False,  # greedy decoding — deterministic, reproducible
+            prompts.append(
+                self.tokenizer.apply_chat_template(
+                    [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
+                    tokenize=False,
+                    add_generation_prompt=True,
                 )
-            generated = self.tokenizer.decode(
-                output_ids[0][inputs["input_ids"].shape[1] :],
-                skip_special_tokens=True,
             )
 
-            # Full prediction parse (bias + entry/tp/sl). On failure, fall back
-            # to a bias-only prediction so the sample still counts toward the
-            # paired comparison (its trade simulates as ERROR, pnl 0).
-            prediction = _parse_prediction(generated)
-            if prediction is None:
-                parse_errors += 1
-                bias_kw = self._parse_bias(generated)
-                prediction = {"bias": bias_kw or "LONG", "confidence": 0}
-            prediction.setdefault("confidence", 5)
+        # Batched generation is the throughput lever. A serial greedy decode is
+        # latency-bound (~5-17s/sample depending on GPU), so the full test set can
+        # take many hours one-at-a-time. Decoding `batch_size` prompts in one
+        # padded generate() call is near-free until compute-bound, cutting eval to
+        # minutes. batch_size=1 reproduces the original exact per-sample path. If a
+        # batched generate ever fails (e.g. an Unsloth fast-path quirk on padded
+        # input), we fall back to the proven serial path for THAT batch only, so
+        # results are never wrong or dropped — only slower.
+        n_batches = (total + batch_size - 1) // batch_size
+        log_every = 1 if n_batches <= 20 else min(50, max(1, n_batches // 20))
+        start_t = time.time()
+        log.info(
+            f"  [{label}] generating predictions for {total} samples "
+            f"(batch_size={batch_size}, {n_batches} batches)"
+        )
 
-            predictions.append(prediction)
-            actuals.append(label_obj)
-            sample_keys.append(f"{symbol}@{sample['timestamp']}")
+        for b in range(n_batches):
+            b_start = b * batch_size
+            b_end = min(b_start + batch_size, total)
+            batch_samples = samples[b_start:b_end]
+            batch_prompts = prompts[b_start:b_end]
 
-            if simulate:
-                candle_idx = ts_idx_map.get(symbol, {}).get(sample["timestamp"])
-                if candle_idx is not None and candle_idx + 1 < len(candles_map.get(symbol, [])):
-                    future = candles_map[symbol][candle_idx + 1 : candle_idx + 25]
-                    trade_results.append(simulate_trade(prediction, future))
-                else:
-                    trade_results.append({"outcome": "ERROR", "pnl_pct": 0, "hold_bars": 0})
+            if batch_size == 1:
+                generated_texts = [self._generate_single(batch_prompts[0])]
+            else:
+                try:
+                    generated_texts = self._generate_batch(batch_prompts)
+                except Exception as exc:  # noqa: BLE001 — degrade gracefully, never drop samples
+                    log.warning(
+                        f"  [{label}] batched generate failed ({exc}); "
+                        f"falling back to per-sample for batch {b + 1}/{n_batches}"
+                    )
+                    generated_texts = [self._generate_single(p) for p in batch_prompts]
+
+            for sample, generated in zip(batch_samples, generated_texts):
+                symbol = sample.get("symbol", "BTCUSDT")
+                label_obj = sample["label"]
+
+                # Full prediction parse (bias + entry/tp/sl). On failure, fall back
+                # to a bias-only prediction so the sample still counts toward the
+                # paired comparison (its trade simulates as ERROR, pnl 0).
+                prediction = _parse_prediction(generated)
+                if prediction is None:
+                    parse_errors += 1
+                    bias_kw = self._parse_bias(generated)
+                    prediction = {"bias": bias_kw or "LONG", "confidence": 0}
+                prediction.setdefault("confidence", 5)
+
+                predictions.append(prediction)
+                actuals.append(label_obj)
+                sample_keys.append(f"{symbol}@{sample['timestamp']}")
+
+                if simulate:
+                    candle_idx = ts_idx_map.get(symbol, {}).get(sample["timestamp"])
+                    if candle_idx is not None and candle_idx + 1 < len(candles_map.get(symbol, [])):
+                        future = candles_map[symbol][candle_idx + 1 : candle_idx + 25]
+                        trade_results.append(simulate_trade(prediction, future))
+                    else:
+                        trade_results.append({"outcome": "ERROR", "pnl_pct": 0, "hold_bars": 0})
+
+            if (b + 1) % log_every == 0 or (b + 1) == n_batches:
+                done = b_end
+                elapsed = time.time() - start_t
+                rate = done / elapsed if elapsed > 0 else 0.0
+                eta = (total - done) / rate if rate > 0 else 0.0
+                log.info(
+                    f"  [{label}] {done}/{total} "
+                    f"({parse_errors} parse errors, {rate:.2f} samples/s, ETA {eta:.0f}s)"
+                )
 
         return {
             "predictions": predictions,
@@ -455,6 +486,54 @@ class QLoRATrainer:
             "sample_keys": sample_keys,
             "parse_errors": parse_errors,
         }
+
+    def _generate_single(self, input_text: str) -> str:
+        """Greedy-decode one prompt — the original, proven per-sample path.
+
+        Used for eval_batch_size=1 and as the safe fallback when a batched
+        generate fails, so a fast-path quirk never costs correctness.
+        """
+        import torch
+
+        inputs = self.tokenizer(input_text, return_tensors="pt").to(self.model.device)
+        with torch.no_grad():
+            output_ids = self.model.generate(**inputs, max_new_tokens=256, do_sample=False)
+        return self.tokenizer.decode(
+            output_ids[0][inputs["input_ids"].shape[1] :], skip_special_tokens=True
+        )
+
+    def _generate_batch(self, input_texts: list[str]) -> list[str]:
+        """Greedy-decode a batch of prompts with LEFT padding.
+
+        Decoder-only generation requires left padding so every sequence's newly
+        generated tokens begin at the same column (the shared, padded input
+        width); right padding would splice pad tokens into the continuation and
+        corrupt the output. Greedy + left padding makes each row's result
+        identical to decoding it alone. Padding side is saved and restored so no
+        other state is disturbed.
+        """
+        import torch
+
+        tok = self.tokenizer
+        if tok.pad_token_id is None:  # Qwen2.5 ships a pad token, but be safe
+            tok.pad_token = tok.eos_token
+        prev_side = tok.padding_side
+        tok.padding_side = "left"
+        try:
+            enc = tok(input_texts, return_tensors="pt", padding=True).to(self.model.device)
+            with torch.no_grad():
+                output_ids = self.model.generate(
+                    **enc,
+                    max_new_tokens=256,
+                    do_sample=False,
+                    pad_token_id=tok.pad_token_id,
+                )
+            # Left padding makes the prompt width uniform across the batch, so the
+            # generated continuation for every row starts at the same column.
+            gen = output_ids[:, enc["input_ids"].shape[1] :]
+            return tok.batch_decode(gen, skip_special_tokens=True)
+        finally:
+            tok.padding_side = prev_side
 
     @staticmethod
     def _heuristic_bias(indicators: dict[str, Any]) -> str:
@@ -514,8 +593,20 @@ class QLoRATrainer:
             if max_samples == 0:
                 log.info("  --max-eval 0: skipping evaluation")
                 return empty
-            test = test[:max_samples]
-            log.info(f"  Evaluating on first {max_samples} test samples")
+            # Evenly STRIDE across the full (timestamp-sorted) test split instead
+            # of taking a prefix. test[:N] would only cover the EARLIEST slice of
+            # the holdout window — one market regime, possibly skewed by symbol —
+            # so a bigger N still wouldn't be representative. Striding picks
+            # roughly every k-th sample, spanning the whole test period and all
+            # symbols, so a sub-sample stays a faithful mini-test set. Greedy decode
+            # is deterministic, so this selection is reproducible across runs.
+            full_test_n = len(test)
+            stride = full_test_n / max_samples
+            test = [test[int(i * stride)] for i in range(max_samples)]
+            log.info(
+                f"  Evaluating on {len(test)} test samples strided across the full "
+                f"holdout (every ~{stride:.1f}th of {full_test_n})"
+            )
         log.info(f"  Test samples: {len(test)}")
 
         candles_map, ts_idx_map = _load_candles_map(CANDLES_DIR)
@@ -755,7 +846,16 @@ def parse_args():
     parser.add_argument("--alpha", type=int, help="LoRA alpha")
     parser.add_argument("--epochs", type=int, help="Number of training epochs")
     parser.add_argument("--batch-size", type=int, help="Per-device batch size")
-    parser.add_argument("--max-eval", type=int, help="Max samples to evaluate (for quick testing)")
+    parser.add_argument(
+        "--max-eval",
+        type=int,
+        help="Cap test-eval samples, strided evenly across the full holdout (representative). Omit = full test.",
+    )
+    parser.add_argument(
+        "--eval-batch-size",
+        type=int,
+        help="Prompts per generate() call during eval. 1=serial (default); 16-32 on big GPUs cuts eval to minutes.",
+    )
     parser.add_argument(
         "--diagnostic-samples",
         type=int,
@@ -793,6 +893,8 @@ def main():
         config["batch_size"] = args.batch_size
     if args.max_eval is not None:
         config["max_eval_samples"] = args.max_eval
+    if args.eval_batch_size is not None:
+        config["eval_batch_size"] = args.eval_batch_size
     if args.diagnostic_samples is not None:
         config["diagnostic_samples"] = args.diagnostic_samples
     if args.tag:
