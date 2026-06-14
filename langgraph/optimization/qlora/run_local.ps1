@@ -71,6 +71,14 @@ Write-Host "  Log:         $LogFile"
 if ($ExtraArgs) { Write-Host "  Extra args:  $($ExtraArgs -join ' ')" }
 Write-Host "============================================================" -ForegroundColor Cyan
 
+# train_qlora.py logs to STDERR. In Windows PowerShell 5.1, `2>&1` on a native
+# command wraps each stderr line in a NativeCommandError record; with
+# $ErrorActionPreference='Stop' the FIRST such line throws and aborts the run on
+# step 0. Switch to 'Continue' so the log lines flow through instead of throwing,
+# and flatten the records to plain strings via ForEach-Object so the console + log
+# file show clean lines (no "python.exe :" / "At line:" / CategoryInfo noise).
+$ErrorActionPreference = "Continue"
+
 & $Python $Train `
     --lr 0.00005 `
     --rank 8 `
@@ -83,7 +91,7 @@ Write-Host "============================================================" -Foreg
     --diagnostic-samples 0 `
     --tag $Tag `
     --output-dir "backtest\data\models\$Tag" `
-    @ExtraArgs 2>&1 | Tee-Object -FilePath $LogFile
+    @ExtraArgs 2>&1 | ForEach-Object { "$_" } | Tee-Object -FilePath $LogFile
 
 $code = $LASTEXITCODE
 
