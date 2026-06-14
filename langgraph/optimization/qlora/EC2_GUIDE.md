@@ -362,7 +362,8 @@ Then set `LLM_MODEL=trading-qwen-ft` — the agent picks it up via `llm_factory.
 
 | Issue | Fix |
 |-------|-----|
-| `FA2 = False` in banner | `pip install flash-attn --no-build-isolation` inside the venv; ensure you're on the **OSS Nvidia Driver** DLAMI (matched CUDA), not the Base AMI |
+| `FA2 = False` in banner | See [Flash-Attn ABI section](#flash-attn-abi-mismatch--s3-wheel-cache) below — the prebuilt wheel is incompatible with pip PyTorch; `setup_runpod.sh` now handles this automatically |
+| `undefined symbol: c10::Error … __cxx11::string` | Same — bad prebuilt wheel. `pip uninstall flash-attn -y` then re-run `setup_runpod.sh` (it will source-build and cache to S3) |
 | CUDA OOM | Drop `--batch-size` to 2 (or 1), raise `--grad-accum` proportionally to keep effective batch |
 | Slow training / low GPU util | `nvidia-smi`: if util < 80%, try `--batch-size 4` (with FA2) |
 | Interrupted mid-training | Re-run with `--resume` |
@@ -370,6 +371,88 @@ Then set `LLM_MODEL=trading-qwen-ft` — the agent picks it up via `llm_factory.
 | Instance won't launch | Request a service quota increase for `g6e.xlarge` (vCPU) in your region |
 | SSH drops kill the job | You launched without `nohup` — always use the `nohup ... &` form (Step 5) |
 | Forgot to stop it | `aws ec2 stop-instances ...` from your laptop; consider a CloudWatch idle alarm |
+
+---
+
+## Flash-Attn ABI Mismatch + S3 Wheel Cache
+
+### Root cause
+
+flash-attn 2.8+ changed its install mechanism: instead of compiling from source, it
+auto-downloads a prebuilt wheel from GitHub tagged `cxx11abiFALSE`. Those wheels were
+compiled against **conda-distributed PyTorch** (CXX11 ABI = True). Our pip-installed
+PyTorch (from `pytorch.org/whl`) uses the **old Itanium C++ ABI** — `std::string`
+mangles to `Ss`, not `NSt7__cxx11::basic_string`. The two are binary-incompatible:
+
+```
+ImportError: undefined symbol:
+  _ZN3c105ErrorC2ENS_14SourceLocationENSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEE
+  # demangled: c10::Error::Error(c10::SourceLocation, std::__cxx11::string)
+  # libc10.so exports:  c10::Error::Error(c10::SourceLocation, std::string)  ← old ABI
+```
+
+Simply running `pip install flash-attn --no-build-isolation` downloads the same bad
+wheel. Even the source-build fallback fails unless you set
+`FLASH_ATTENTION_FORCE_BUILD=TRUE` — without it flash-attn's `setup.py` *still*
+tries to download the prebuilt wheel first.
+
+### Why S3 cache?
+
+Source compilation takes ~15 min (4 parallel CC jobs on the A100). The compiled wheel
+is specific to `(flash_attn version, torch CUDA tag, Python ABI, GPU SM arch)`.
+Cached once → every subsequent pod downloads it in ~30 seconds.
+
+**Cache key format:**
+```
+s3://trading-management-dvc/wheels/
+  flash_attn-{FA_VER}-{TORCH_CUDA}-cp{PY}-sm{CC}-linux_x86_64.whl
+  # e.g. flash_attn-2.8.3.post1-cu124-cp312-sm80-linux_x86_64.whl
+```
+
+### What `setup_runpod.sh` does (step 4, FA2 block)
+
+1. **Import-test** the current install — if it works, skip entirely.
+2. **Try S3 cache** — `aws s3 cp` the tagged wheel; install with `--no-deps`; import-test.
+3. **Source build** (cache miss or stale cache) — uses
+   `FLASH_ATTENTION_FORCE_BUILD=TRUE CUDA_HOME=/usr/local/cuda MAX_JOBS=4 pip wheel ...`
+   to compile against our actual torch headers, then uploads the result to S3.
+4. **Graceful fallback** — if all three fail, Unsloth's Triton kernels handle attention
+   (~20% slower, all math still correct).
+
+### Manual fix (if setup already ran without FA2)
+
+```bash
+cd /trading_management/langgraph
+source .venv/bin/activate
+
+# Check the cache first (instant if it exists):
+FA_S3="s3://trading-management-dvc/wheels/flash_attn-2.8.3.post1-cu124-cp312-sm80-linux_x86_64.whl"
+mkdir -p /tmp/fa_wheel
+if aws s3 cp "$FA_S3" /tmp/fa_wheel/flash_attn.whl 2>/dev/null; then
+    WHEEL_NAME=$(basename "$FA_S3")
+    cp /tmp/fa_wheel/flash_attn.whl "/tmp/fa_wheel/$WHEEL_NAME"
+    pip install "/tmp/fa_wheel/$WHEEL_NAME" --no-deps
+else
+    # Source build (~15 min):
+    pip uninstall flash-attn -y 2>/dev/null || true
+    FLASH_ATTENTION_FORCE_BUILD=TRUE CUDA_HOME=/usr/local/cuda MAX_JOBS=4 \
+        pip wheel flash-attn --no-build-isolation --no-deps -w /tmp/fa_wheel/
+    pip install /tmp/fa_wheel/flash_attn-*.whl --no-deps
+    # Cache it for next time:
+    aws s3 cp /tmp/fa_wheel/flash_attn-*.whl "$FA_S3"
+fi
+
+pip install einops -q
+python -c "import flash_attn; print('FA2 OK:', flash_attn.__version__)"
+```
+
+### Would a custom Docker image be faster?
+
+RunPod IS Docker — you're already inside a container. A custom image with flash-attn
+pre-baked would shave the 30-second S3 download too, but adds image maintenance
+overhead. For this project the **S3 wheel cache is the right trade-off**: one-time
+~15 min build, then effectively instant on every subsequent pod, no image registry to
+manage.
 
 ---
 

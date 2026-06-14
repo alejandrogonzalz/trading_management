@@ -143,30 +143,81 @@ if [[ "$FINAL_TORCH" != *"${TORCH_CUDA}"* ]] && [[ "$FINAL_TORCH" != "${TORCH_VE
     python -c "import torchao" 2>/dev/null || pip uninstall torchao -y 2>/dev/null || true
 fi
 
-# FlashAttention-2: attempt install from pre-built wheel (safe — won't touch torch).
-# FA2 gives ~2x speedup on attention-heavy workloads. If it fails, Triton fallback works.
-# Key: use --no-deps so pip can't upgrade torch or remove unsloth during the attempt.
-echo "  Attempting FlashAttention-2 (pre-built wheel, --no-deps)..."
-if pip install flash-attn --no-build-isolation --no-deps 2>/dev/null; then
-    # flash-attn needs einops as a runtime dep
-    pip install einops -q 2>/dev/null || true
-    if python -c "import flash_attn; print(f'  FA2 v{flash_attn.__version__} installed')" 2>/dev/null; then
-        echo "  FlashAttention-2: OK"
+# FlashAttention-2: source-build with S3 wheel cache.
+#
+# WHY NOT the prebuilt wheel from GitHub?
+#   flash-attn 2.8+ setup.py auto-downloads a prebuilt wheel tagged "cxx11abiFALSE"
+#   but those wheels were built against conda PyTorch (CXX11 ABI = True). Our pip-
+#   installed PyTorch uses the old ABI (std::string → "Ss" mangling). Result:
+#   "undefined symbol: c10::Error(SourceLocation, std::__cxx11::string)" at import.
+#   FLASH_ATTENTION_FORCE_BUILD=TRUE bypasses the download and actually compiles.
+#
+# WHY S3 cache?
+#   Source compilation takes ~15 min. We cache the compiled wheel keyed on
+#   (flash_attn version, torch version, CUDA tag, Python ABI, GPU SM arch) so
+#   every pod after the first gets a 30-second install instead.
+#
+# Cache key format: flash_attn-{FA_VER}-{TORCH_CUDA}-cp{PY}-sm{CC}-linux_x86_64.whl
+# Cache location:   s3://trading-management-dvc/wheels/
+FA_VER=$(pip index versions flash-attn 2>/dev/null | grep -oP '(?<=flash-attn \()[^)]+' | head -1 || echo "2.8.3")
+PY_TAG=$(python -c "import sys; print(f'cp{sys.version_info.major}{sys.version_info.minor}')")
+SM_TAG=$(python -c "import torch; cc=torch.cuda.get_device_capability(0); print(f'sm{cc[0]}{cc[1]}')")
+FA_WHEEL_NAME="flash_attn-${FA_VER}-${TORCH_CUDA}-${PY_TAG}-${SM_TAG}-linux_x86_64.whl"
+FA_S3="s3://trading-management-dvc/wheels/${FA_WHEEL_NAME}"
+FA_LOCAL="/tmp/fa_wheel/${FA_WHEEL_NAME}"
+mkdir -p /tmp/fa_wheel
+
+echo "  FlashAttention-2 (FA_VER=${FA_VER}, cache key=${FA_WHEEL_NAME})..."
+FA_OK=false
+
+# 1. Remove any broken prior install first (import-test; uninstall if broken)
+if python -c "import flash_attn" 2>/dev/null; then
+    FA_OK=true
+    echo "  FlashAttention-2: already installed and working"
+else
+    pip uninstall flash-attn -y 2>/dev/null || true
+fi
+
+# 2. Try S3 cache (instant install — skip ~15 min compile)
+if ! $FA_OK && aws s3 cp "$FA_S3" "$FA_LOCAL" 2>/dev/null; then
+    echo "  Found cached wheel in S3 — installing..."
+    pip install "$FA_LOCAL" --no-deps -q
+    if python -c "import flash_attn" 2>/dev/null; then
+        FA_OK=true
+        echo "  FlashAttention-2: OK (from S3 cache — $(python -c 'import flash_attn; print(flash_attn.__version__)'))"
     else
-        echo "  FlashAttention-2: import failed — removing"
+        echo "  Cached wheel failed to import — rebuilding from source..."
         pip uninstall flash-attn -y 2>/dev/null || true
     fi
-else
-    # Pre-built wheel not available for this torch/CUDA combo — try compile
-    echo "  No pre-built wheel. Trying source build (may take 5-10 min)..."
-    if CUDA_HOME=/usr/local/cuda MAX_JOBS=2 pip install flash-attn --no-build-isolation --no-deps 2>/dev/null; then
-        pip install einops -q 2>/dev/null || true
-        python -c "import flash_attn; print(f'  FA2 v{flash_attn.__version__} compiled')" 2>/dev/null || \
-            pip uninstall flash-attn -y 2>/dev/null || true
-    else
-        echo "  FlashAttention-2: SKIPPED (Triton fallback — ~20% slower, still fine)"
+fi
+
+# 3. Source build (cache miss or cached wheel was stale)
+if ! $FA_OK; then
+    echo "  Building from source (~15-20 min). FLASH_ATTENTION_FORCE_BUILD=TRUE skips"
+    echo "  the broken prebuilt-wheel download and actually compiles against our torch."
+    WHEEL_DIR="/tmp/fa_wheel"
+    if FLASH_ATTENTION_FORCE_BUILD=TRUE CUDA_HOME=/usr/local/cuda MAX_JOBS=4 \
+            pip wheel flash-attn --no-build-isolation --no-deps -w "$WHEEL_DIR" 2>&1; then
+        BUILT_WHEEL=$(ls "$WHEEL_DIR"/flash_attn-*.whl 2>/dev/null | head -1)
+        if [ -n "$BUILT_WHEEL" ] && pip install "$BUILT_WHEEL" --no-deps -q; then
+            if python -c "import flash_attn" 2>/dev/null; then
+                FA_OK=true
+                echo "  FlashAttention-2: OK (built from source — $(python -c 'import flash_attn; print(flash_attn.__version__)'))"
+                # Upload to S3 for future pods — non-fatal if creds not configured yet
+                aws s3 cp "$BUILT_WHEEL" "$FA_S3" 2>/dev/null && \
+                    echo "  Cached wheel to S3: $FA_S3" || \
+                    echo "  NOTE: wheel not cached (no AWS creds yet). After 'aws configure', run:"
+                    echo "        aws s3 cp $BUILT_WHEEL $FA_S3"
+            fi
+        fi
     fi
 fi
+
+if ! $FA_OK; then
+    echo "  FlashAttention-2: SKIPPED — Triton fallback active (~20% slower, still fine)"
+fi
+
+pip install einops -q 2>/dev/null || true
 echo ""
 
 # ─── 5. AWS CLI ──────────────────────────────────────────────────────────────

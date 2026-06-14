@@ -93,7 +93,14 @@ the other combos as a reference only.
    NEVER cut by file position (`dataset.jsonl` is grouped by symbol → per-symbol leak).
 9. **Full test eval, no `--max-eval`** — the cap is what limited the old eval to one
    symbol (LINK). Leave it off for real runs; only use it for smoke tests.
-10. **Overfitting diagnostics emitted** — real `EarlyStoppingCallback` (patience 3),
+10. **flash-attn prebuilt wheels are ABI-incompatible with pip PyTorch** — flash-attn
+    2.8+ auto-downloads a `cxx11abiFALSE` wheel compiled against conda PyTorch (CXX11
+    ABI=True); pip-installed PyTorch uses old ABI (`Ss` mangling). Symptom: `undefined
+    symbol: c10::Error … __cxx11::string`. Fix: `FLASH_ATTENTION_FORCE_BUILD=TRUE`
+    forces source compilation. `setup_runpod.sh` handles this + caches the built wheel
+    in S3 (`s3://trading-management-dvc/wheels/`) so future pods install in ~30 sec
+    instead of ~15 min. See `EC2_GUIDE.md § Flash-Attn ABI Mismatch` for the full story.
+11. **Overfitting diagnostics emitted** — real `EarlyStoppingCallback` (patience 3),
     `overfitting`{train/val/test acc + gap}, `baseline_metrics` (heuristic), and a
     `<tag>_loss_curve.{json,png}`. Read the gap, not just accuracy.
 
