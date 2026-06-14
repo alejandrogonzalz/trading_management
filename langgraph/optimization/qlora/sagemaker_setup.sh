@@ -8,9 +8,9 @@
 #   bash optimization/qlora/sagemaker_setup.sh
 #
 # After this completes, run the training:
-#   tmux new -s qlora
 #   source .venv/bin/activate
-#   bash optimization/qlora/run_qlora_search.sh
+#   dvc pull backtest/data/labeled/dataset.jsonl backtest/data/candles
+#   nohup bash optimization/qlora/run_cloud.sh > optimization/qlora/logs/run_cloud.log 2>&1 &
 
 set -e
 
@@ -180,8 +180,9 @@ echo ""
 echo "  3. Smoke test (2 min):"
 echo "       python optimization/qlora/train_qlora.py --max-steps 3 --max-eval 10"
 echo ""
-echo "  4. Run the full search (~15-30h):"
-echo "       bash optimization/qlora/run_qlora_search.sh"
+echo "  4. Pull data, then run the single cloud training (~3-6h):"
+echo "       dvc pull backtest/data/labeled/dataset.jsonl backtest/data/candles"
+echo "       nohup bash optimization/qlora/run_cloud.sh > optimization/qlora/logs/run_cloud.log 2>&1 &"
 echo ""
 echo "  5. When done: STOP THE INSTANCE in the AWS Console!"
 echo "============================================================"

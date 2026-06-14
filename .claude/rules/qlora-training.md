@@ -129,8 +129,11 @@ How many times the model sees the full training set.
 - 3 epochs: good for 39K samples — enough repetition without memorizing
 - 5+ epochs: risk of overfitting (model memorizes training data, fails on test)
 
-We mitigate overfitting with `load_best_model_at_end=True` — even if epoch 3
-overfits, we keep the best checkpoint from any point during training.
+We mitigate overfitting two ways: `load_best_model_at_end=True` keeps the best
+checkpoint (lowest `eval_loss`), and a real `EarlyStoppingCallback(patience=3)`
+stops once `eval_loss` stops improving — so a 3-epoch run may end early. `evaluate()`
+also reports the **train−test accuracy gap**, a heuristic **baseline**, and a
+persisted **loss curve** so overfitting can actually be judged (not just assumed).
 
 ### Batch size & gradient accumulation
 
@@ -195,8 +198,15 @@ the run starts fresh. (Note: a leftover smoke-test `checkpoint-3` in `output_dir
 counts as a checkpoint — delete it before a real `--resume` if you don't want to
 resume from it.)
 
-Outputs: result JSON → `optimization/results/qlora_optimization.json`,
-adapters + GGUF → `backtest/data/models/qlora_qwen25_7b/`.
+Outputs: result JSON → `optimization/qlora/results/qlora_<tag>.json` (+ canonical
+`qlora_optimization.json`), loss curve → `results/<tag>_loss_curve.{json,png}`,
+adapters + GGUF → `backtest/data/models/<tag>/`. Pass `--tag` to name a run.
+
+> **For real runs use the wrappers, not a sweep:** `run_cloud.sh` (one SageMaker
+> model on the fixed split, full test, no `--max-eval`) or `run_local.sh` (one local
+> model). `dvc pull backtest/data/labeled/dataset.jsonl backtest/data/candles` first
+> or financial metrics come out 0. The old 3-/5-config sweep + its 92% result are
+> invalid (leakage) and archived — see `docs/AUDITORIA_QLORA_LEAKAGE_OVERFITTING.md`.
 
 ## Key constraints (learned the hard way)
 
@@ -208,6 +218,10 @@ adapters + GGUF → `backtest/data/models/qlora_qwen25_7b/`.
   as a safety net.
 - **`batch_size=1`, `grad_accum=16`** keeps 1024-token training inside 16GB.
 - **`per_device_eval_batch_size=1`** — the HF default of 8 OOMs at ~900 tokens.
+- **Never cut the split by file position.** `_temporal_split` sorts globally by
+  `timestamp` + embargo; `dataset.jsonl` is grouped by symbol, so a positional cut
+  is a per-symbol split that leaks market regime. Keep eval on the FULL test (drop
+  `--max-eval`) so it spans multiple symbols, not just LINK.
 - Attention runs on the slow eager path locally: `FA [Xformers = None. FA2 = False]`.
   FlashAttention-2 / xformers are painful to install on Windows. This is the
   main throughput bottleneck.

@@ -52,11 +52,12 @@ Full-stack crypto trading platform with GPU-accelerated AI, LangGraph agents, ba
 - **Production**: Backend + Frontend + Ollama running via Docker Compose
 - **LangGraph**: Agent running, 3-node graph tested
 - **Backtest**: Refactored into clean subpackages (`ingestion/`, `models/`, `evaluation/`)
-- **ML Results (Avance5)**: Bagging-LSTM 83.37% test (winner), LSTM 81.5%, Blending 81.89%, XGBoost 66.6%
+- **ML Results (Avance5)**: Bagging-LSTM 83.37% test (winner), LSTM 81.5%, Blending 81.89%, XGBoost 66.6% — ⚠️ re-measure on the fixed split (Tarea 7)
 - **Bagging-LSTM Best**: 5 bags, hidden=32, layers=3, seq=5, AUC-ROC=0.9157
-- **QLoRA Fine-tuning**: Config 1 trained on SageMaker (92% direction acc), configs 2-3 pending
+- **Leakage fix (2026-06-13)**: `_temporal_split` now a strict temporal holdout (global timestamp sort + embargo); prior per-symbol split leaked → all model numbers above need re-measuring. See `docs/AUDITORIA_QLORA_LEAKAGE_OVERFITTING.md` + `docs/GUIA_IMPLEMENTACION_FIX_QLORA.md`
+- **QLoRA Fine-tuning**: ~~config 1 92%~~ INVALID (leakage, archived). Re-train ONE model on the fix (`run_cloud.sh`); diagnostics now emit train/val/test gap + baseline + loss curve
 - **DVC**: Initialized, dataset + candles + models tracked in S3 (`s3://trading-management-dvc/`)
-- **Next**: Complete QLoRA configs, zero-shot LLM backtest, McNemar/t-test comparisons
+- **Next**: `dvc pull`; re-train QLoRA + ML/ensembles on fixed split; zero-shot backtest; McNemar/t-test comparisons
 - **Pending**: LangGraph integration of fine-tuned model, ensemble LSTM+LLM, thesis presentation
 
 ---

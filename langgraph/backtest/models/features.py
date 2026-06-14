@@ -91,12 +91,50 @@ def _load_dataset(path: str) -> list[dict]:
 
 
 def _temporal_split(
-    samples: list[dict], train_frac: float = 0.70, val_frac: float = 0.15
+    samples: list[dict],
+    train_frac: float = 0.70,
+    val_frac: float = 0.15,
+    embargo_bars: int = 24,
+    base_tf_minutes: int = 60,
+    sort: bool = True,
 ) -> tuple[list[dict], list[dict], list[dict]]:
+    """Strict temporal holdout: sort globally by timestamp and purge lookahead overlap.
+
+    ``dataset.jsonl`` is grouped by symbol (``pipeline.build_dataset`` concatenates
+    one symbol after another), so a positional cut splits *by symbol*, not by time.
+    Sorting every sample by ``timestamp`` first gives a real holdout in time: train =
+    oldest window, test = most recent window, across all symbols.
+
+    The labeler looks ``embargo_bars`` candles into the future to assign each label.
+    Any train sample whose labeling horizon crosses the start of val/test leaks future
+    information, so we purge it. The purge is done by TIME (not by count) because, after
+    the global sort, samples from all 12 symbols coexist near each boundary — dropping a
+    fixed number of rows would not reliably cover the lookahead window.
+
+    Timestamps are Binance klines in milliseconds (13 digits, ~1.7e12). ``embargo_bars``
+    × ``base_tf_minutes`` defines the lookahead span; with ``base_tf="1h"`` that is
+    ``base_tf_minutes=60``. ``sort=False`` preserves file order (only for callers that
+    have already sorted).
+    """
+    if sort:
+        samples = sorted(samples, key=lambda s: s.get("timestamp", 0))
     n = len(samples)
     train_end = int(n * train_frac)
     val_end = int(n * (train_frac + val_frac))
-    return samples[:train_end], samples[train_end:val_end], samples[val_end:]
+    embargo_ms = embargo_bars * base_tf_minutes * 60 * 1000  # timestamps are in ms
+
+    val_start_ts = samples[train_end]["timestamp"] if train_end < n else None
+    test_start_ts = samples[val_end]["timestamp"] if val_end < n else None
+
+    train = samples[:train_end]
+    val = samples[train_end:val_end]
+    test = samples[val_end:]
+
+    if val_start_ts is not None:
+        train = [s for s in train if s.get("timestamp", 0) + embargo_ms <= val_start_ts]
+    if test_start_ts is not None:
+        val = [s for s in val if s.get("timestamp", 0) + embargo_ms <= test_start_ts]
+    return train, val, test
 
 
 def _samples_to_xy(samples: list[dict], timeframes: list[str] | None = None) -> tuple[np.ndarray, np.ndarray]:

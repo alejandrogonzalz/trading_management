@@ -85,17 +85,17 @@ If it passes, the full run will too — the failure mode is always step 0.
 Use **tmux** so the job survives browser disconnects:
 
 ```bash
-tmux new -s qlora
 source .venv/bin/activate
 
-# Single config (3 epochs, batch=8):
-python optimization/qlora/train_qlora.py --epochs 3 --batch-size 8 2>&1 | tee optimization/qlora/logs/qlora_sagemaker.log
+# REQUIRED — pull data first (no candles → win_rate/PF/Sharpe = 0):
+dvc pull backtest/data/labeled/dataset.jsonl backtest/data/candles
 
-# Or run the full 5-config hyperparameter search:
-bash optimization/qlora/run_qlora_search.sh
+# Single cloud run on the fixed split (recommended), survives disconnects via nohup:
+nohup bash optimization/qlora/run_cloud.sh > optimization/qlora/logs/run_cloud.log 2>&1 &
+echo "PID: $!"
 
-# Detach: Ctrl+B, D (safe to close browser)
-# Reattach later: tmux attach -t qlora
+# Follow progress:
+tail -f optimization/qlora/logs/run_cloud.log
 ```
 
 ### What happens:
@@ -203,28 +203,23 @@ automatically via `llm_factory.py`.
 
 ---
 
-## Running Multiple Configs
+## Single model, not a sweep
 
-Use the automated search script (runs all 5 configs sequentially):
+The thesis trains **one** defensible cloud model on the fixed strict-temporal
+split — the old multi-config sweep was removed (its results are archived under
+`results/archive/` and must not be cited). Use the wrapper:
 
 ```bash
-bash optimization/qlora/run_qlora_search.sh
+bash optimization/qlora/run_cloud.sh
 ```
 
-Or manually:
+Or invoke the script directly (equivalent to the wrapper):
 ```bash
-# Config 1 (default — recommended first)
-python optimization/qlora/train_qlora.py --lr 0.00002 --rank 16 --alpha 32 --epochs 3 --batch-size 8
-
-# Config 2 (aggressive LR, smaller rank)
-python optimization/qlora/train_qlora.py --lr 0.00005 --rank 8 --alpha 16 --epochs 3 --batch-size 8
-
-# Config 3 (conservative, large rank)
-python optimization/qlora/train_qlora.py --lr 0.00001 --rank 32 --alpha 64 --epochs 2 --batch-size 8
+# Recommended config on the fixed split (full test eval, no --max-eval)
+python optimization/qlora/train_qlora.py --lr 0.00002 --rank 16 --alpha 32 --epochs 3 --batch-size 2 --grad-accum 8 --tag qlora_cloud
 ```
 
-Each run overwrites `qlora_optimization.json`. The search script auto-renames them.
-Manual rename:
-```bash
-cp optimization/qlora/results/qlora_optimization.json optimization/qlora/results/qlora_config1.json
-```
+Each run writes `results/qlora_<tag>.json` (per-run) plus a canonical
+`results/qlora_optimization.json` that `compare-stats` reads by default. Use a
+distinct `--tag` (and `--output-dir`) if you ever do try a second config so the
+per-run files don't collide.

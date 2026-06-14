@@ -11,6 +11,17 @@ Diagrams explaining what fine-tuning produces, how the pipeline runs, and how th
 
 ## 0. Where we are now & where we're going (updated 2026-06-10)
 
+> 🔴 **SUPERSEDED IN PART (2026-06-13) — leakage fix.** A config-1 run later reached
+> 92% but on a **contaminated split** (positional/per-symbol, not temporal) evaluated
+> on 2000 single-symbol (LINK) rows with financial metrics 0 — **invalid**, archived
+> under `optimization/qlora/results/archive/`. `_temporal_split` is now a strict
+> temporal holdout (global timestamp sort + embargo) and `evaluate()` emits early
+> stopping, train/val/test accuracy + **gap**, a heuristic **baseline**, and a **loss
+> curve**. The plan below stands, with three corrections: **(a)** use `run_cloud.sh`
+> (full test, **no `--max-eval`**); **(b)** `batch_size=2` on the L40S (batch 4+ OOMs);
+> **(c)** `dvc pull` candles before eval. See `docs/GUIA_IMPLEMENTACION_FIX_QLORA.md`
+> and `docs/AUDITORIA_QLORA_LEAKAGE_OVERFITTING.md`.
+
 ### Current state — no usable fine-tuned model yet
 - [DONE] **Step-0 crash fixed** (`max_seq_length` 512 → 1024). The bug was deterministic
   (every sample is ~877–933 tokens; Unsloth padding-free batching truncated
@@ -28,11 +39,12 @@ Diagrams explaining what fine-tuning produces, how the pipeline runs, and how th
 |----------|--------|-----|
 | **Compute** | SageMaker **Notebook instance**, `ml.g6e.xlarge` (L40S 48 GB) | More VRAM → `batch_size=8`; Linux → FA2 works. ~1–2 h/epoch, a few dollars. Same `train_qlora.py` runs in the instance terminal — **no `.ipynb` needed.** |
 | **Scope** | **One** best config, **multi-epoch (2–3)** | Fastest path to a thesis-ready fine-tuned LLM. Not a full sweep. |
-| **Config** | `lora_rank=16, lora_alpha=32, lr=2e-5, epochs=3, batch_size=8` | The balanced combo from `optimization/configs/qlora.yaml` `recommended_configs`. |
+| **Config** | `lora_rank=16, lora_alpha=32, lr=2e-5, epochs=3, batch_size=2, grad_accum=8` | Balanced combo; `batch_size=2` is the L40S ceiling (batch 4+ OOMs). Wrapped by `run_cloud.sh`. |
 
-The end product is a single fine-tuned model **evaluated on the same 8,425 test
-samples** as LSTM/XGBoost/zero-shot, producing `qlora_optimization.json` for
-`compare-stats` (McNemar + paired t-test). See §7.
+The end product is a single fine-tuned model **evaluated on the same temporal test
+split** as LSTM/XGBoost/zero-shot (the fixed `_temporal_split`; ~8.4k samples minus
+the embargo), producing `qlora_optimization.json` for `compare-stats` (McNemar +
+paired t-test). See §7.
 
 ### Roadmap — step by step
 
@@ -50,11 +62,13 @@ samples** as LSTM/XGBoost/zero-shot, producing `qlora_optimization.json` for
 - [ ] Confirm the startup banner shows **`FA2 = True`** — that's the speedup.
 
 **Phase 2 · Validate on the instance (cheap, ~$0.30)**
+- [ ] `dvc pull backtest/data/labeled/dataset.jsonl backtest/data/candles` (else win_rate/PF/Sharpe = 0).
 - [ ] Smoke: `train_qlora.py --max-steps 3 --max-eval 10` → confirms venv + model load + step 0 passes.
-- [ ] Short: `--epochs 1 --batch-size 8` → watch first eval at step 250, confirm a `checkpoint-250/` actually writes and `eval_loss` drops.
+- [ ] Short: `--epochs 1 --batch-size 2` → watch first eval at step 250, confirm a `checkpoint-250/` actually writes and `eval_loss` drops.
 
 **Phase 3 · The real run**
-- [ ] `--epochs 3 --batch-size 8` (single best config). ~1–2 h/epoch → **~3–6 h, a few dollars.**
+- [ ] `bash optimization/qlora/run_cloud.sh` (single best config, `--epochs 3 --batch-size 2`,
+  **full test eval — no `--max-eval`**). ~1–2 h/epoch → **~3–6 h, a few dollars.**
 - [ ] If interrupted, re-launch with `--resume` — picks up from the last `checkpoint-N`.
 
 **Phase 4 · Evaluate + integrate**

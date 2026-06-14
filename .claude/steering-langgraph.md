@@ -277,10 +277,11 @@ Output: `results/{model}_optimization.json` with best_params, all_results, score
 ```
 qlora/
 ├── train_qlora.py         # Main training script (Unsloth + SFTTrainer)
-├── run_3configs.sh        # Sequential wrapper for 3 hyperparameter configs
+├── run_cloud.sh           # ONE cloud training run (SageMaker) on the fixed split
+├── run_local.sh           # ONE local training run (RTX 5070 Ti), optional
 ├── sagemaker_setup.sh     # SageMaker environment setup (venv, deps, GPU check)
-├── logs/                  # Training logs per config
-└── results/               # qlora_config*.json result files
+├── logs/                  # Training logs per run
+└── results/               # qlora_<tag>.json (+ archive/ for the invalid old sweep)
 ```
 
 Key details:
@@ -300,8 +301,13 @@ result JSONs by `sample_keys` (intersection) or positional fallback. All runners
 (`LLMBacktestRunner`, `MLBacktestRunner`, `QLoRATrainer.evaluate`) now emit
 `sample_keys` + per-sample `predictions`/`actuals`/`trade_results` so the
 comparison is paired and valid. **All models share the same temporal split**
-(`features._temporal_split`, no sort) — `export_training_data` was unified to use
-it so the fine-tuned model's test set matches LSTM/XGBoost.
+(`features._temporal_split`) — a **strict temporal holdout**: it sorts every
+sample globally by `timestamp` and purges the labeler's lookahead window with a
+time-based **embargo** at each val/test boundary. `export_training_data` uses the
+same function so the fine-tuned model's test set matches LSTM/XGBoost. (Before the
+leakage fix this cut by file position with no sort; since `dataset.jsonl` is
+grouped by symbol, that was a per-symbol split, not temporal — see
+`docs/AUDITORIA_QLORA_LEAKAGE_OVERFITTING.md`.)
 
 ---
 
@@ -380,18 +386,18 @@ Run: `cd langgraph && source .venv/bin/activate && python -m pytest tests/backte
   - SVM (RBF): 70.8% val acc
   - XGBoost: 66.6% test acc (tuned with L1/L2 regularization)
 - DVC initialized — dataset, candles, models tracked in S3 (`s3://trading-management-dvc/`)
-- QLoRA config 1 trained on SageMaker (92% direction accuracy):
-  - lr=2e-5, rank=16, alpha=32, epochs=2, batch=2, grad_accum=8
-  - Model backed up: `s3://trading-management-dvc/models/qlora_config1/`
-  - Trade simulation eval re-running with candles
+- ⚠️ QLoRA config 1 (92%) — **INVALID** (leakage: positional split + 2000 single-symbol
+  eval, financial metrics 0). Archived under `optimization/qlora/results/archive/`.
+  `_temporal_split` is now a strict temporal holdout; re-train ONE model on the fix.
 
 ### Pending ⏳
-1. QLoRA configs 2-3 (rank=8/lr=5e-5/epochs=3, rank=32/lr=1e-5/epochs=2)
-2. Zero-shot LLM backtest (Groq or Ollama)
-3. Statistical comparison: McNemar test + paired t-test across all models
-4. Integrate best fine-tuned model into LangGraph (GGUF → Ollama)
-5. Ensemble LSTM+LLM (if time permits)
-6. Thesis presentation + video demo (deadline ~2026-06-26)
+1. `dvc pull` dataset + candles, then re-train ONE QLoRA on the fixed split (`run_cloud.sh`)
+2. Re-train ML/ensembles + re-run `Avance5.ipynb` on the fixed split (Tarea 7 — all prior numbers stale)
+3. Zero-shot LLM backtest (Groq or Ollama) on the fixed test
+4. Statistical comparison: McNemar test + paired t-test across all models (paired by `sample_keys`)
+5. Integrate best fine-tuned model into LangGraph (GGUF → Ollama)
+6. Ensemble LSTM+LLM (if time permits)
+7. Thesis presentation + video demo (deadline ~2026-06-26)
 
 ### Research Context (Master's Thesis)
 
