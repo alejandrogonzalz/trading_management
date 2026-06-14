@@ -77,6 +77,10 @@ Write-Host "============================================================" -Foreg
 # step 0. Switch to 'Continue' so the log lines flow through instead of throwing,
 # and flatten the records to plain strings via ForEach-Object so the console + log
 # file show clean lines (no "python.exe :" / "At line:" / CategoryInfo noise).
+# Each line is also prefixed with a wall-clock timestamp — tqdm's per-step lines
+# only carry RELATIVE time, so without this you can't tell WHEN a step ran (e.g. to
+# pin down exactly when a run died). The Python logger's own timestamps still show
+# too; the extra prefix just makes every line (tqdm included) absolute-time stamped.
 $ErrorActionPreference = "Continue"
 
 & $Python $Train `
@@ -91,7 +95,9 @@ $ErrorActionPreference = "Continue"
     --diagnostic-samples 0 `
     --tag $Tag `
     --output-dir "backtest\data\models\$Tag" `
-    @ExtraArgs 2>&1 | ForEach-Object { "$_" } | Tee-Object -FilePath $LogFile
+    @ExtraArgs 2>&1 |
+    ForEach-Object { "[{0:yyyy-MM-dd HH:mm:ss}] {1}" -f (Get-Date), "$_" } |
+    Tee-Object -FilePath $LogFile
 
 $code = $LASTEXITCODE
 

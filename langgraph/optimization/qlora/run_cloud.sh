@@ -34,6 +34,12 @@
 
 set -eo pipefail
 
+# Prefix every line with a wall-clock timestamp. tqdm's per-step lines only carry
+# RELATIVE time, so without this you can't tell WHEN a step ran (e.g. to pin down
+# exactly when a run died). printf '%(...)T' is a bash 4.2+ builtin — no `ts`/
+# moreutils dependency. The Python logger's own timestamps still show too.
+_ts() { while IFS= read -r line; do printf '[%(%Y-%m-%d %H:%M:%S)T] %s\n' -1 "$line"; done; }
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 LANGGRAPH_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 LOG_DIR="$SCRIPT_DIR/logs"
@@ -66,7 +72,7 @@ python "$SCRIPT_DIR/train_qlora.py" \
     --diagnostic-samples 200 \
     --tag "$TAG" \
     --output-dir "backtest/data/models/$TAG" \
-    "$@"
+    "$@" 2>&1 | _ts
 
 echo ""
 echo "  DONE — $(date)"
