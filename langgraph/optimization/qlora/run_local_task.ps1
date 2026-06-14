@@ -1,19 +1,19 @@
-# run_local_task.ps1 — run the QLoRA local training as a Windows SCHEDULED TASK.
+# run_local_task.ps1 - run the QLoRA local training as a Windows SCHEDULED TASK.
 #
 # WHY: over SSH (and on logoff), Windows terminates the whole session's process
-# tree when you disconnect — that is what killed the 4am run, NOT sleep (sleep is
+# tree when you disconnect - that is what killed the 4am run, NOT sleep (sleep is
 # already disabled: powercfg shows "Sleep Idle State Disabled"). A scheduled task
 # set to "run whether the user is logged on or not" runs detached from your SSH
 # session, so it survives disconnect AND logoff.
 #
 # The task runs in a NON-INTERACTIVE session (session 0). On consumer GPUs CUDA
-# usually works there, but not always — so run -GpuCheck FIRST to confirm
+# usually works there, but not always - so run -GpuCheck FIRST to confirm
 # torch.cuda.is_available() == True in that context before the long run.
 #
 # REQUIRED before training (or financial metrics come out 0):
 #   dvc pull backtest/data/labeled/dataset.jsonl backtest/data/candles
 #
-# Usage — run these in YOUR interactive SSH PowerShell (you'll be prompted for
+# Usage - run these in YOUR interactive SSH PowerShell (you'll be prompted for
 # your Windows password; it is stored in the task, never shown to anyone):
 #
 #   .\optimization\qlora\run_local_task.ps1 -GpuCheck   # 1) verify GPU in task session
@@ -106,8 +106,14 @@ function Register-And-Run([string]$name, [Microsoft.Management.Infrastructure.Ci
 # ---- -GpuCheck: confirm CUDA is visible in the task's session-0 context ----
 if ($GpuCheck) {
     Remove-Item $GpuLog -ErrorAction SilentlyContinue
-    $pyArg = "-c `"import torch; open(r'$GpuLog','w').write('cuda=' + str(torch.cuda.is_available()) + ' dev=' + (torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'NONE'))`""
-    $action = New-ScheduledTaskAction -Execute $Python -Argument $pyArg -WorkingDirectory $LangGraphRoot
+    # Write the check to a temp .py file (avoids nested -c quoting that breaks the parser).
+    $checkPy = Join-Path $LogDir "gpu_check.py"
+    @(
+        'import torch'
+        "out = 'cuda=' + str(torch.cuda.is_available()) + ' dev=' + (torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'NONE')"
+        "open(r'$GpuLog', 'w').write(out)"
+    ) | Set-Content -Path $checkPy -Encoding ASCII
+    $action = New-ScheduledTaskAction -Execute $Python -Argument "`"$checkPy`"" -WorkingDirectory $LangGraphRoot
     Write-Host "Running GPU visibility check as a scheduled task..." -ForegroundColor Cyan
     Register-And-Run $GpuTask $action
 
@@ -120,7 +126,7 @@ if ($GpuCheck) {
         if ($res -match "cuda=True") {
             Write-Host "GPU is visible in the task session. Safe to launch the real run." -ForegroundColor Green
         } else {
-            Write-Host "GPU NOT visible in session 0 — the scheduled-task path won't work for training." -ForegroundColor Red
+            Write-Host "GPU NOT visible in session 0 - the scheduled-task path will not work for training." -ForegroundColor Red
             Write-Host "  Fall back to the cloud run (run_cloud.sh) or keep an SSH session alive." -ForegroundColor Yellow
         }
     } else {

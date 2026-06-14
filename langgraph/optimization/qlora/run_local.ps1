@@ -26,16 +26,19 @@
 #   --grad-accum 16     Effective batch = 1x16 = 16 (same as cloud).
 #   --max-steps 1500    Cap at 1500 steps. Learns the main patterns without the full
 #                       ~19h commitment. Re-run with --resume to continue to ~2451.
-#   --max-eval 200      Evaluate 200 test samples (~18/symbol). Light but representative.
-#   --diagnostic-samples 0  Skip train/val gap probes (saves ~2h). Run cloud for full diag.
+#   --max-eval 1000     Evaluate 1000 test samples, STRIDED across the full holdout
+#                       (~90/symbol, spans the whole period). Cheap now eval is batched.
+#   --eval-batch-size 8 Batched greedy decode (8 prompts/generate call). Inference-only,
+#                       so 8 fits 16GB; turns the eval from hours into ~1h.
+#   --diagnostic-samples 0  Skip train/val gap probes (saves time). Run cloud for full diag.
 #   --tag qlora_local   Names the output files.
 #   $ExtraArgs          Forwards any extra flags you pass (e.g. --resume).
 #
 # Expected timing (RTX 5070 Ti, no FA2, Triton kernels):
-#   Training:  ~11.7h (1500 steps x 28s/step)
-#   Eval:      ~2h (200 generates x ~35s)
+#   Training:  ~7.5h (1500 steps x ~18s/step, measured)
+#   Eval:      ~1h (1000 strided samples, batched at 8/generate)
 #   GGUF:      ~15 min
-#   TOTAL:     ~14h (overnight)   COST: $0 (local hardware)
+#   TOTAL:     ~9h (overnight)   COST: $0 (local hardware)
 #
 # IMPORTANT: disable sleep first — Settings > System > Power > Sleep = Never.
 
@@ -91,7 +94,8 @@ $ErrorActionPreference = "Continue"
     --max-steps 1500 `
     --batch-size 1 `
     --grad-accum 16 `
-    --max-eval 200 `
+    --max-eval 1000 `
+    --eval-batch-size 8 `
     --diagnostic-samples 0 `
     --tag $Tag `
     --output-dir "backtest\data\models\$Tag" `
