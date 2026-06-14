@@ -95,7 +95,10 @@ fi
 if [ -n "$NVCC_PATH" ]; then
     export CUDA_HOME=$(dirname "$(dirname "$NVCC_PATH")")
     echo "  CUDA_HOME=$CUDA_HOME (nvcc: $NVCC_PATH)"
-    pip install flash-attn --no-build-isolation || \
+    # MAX_JOBS=2 limits parallel compilation to 2 cores — leaves headroom for SSH
+    # on small instances (4 vCPUs). Without this, FA2 compilation saturates all
+    # cores and freezes the machine for ~15 min (can't even Ctrl+C or SSH in).
+    MAX_JOBS=2 pip install flash-attn --no-build-isolation || \
         echo "  WARNING: flash-attn build failed — training will run WITHOUT FA2 (slower)."
     # Persist CUDA_HOME for future sessions
     grep -q "CUDA_HOME" ~/.bashrc 2>/dev/null || \
