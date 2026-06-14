@@ -1,19 +1,36 @@
 #!/bin/bash
-# QLoRA — single cloud training run (SageMaker ml.g6e.xlarge, L40S 48GB)
+# QLoRA — single cloud training run (EC2 g6e.xlarge, L40S 48GB)
 #
-# Trains ONE model on the fixed strict-temporal split and evaluates on the FULL
-# test set (no --max-eval cap → the test spans multiple symbols, not just LINK).
-# The thesis needs one defensible cloud model, not a config sweep.
+# Trains ONE model on the fixed strict-temporal split and evaluates on a subset
+# of the test set. The thesis needs one defensible cloud model, not a config sweep.
 #
-# Usage:
+# Usage (tmux recommended):
 #   cd trading_management/langgraph
 #   source .venv/bin/activate
 #   dvc pull backtest/data/labeled/dataset.jsonl backtest/data/candles   # REQUIRED
-#   nohup bash optimization/qlora/run_cloud.sh > optimization/qlora/logs/run_cloud.log 2>&1 &
-#   echo "PID: $!"
+#   tmux new -s qlora
+#   bash optimization/qlora/run_cloud.sh 2>&1 | tee optimization/qlora/logs/run_cloud.log
+#   # Ctrl+B, D to detach; tmux attach -t qlora to reattach
 #
-# Best config from the audit: lr=2e-5, rank=16, alpha=32, epochs=3, batch=2, grad_accum=8.
-# Expected: ~1-3h/epoch on L40S with FA2, ~$6-12 total.
+# Flags explained:
+#   --lr 0.00002        Learning rate. 2e-5 is the sweet spot for QLoRA on instruct models.
+#   --rank 16           LoRA adapter dimension (~40M trainable params, 0.6% of 7B).
+#   --alpha 32          Adapter scaling factor (2×rank = standard default).
+#   --epochs 2          Full passes over the 39K training samples. Early stopping may cut short.
+#   --batch-size 2      Samples per GPU step. Max that fits L40S without FA2 (batch 4 OOMs).
+#   --grad-accum 8      Accumulate 8 mini-batches → effective batch = 16 (stable gradients).
+#   --max-eval 1000     Evaluate 1000 test samples (~91/symbol). Full test (8425) = ~40h.
+#   --diagnostic-samples 200  Measure train/val accuracy (200 each) for the overfitting gap.
+#   --tag qlora_cloud   Names result files and the model output directory.
+#   --output-dir ...    Where adapters + GGUF are saved (DVC-tracked for S3 backup).
+#   "$@"                Forwards extra flags (e.g. --resume to continue from checkpoint).
+#
+# Expected timing (g6e.xlarge, WITHOUT FlashAttention-2):
+#   Training:  ~12h (4902 steps × 8.7s/step, 2 epochs)
+#   Eval:      ~6.5h (1400 generates × 17s: 1000 test + 200 train + 200 val)
+#   GGUF:      ~15 min
+#   TOTAL:     ~19h worst case, ~16h if early stopping triggers
+#   COST:      ~$30-35 on-demand ($1.86/hr)
 
 set -eo pipefail
 
