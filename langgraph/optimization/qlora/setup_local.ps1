@@ -184,13 +184,16 @@ if (-not $?) {
     exit 1
 }
 
-# 5d. torch's --force-reinstall pulls the LATEST fsspec, which breaks datasets
-#     (needs <=2025.9.0) and s3fs/DVC (needs ==2025.9.0). Re-pin it (no deps, so it
-#     can't drag torch back in). 2025.9.0 satisfies torch, datasets, and s3fs.
-Write-Host "  Pinning fsspec==2025.9.0 (datasets + s3fs/DVC compatibility)..."
-& $pipExe install "fsspec[http]==2025.9.0" --no-deps --quiet
+# 5d. Reconcile fsspec/s3fs. `datasets` caps fsspec at <=2025.9.0, but dvc[s3]
+#     installs the latest s3fs (e.g. 2026.x) which hard-pins fsspec==<its version>.
+#     fsspec + s3fs are version-locked, so the only set that satisfies datasets AND
+#     s3fs is BOTH at 2025.9.0. Pin them together. (torch's --force-reinstall also
+#     bumps fsspec, so this must run after the torch step.) Neither depends on torch,
+#     so installing with deps here cannot drag a CPU torch back in.
+Write-Host "  Pinning fsspec + s3fs to 2025.9.0 (datasets + s3fs/DVC compatibility)..."
+& $pipExe install "s3fs==2025.9.0" "fsspec[http]==2025.9.0" --quiet
 if (-not $?) {
-    Write-Host "  WARNING: fsspec pin failed — 'dvc pull' or dataset loading may break." -ForegroundColor Yellow
+    Write-Host "  WARNING: fsspec/s3fs pin failed — 'dvc pull' or dataset loading may break." -ForegroundColor Yellow
 }
 
 Write-Host "  Done."
