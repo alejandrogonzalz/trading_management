@@ -82,7 +82,7 @@ python optimization/qlora/train_qlora.py --lr 0.00002 --rank 16 --epochs 3 --bat
 **Resultado**:
 - Adapters LoRA en `backtest/data/models/qlora_qwen25_7b/`
 - GGUF Q4_K_M para Ollama en `backtest/data/models/qlora_qwen25_7b/gguf/`
-- Métricas automáticas en `optimization/results/qlora_optimization.json`
+- Métricas automáticas en `optimization/qlora/results/qlora_optimization.json`
 
 ### PASO 4 — Backtest zero-shot (dos modelos)
 **4a. Qwen 2.5 7B base (Ollama local)**:
@@ -123,7 +123,7 @@ cd langgraph
 
 # 1. QLoRA fine-tuned vs Bagging-LSTM (pregunta central de la tesis)
 python -m cli compare-stats \
-  --a optimization/results/qlora_optimization.json \
+  --a optimization/qlora/results/qlora_optimization.json \
   --b backtest/data/results/ml-bagging-lstm.json
 
 # 2. Zero-shot Qwen vs Bagging-LSTM
@@ -138,7 +138,7 @@ python -m cli compare-stats \
 
 # 4. QLoRA vs Zero-shot Qwen (efecto del fine-tuning puro)
 python -m cli compare-stats \
-  --a optimization/results/qlora_optimization.json \
+  --a optimization/qlora/results/qlora_optimization.json \
   --b backtest/data/results/zero-shot-qwen7b.json
 ```
 **Archivos de referencia**: `optimization/stats_tests.py` (McNemar exact binomial + t-test normal approx)  

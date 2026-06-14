@@ -236,6 +236,52 @@ class TestTemporalSplit:
 
 
 # ---------------------------------------------------------------------------
+# heuristic baseline
+# ---------------------------------------------------------------------------
+
+
+class TestHeuristicBaseline:
+    """Guards the multi-TF heuristic used as comparison baseline in train_qlora."""
+
+    def test_bullish_majority_returns_long(self):
+        from optimization.qlora.train_qlora import QLoRATrainer
+
+        ind = {
+            "1h": {"heatmap": "BULLISH", "macd_hist": -0.1},
+            "4h": {"heatmap": "STRONG_BULLISH", "macd_hist": 0.5},
+            "1d": {"heatmap": "NEUTRAL", "macd_hist": 0.0},
+        }
+        assert QLoRATrainer._heuristic_bias(ind) == "LONG"
+
+    def test_bearish_majority_returns_short(self):
+        from optimization.qlora.train_qlora import QLoRATrainer
+
+        ind = {
+            "1h": {"heatmap": "BEARISH", "macd_hist": 0.1},
+            "4h": {"heatmap": "STRONG_BEARISH", "macd_hist": -0.5},
+            "1d": {"heatmap": "NEUTRAL", "macd_hist": 0.0},
+        }
+        assert QLoRATrainer._heuristic_bias(ind) == "SHORT"
+
+    def test_tie_falls_back_to_macd(self):
+        from optimization.qlora.train_qlora import QLoRATrainer
+
+        ind = {
+            "1h": {"heatmap": "BULLISH", "macd_hist": -0.5},
+            "4h": {"heatmap": "BEARISH", "macd_hist": 0.1},
+            "1d": {"heatmap": "NEUTRAL", "macd_hist": 0.0},
+        }
+        # Tie (1 bullish, 1 bearish) → falls back to 1h macd_hist (-0.5 < 0 → SHORT)
+        assert QLoRATrainer._heuristic_bias(ind) == "SHORT"
+
+    def test_flat_dict_treated_as_single_tf(self):
+        from optimization.qlora.train_qlora import QLoRATrainer
+
+        ind = {"heatmap": "STRONG_BEARISH", "macd_hist": 0.5}
+        assert QLoRATrainer._heuristic_bias(ind) == "SHORT"
+
+
+# ---------------------------------------------------------------------------
 # ml_models — predictors
 # ---------------------------------------------------------------------------
 

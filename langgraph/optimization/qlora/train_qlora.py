@@ -439,24 +439,25 @@ class QLoRATrainer:
 
     @staticmethod
     def _heuristic_bias(indicators: dict[str, Any]) -> str:
-        """Cheap indicator rule used as an honest comparison baseline.
+        """Multi-TF majority-vote heuristic used as a comparison baseline.
 
-        Majority-class accuracy is only ~51%, so the meaningful contrast is
-        against a simple heatmap/MACD heuristic: if the fine-tuned model barely
-        beats this, the task is easy and a high accuracy says little; if it
-        clearly beats it, the model learned something non-trivial.
+        Majority-class accuracy is only ~50%, so the meaningful contrast is
+        against an indicator heuristic: if the fine-tuned model barely beats
+        this, the task is easy; if it clearly beats it, the model learned
+        something non-trivial. Uses all available timeframes (not just 1h)
+        for a fairer ~53% baseline on the strict temporal test set.
         """
         if indicators and not isinstance(next(iter(indicators.values())), dict):
-            base = indicators
-        elif indicators:
-            base = indicators.get("1h", next(iter(indicators.values())))
-        else:
-            base = {}
-        hm = base.get("heatmap", "NEUTRAL")
-        if "BULLISH" in hm:
+            indicators = {"1h": indicators}
+        bullish = sum(1 for v in indicators.values()
+                      if isinstance(v, dict) and "BULLISH" in v.get("heatmap", ""))
+        bearish = sum(1 for v in indicators.values()
+                      if isinstance(v, dict) and "BEARISH" in v.get("heatmap", ""))
+        if bullish > bearish:
             return "LONG"
-        if "BEARISH" in hm:
+        if bearish > bullish:
             return "SHORT"
+        base = indicators.get("1h", next(iter(indicators.values()), {}))
         return "LONG" if base.get("macd_hist", 0) >= 0 else "SHORT"
 
     def evaluate(self) -> dict[str, Any]:
