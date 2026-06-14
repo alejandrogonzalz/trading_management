@@ -114,17 +114,19 @@ bash optimization/qlora/setup_ec2.sh
 ```
 
 It creates a clean venv, installs Unsloth (which resolves its own torch/TRL),
-builds FlashAttention-2, installs DVC, and **verifies versions** (driver, CUDA,
-PyTorch, FA2, compute capability). Expected output on L40S:
+installs DVC + tmux, and **verifies versions** (driver, CUDA, PyTorch, Unsloth).
+Expected output on L40S:
 
 ```
 GPU: NVIDIA L40S  cc=(8, 9)
-CUDA (torch): 12.x   PyTorch: 2.x
-FlashAttention-2: v2.x  (expect FA2=True at train time)
+CUDA (torch): 13.x   PyTorch: 2.x
+FlashAttention-2: NOT INSTALLED — training will be ~2-3x slower
+Unsloth: OK
 ```
 
-> **Confirm `FA2 = True`** in the Unsloth startup banner when the model loads — that's
-> the whole speedup. If it's `False`, see Troubleshooting.
+> FA2 is skipped by default (compilation freezes 4-vCPU instances). Training still
+> works via Unsloth's Triton kernels (~8.7s/step instead of ~4-5s). See comments in
+> `setup_ec2.sh` for manual FA2 install instructions.
 
 ---
 
@@ -140,21 +142,37 @@ Without the candles, trade simulation has no data → `win_rate`/`profit_factor`
 
 ---
 
-## Step 4: Smoke test (~2 min, ~$0.06)
+## Step 4: Smoke test (~5 min, ~$0.15)
 
 ```bash
-python optimization/qlora/train_qlora.py --max-steps 3 --max-eval 10
+python optimization/qlora/train_qlora.py --max-steps 3 --max-eval 10 --diagnostic-samples 0 \
+  2>&1 | tee optimization/qlora/logs/smoke_test.log
 ```
 
-Loads the model, runs 3 steps, evaluates 10 samples, exits. If step 0 passes, the
-full run will too — the failure mode is always step 0.
+Loads the model, trains 3 steps, evaluates 10 samples, generates GGUF, exits.
+Uses `--diagnostic-samples 0` to skip the 500+500 train/val accuracy probes (those
+add ~4h to a smoke test). If step 0 passes and you see `RESULT:` at the end with
+`Win Rate > 0`, the full run will work.
 
 ---
 
-## Step 5: Run the real training (nohup)
+## Step 5: Run the real training
 
-`nohup` keeps the job alive if SSH drops (tmux works on EC2 too, but nohup is the
-portable default we standardize on):
+### Option A: tmux (recommended)
+
+tmux keeps the job alive if SSH drops **and** lets you reattach to see live output:
+
+```bash
+tmux new -s qlora
+source .venv/bin/activate
+bash optimization/qlora/run_cloud.sh 2>&1 | tee optimization/qlora/logs/run_cloud.log
+```
+
+- **Detach** (leave running): `Ctrl+B`, then `D`
+- **Reattach** (see live output): `tmux attach -t qlora`
+- **Monitor from another SSH**: `tail -f optimization/qlora/logs/run_cloud.log`
+
+### Option B: nohup (simpler, no reattach to live output)
 
 ```bash
 nohup bash optimization/qlora/run_cloud.sh > optimization/qlora/logs/run_cloud.log 2>&1 &
@@ -169,27 +187,29 @@ nvidia-smi
 1. **prepare_data** — strict temporal split (global timestamp sort + embargo) →
    `training_data/{train,val,test}.jsonl` (same split as LSTM/XGBoost)
 2. **load_model** — Qwen 2.5 7B in 4-bit (~4-5 GB VRAM) + LoRA adapters
-3. **train** — SFTTrainer, 3 epochs, `batch_size=2 × grad_accum=8`, cosine LR,
+3. **train** — SFTTrainer, 2 epochs, `batch_size=2 × grad_accum=8`, cosine LR,
    eval every 250 steps, **early stopping (patience 3)**, keeps best by eval_loss
 4. **save_loss_curve** — `results/qlora_cloud_loss_curve.{json,png}`
 5. **save_model** — LoRA adapters + merged GGUF (Q4_K_M) for Ollama
-6. **evaluate** — greedy decoding on the FULL test split, trade simulation,
-   train/val/test accuracy + gap, heuristic baseline, `sample_keys` for paired tests
+6. **evaluate** — greedy decoding on 1500 test samples (~136/symbol), trade
+   simulation, train/val/test accuracy + gap, heuristic baseline, `sample_keys`
 7. **save result** → `results/qlora_cloud.json` (+ canonical `qlora_optimization.json`)
 
 ### Batch size note
-`batch_size=2` is the safe L40S ceiling. With FA2 confirmed you can try
-`--batch-size 4` (FA2 lowers the backward-pass VRAM peak) after a `--max-steps 3`
-smoke test at the higher batch. Without FA2, batch 4 OOMs.
+`batch_size=2` is the safe L40S ceiling without FA2. With FA2 you could try
+`--batch-size 4` after a smoke test. Without FA2, batch 4 OOMs.
 
 ### If interrupted
 ```bash
-nohup bash optimization/qlora/run_cloud.sh --resume > optimization/qlora/logs/run_cloud.log 2>&1 &
+tmux attach -t qlora   # if using tmux, just reattach — it's still running
+
+# If the process died (SSH drop without tmux, or Ctrl+C):
+bash optimization/qlora/run_cloud.sh --resume 2>&1 | tee optimization/qlora/logs/run_cloud.log
 ```
 `--resume` continues from the last `checkpoint-N` (saved every 250 steps). No work lost.
 
-### Expected timing (g6e.xlarge, FA2 on)
-~4–5 s/step · ~1.5–2.5 h/epoch · **~5–7 h** for 3 epochs + eval.
+### Expected timing (g6e.xlarge, without FA2)
+~8.7 s/step · ~12 h training (2 epochs) · ~6 h eval (1500 samples) · **~18 h total**.
 
 ---
 
@@ -205,10 +225,12 @@ python optimization/qlora/plot_overfitting.py --result optimization/qlora/result
 ## Step 7: Back up the model + STOP THE INSTANCE
 
 ```bash
-# Back up adapters + GGUF to S3 (model weights are too large for git)
-aws s3 cp --recursive backtest/data/models/qlora_cloud/ s3://trading-management-dvc/models/qlora_cloud/
+# Track model weights with DVC (too large for git — adapters ~80MB + GGUF ~4GB)
+dvc add backtest/data/models/qlora_cloud
+dvc push   # uploads to s3://trading-management-dvc/
 
-# Commit just the result JSON
+# Commit the DVC pointer + result JSON
+git add backtest/data/models/qlora_cloud.dvc backtest/data/models/.gitignore
 git add optimization/qlora/results/qlora_cloud.json
 git commit -m "feat(qlora): fine-tuning results on fixed split (EC2 g6e.xlarge)"
 git push origin <branch>
