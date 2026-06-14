@@ -46,6 +46,10 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
+# Suppress the noisy "max_new_tokens vs max_length" warning that fires on every
+# generate() call (one per eval sample — thousands of lines of useless spam).
+logging.getLogger("transformers.generation.configuration_utils").setLevel(logging.ERROR)
+
 DATASET_PATH = str(LANGGRAPH_ROOT / "backtest" / "data" / "labeled" / "dataset.jsonl")
 TRAINING_DATA_DIR = LANGGRAPH_ROOT / "training_data"
 RESULTS_DIR = Path(__file__).resolve().parent / "results"

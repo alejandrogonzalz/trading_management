@@ -39,9 +39,10 @@ python "$SCRIPT_DIR/train_qlora.py" \
     --lr 0.00002 \
     --rank 16 \
     --alpha 32 \
-    --epochs 3 \
+    --epochs 2 \
     --batch-size 2 \
     --grad-accum 8 \
+    --max-eval 1300 \
     --diagnostic-samples 500 \
     --tag "$TAG" \
     --output-dir "backtest/data/models/$TAG" \
