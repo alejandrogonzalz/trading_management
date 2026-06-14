@@ -72,12 +72,31 @@ echo ""
 # 4. Dependencies. Unsloth (from git) resolves its own torch/TRL/transformers/peft.
 echo "[4/7] Installing training dependencies..."
 pip install "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git"
-# FA2 builds on the DLAMI because its CUDA toolkit matches the driver — that's the
-# whole reason EC2 + DLAMI beats the SageMaker Studio container. Kept NON-FATAL so
-# this same script also works on SageMaker (where FA2 may fail to build); training
-# still runs there, just ~2-3x slower on the eager path.
-pip install flash-attn --no-build-isolation || \
-    echo "  WARNING: flash-attn build failed — training will run WITHOUT FA2 (slower). OK on SageMaker."
+
+# FA2 requires CUDA_HOME pointing to a toolkit with nvcc. The DLAMI runtime-only
+# images ship the driver but not nvcc; detect and install the toolkit if missing.
+echo "  Locating CUDA toolkit for FlashAttention-2..."
+NVCC_PATH=$(find /usr/local -name "nvcc" -type f 2>/dev/null | head -1)
+if [ -z "$NVCC_PATH" ]; then
+    echo "  nvcc not found — installing CUDA toolkit (this takes ~2 min)..."
+    sudo apt-get update -qq
+    sudo apt-get install -y cuda-toolkit -qq 2>/dev/null || \
+        sudo apt-get install -y nvidia-cuda-toolkit -qq 2>/dev/null || true
+    NVCC_PATH=$(find /usr/local -name "nvcc" -type f 2>/dev/null | head -1)
+fi
+
+if [ -n "$NVCC_PATH" ]; then
+    export CUDA_HOME=$(dirname "$(dirname "$NVCC_PATH")")
+    echo "  CUDA_HOME=$CUDA_HOME (nvcc: $NVCC_PATH)"
+    pip install flash-attn --no-build-isolation || \
+        echo "  WARNING: flash-attn build failed — training will run WITHOUT FA2 (slower)."
+    # Persist CUDA_HOME for future sessions
+    grep -q "CUDA_HOME" ~/.bashrc 2>/dev/null || \
+        echo "export CUDA_HOME=$CUDA_HOME" >> ~/.bashrc
+else
+    echo "  WARNING: nvcc not found even after toolkit install — FA2 skipped (training will be ~2-3x slower)."
+fi
+
 pip install "dvc[s3]" scikit-learn pyyaml tqdm matplotlib httpx -q
 echo "  Done."
 echo ""
