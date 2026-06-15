@@ -121,32 +121,49 @@ overlay  30G  29G  1.4G  96%  /             ← container disk, full
 
 ---
 
-## Research Questions (for the next session / agent)
+## Research Results (2026-06-14)
 
-### 1. Official Unsloth image
-- Does `unsloth/unsloth` exist on Docker Hub with flash-attn pre-compiled?
-- Check: `docker pull unsloth/unsloth` — what torch/CUDA/FA2 versions?
-- RunPod template search: does a community template "Unsloth" or "QLoRA" exist?
+### 1. Official Unsloth image — `docker.io/unsloth/unsloth:latest`
 
-### 2. RunPod's own torch images
-- What is the exact Docker Hub tag behind `runpod-torch-v280`?
-  (Likely `runpod/pytorch:2.8.0-py3.11-cuda12.8.1-devel-ubuntu22.04`)
-- Does any RunPod image include flash-attn? Check `runpod/pytorch` tags on Docker Hub.
-- Is there a `-devel` vs `-runtime` split? (devel has nvcc, runtime doesn't — we need devel for FA2 compilation)
+**CONFIRMED available on RunPod** (community template "Unsloth" exists).
 
-### 3. Using `/workspace` as venv location
-- Can we do `python -m venv /workspace/.venv` and install everything there?
-- Does RunPod's network volume have enough IOPS for pip installs? (It's a distributed FS)
-- Would the venv persist across pod restarts if on `/workspace`?
+From the README:
+- Bundles: Unsloth, JupyterLab (port 8888), PyTorch+CUDA (GPU-ready), TRL, SFTConfig
+- Supports: 4-bit, 8-bit, 16-bit, FP8 training paths
+- Supports: Qwen, Llama, Gemma, DeepSeek, etc.
+- Works with Blackwell (sm_100+)
+- Working dir: `/workspace/work` (persistent volume)
+- Example uses `SFTConfig` → confirms modern TRL included
 
-### 4. NVIDIA NGC containers
-- `nvcr.io/nvidia/pytorch:24.xx-py3` ships torch + CUDA + flash-attn pre-compiled
-- Check latest tag compatible with A100 (sm_80) + bitsandbytes + Unsloth
-- Disk footprint of NGC containers (they're large, ~20-30 GB image)
+**Unknown until we launch:** exact torch version, CUDA version, whether FA2 is bundled.
+(Likely yes for FA2 since Unsloth uses it internally and they control the image.)
 
-### 5. Container disk size
-- Can RunPod pods be launched with larger container disk (50-100 GB)?
-- Or is the right pattern to always install to `/workspace` and keep container disk minimal?
+### 2. Community "LLM Ready" image — `konuu/llm_ready:latest`
+
+From the README: "Pre-installed libraries: vLLM, SGLang, Unsloth, **flash-attn**,
+flashinfer, Cloudflared". **Explicitly confirms FA2.**
+
+Heavier image (includes vLLM/SGLang we don't need), less predictable versioning.
+
+### 3. RunPod template "Unsloth-Finetune" — `docker.io/unsloth/unsloth`
+
+Same official image, recommends:
+- Container Disk: **50 GB**
+- Volume Disk: 256 GB+
+- "Works with Blackwell"
+
+### Decision: Use `docker.io/unsloth/unsloth:latest`
+
+Why:
+- Official → all packages compiled as a unit (no ABI mismatches)
+- Eliminates problems 1-5 from our debugging history
+- If FA2 is missing, we can still build it cleanly against a consistent base
+- 50 GB container disk recommendation matches our needs exactly
+
+### Setup script created: `setup_unsloth_pod.sh`
+
+Validates pre-installed stack, installs only project deps (DVC, sklearn, xgboost),
+handles FA2 build if not pre-installed, runs smoke test.
 
 ---
 

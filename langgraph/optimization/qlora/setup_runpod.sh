@@ -1,12 +1,16 @@
 #!/bin/bash
-# RunPod GPU setup for QLoRA fine-tuning.
+# RunPod GPU setup for QLoRA fine-tuning (FROM-SCRATCH variant).
+#
+# Use this script ONLY on bare PyTorch images (e.g. runpod-torch-v280).
+# If you're using the official unsloth/unsloth:latest image, use the lighter:
+#   bash optimization/qlora/setup_unsloth_pod.sh
 #
 # Handles the torch/CUDA version hell:
 #   - Unsloth's pip resolver pulls torch 2.12+ from PyPI (needs CUDA 13 driver — nobody has that)
 #   - flash-attn install destroys the env even on failure (upgrades torch, removes unsloth)
 #   - torchao crashes on torch <2.7
 #
-# Solution: pin torch via constraints file, never attempt flash-attn.
+# Solution: pin torch via constraints file, build flash-attn from source.
 #
 # Usage:
 #   cd /trading_management/langgraph
@@ -20,6 +24,14 @@
 #   nohup bash optimization/qlora/run_cloud.sh > optimization/qlora/logs/run_cloud.log 2>&1 &
 
 set -e
+
+# ─── Auto-detect: if unsloth is already installed, delegate to the lighter script
+if python3 -c "from unsloth import FastLanguageModel" 2>/dev/null && \
+   python3 -c "import torch; assert torch.cuda.is_available()" 2>/dev/null; then
+    echo "Detected pre-installed unsloth + working torch+CUDA."
+    echo "Delegating to setup_unsloth_pod.sh (lighter setup for pre-built images)..."
+    exec bash "$(dirname "$0")/setup_unsloth_pod.sh"
+fi
 
 echo "============================================================"
 echo "  RunPod QLoRA Setup — $(date)"
@@ -41,8 +53,16 @@ if ! nvidia-smi &>/dev/null; then
 fi
 nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader
 
-DRIVER_CUDA=$(nvidia-smi | grep -oP 'CUDA Version: \K[0-9]+\.[0-9]+' | head -1)
-echo "  Driver max CUDA: $DRIVER_CUDA"
+# Prefer nvcc (actual toolkit in container) over nvidia-smi (host driver max).
+# RunPod uses CUDA Forward Compatibility: container can have CUDA 12.8 toolkit
+# even when the host driver advertises 12.4.
+if command -v nvcc &>/dev/null; then
+    DRIVER_CUDA=$(nvcc --version | grep -oP 'release \K[0-9]+\.[0-9]+')
+    echo "  Toolkit CUDA (nvcc): $DRIVER_CUDA"
+else
+    DRIVER_CUDA=$(nvidia-smi | grep -oP 'CUDA Version: \K[0-9]+\.[0-9]+' | head -1)
+    echo "  Driver max CUDA (nvidia-smi fallback): $DRIVER_CUDA"
+fi
 
 CUDA_MAJOR=$(echo "$DRIVER_CUDA" | cut -d. -f1)
 CUDA_MINOR=$(echo "$DRIVER_CUDA" | cut -d. -f2)
@@ -196,7 +216,12 @@ if ! $FA_OK; then
     echo "  Building from source (~15-20 min). FLASH_ATTENTION_FORCE_BUILD=TRUE skips"
     echo "  the broken prebuilt-wheel download and actually compiles against our torch."
     WHEEL_DIR="/tmp/fa_wheel"
-    if FLASH_ATTENTION_FORCE_BUILD=TRUE CUDA_HOME=/usr/local/cuda MAX_JOBS=4 \
+    CPU_CORES=$(nproc 2>/dev/null || echo 4)
+    FA_JOBS=$(( CPU_CORES > 16 ? 16 : CPU_CORES ))
+    SM_ARCH=$(python -c "import torch; cc=torch.cuda.get_device_capability(0); print(f'{cc[0]}.{cc[1]}')" 2>/dev/null || echo "8.0")
+    echo "  MAX_JOBS=$FA_JOBS, TORCH_CUDA_ARCH_LIST=$SM_ARCH"
+    if FLASH_ATTENTION_FORCE_BUILD=TRUE TORCH_CUDA_ARCH_LIST="$SM_ARCH" \
+       CUDA_HOME=/usr/local/cuda MAX_JOBS=$FA_JOBS \
             pip wheel flash-attn --no-build-isolation --no-deps -w "$WHEEL_DIR" 2>&1; then
         BUILT_WHEEL=$(ls "$WHEEL_DIR"/flash_attn-*.whl 2>/dev/null | head -1)
         if [ -n "$BUILT_WHEEL" ] && pip install "$BUILT_WHEEL" --no-deps -q; then
