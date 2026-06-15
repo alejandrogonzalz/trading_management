@@ -72,7 +72,24 @@ Larger/deeper models (hidden=128, layers=2) showed higher val acc during CV (82.
 
 Bagging reduces **variance** — when individual LSTMs agree on the wrong prediction (shared bias from regime mismatch), averaging doesn't help. Blending does marginally better because XGBoost + RF + LSTM fail in different ways, so the blend partially self-corrects.
 
-**Why tree-based models (XGBoost 62.7%, RF 61.9%) beat LSTM (50.2%):** Trees make hard decisions via thresholds — "if RSI > 68 AND ADX > 25 → SHORT". A threshold learned in 2023 may shift in value but the directional relationship often holds. LSTM learns weighted linear combinations of features that are much more sensitive to the exact numerical distribution, which collapses when that distribution shifts.
+### Why tree-based models (XGBoost 62.7%, RF 61.9%) beat LSTM (50.2%) — counterintuitive but expected
+
+LSTM was designed specifically for time series, so it seems like it should outperform a Random Forest. It doesn't here, and the reason is important.
+
+**What LSTM learns:** weighted combinations of raw feature values across time steps. It memorizes patterns like "when RSI≈42 AND ADX≈31 AND EMA_ratio≈1.02 occur together over the last 5 candles → LONG". These are calibrated to the exact numerical distribution of the training period (2023–2024). When the market shifts regime — different average volatility, different RSI baselines, different trend strength — those exact numbers carry a different meaning and the model's weights become misleading. The result is ~random predictions (50.2%).
+
+**What RF learns:** hard decision thresholds — "if RSI > 65 AND ADX > 22 AND bb_pos > 0.8 → SHORT (true 76% of the time in training)". Thresholds are more durable than exact values. Even if the overall RSI distribution shifts slightly in the test period, "RSI > 65" still captures the concept of "overbought territory." The directional relationship between the threshold and the label tends to survive regime shifts better than a learned numerical weight.
+
+| | LSTM | Random Forest |
+|--|------|---------------|
+| What it memorizes | Weighted combinations of raw values across time steps | Decision thresholds on individual features |
+| Handles sequences | Yes — but learns regime-specific temporal patterns | No — treats each candle independently |
+| Sensitivity to distribution shift | HIGH — small shifts in feature mean/std break learned weights | LOWER — threshold direction often survives scale shifts |
+| Overfitting mode | Memorizes training-period temporal sequences | Memorizes specific split points, but simpler inductive bias |
+
+**The irony:** LSTM's capacity to model sequential dependencies — its supposed advantage — becomes a liability here. It learns *too much* about the specific temporal dynamics of the training regime. RF's "ignorance" of sequences forces it to rely on simpler, more stable rules. This is a known phenomenon in financial ML: simpler models frequently outperform complex ones on truly out-of-sample data because they have less capacity to overfit a non-stationary distribution.
+
+This directly supports the thesis argument for LLMs: if even a Random Forest's simple threshold rules generalize better than LSTM's learned sequences, then a model that reasons semantically ("this RSI level combined with a BEARISH heatmap suggests exhaustion") should generalize even better — because the semantic relationship is more stable than any numerical threshold.
 
 **Practical ceiling for feature-based classical ML on this dataset:** ~64% (Blending) on the fixed temporal test. This is a fundamental limit of the feature representation, not the model architecture.
 
