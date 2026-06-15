@@ -59,18 +59,22 @@ Larger/deeper models (hidden=128, layers=2) showed higher val acc during CV (82.
 
 ### Why ensembles only partially help
 
-| Model | Test Accuracy | Why |
-|-------|---------------|-----|
-| LSTM individual (hidden=128, layers=2) | 50.21% | Baseline — old optimization params |
-| LSTM v2 (hidden=32, layers=1 — best of grid) | 51.50% | +1.3pp — confirms ceiling is structural |
+| Model | Test Accuracy | Notes |
+|-------|---------------|-------|
+| LSTM individual (hidden=128) | 50.21% | Temporal overfitting — baseline |
+| LSTM v2 (hidden=32, best grid) | 51.50% | +1.3pp — ceiling confirmed structural |
+| Random Forest | 61.90% | Tree thresholds more regime-stable than LSTM |
+| XGBoost | 62.70% | Best individual classical ML |
 | Bagging-LSTM v2 | 60.30% | Variance reduction helps, bias remains |
 | Soft Voting v2 | 61.79% | Heterogeneous voter smoothing |
 | Stacking v2 | 61.60% | Meta-learner adds marginal correction |
-| Blending v2 | **63.59%** | Best: heterogeneous models fail differently, partially correcting each other's biases |
+| **Blending v2** | **63.59%** | Best classical ML overall — heterogeneous models partially self-correct |
 
 Bagging reduces **variance** — when individual LSTMs agree on the wrong prediction (shared bias from regime mismatch), averaging doesn't help. Blending does marginally better because XGBoost + RF + LSTM fail in different ways, so the blend partially self-corrects.
 
-**Practical ceiling for feature-based classical ML on this dataset:** ~65% on the fixed temporal test. This is a fundamental limit of the feature representation, not the models.
+**Why tree-based models (XGBoost 62.7%, RF 61.9%) beat LSTM (50.2%):** Trees make hard decisions via thresholds — "if RSI > 68 AND ADX > 25 → SHORT". A threshold learned in 2023 may shift in value but the directional relationship often holds. LSTM learns weighted linear combinations of features that are much more sensitive to the exact numerical distribution, which collapses when that distribution shifts.
+
+**Practical ceiling for feature-based classical ML on this dataset:** ~64% (Blending) on the fixed temporal test. This is a fundamental limit of the feature representation, not the model architecture.
 
 ### Why the feature representation is the root cause
 The feature vector (RSI, ADX, EMA ratios, ATR — raw floats) is **non-stationary across market regimes**. RSI=42 in a 2023 bull market implies something different than RSI=42 in a 2025 sideways consolidation. Classical ML learns the mapping from the distribution it saw during training. When that distribution shifts, accuracy collapses.
