@@ -1,0 +1,27 @@
+{
+  "model": "blending",
+  "ensemble_type": "heterogeneous",
+  "strategy": "blending",
+  "best_score": 0.6608003857280618,
+  "best_params": {
+    "blend_fraction": 0.3,
+    "base_learners": [
+      "XGBoost",
+      "SVM",
+      "MLP",
+      "LSTM"
+    ]
+  },
+  "val_metrics": {
+    "accuracy": 0.6608003857280618,
+    "f1_macro": 0.6515175480629285,
+    "auc_roc": 0.716614887295181
+  },
+  "test_metrics": {
+    "accuracy": 0.6359643916913946,
+    "f1_macro": 0.6310124961499355,
+    "auc_roc": 0.7088089985150873
+  },
+  "elapsed_seconds": 292.3,
+  "timestamp": "2026-06-15T08:53:16.466951"
+}
