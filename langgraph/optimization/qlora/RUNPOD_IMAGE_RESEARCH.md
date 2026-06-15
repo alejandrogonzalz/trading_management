@@ -152,18 +152,53 @@ Same official image, recommends:
 - Volume Disk: 256 GB+
 - "Works with Blackwell"
 
-### Decision: Use `docker.io/unsloth/unsloth:latest`
+### 3. Confirmed Image Contents (from Dockerfile analysis)
+
+| Component | Version |
+|-----------|---------|
+| Base | `nvidia/cuda:12.8.1-cudnn-devel-ubuntu24.04` |
+| torch | **2.10.0+cu128** |
+| CUDA toolkit | **12.8.1** (nvcc present) |
+| Python | **3.12** |
+| unsloth | Latest (git install, pinned range) |
+| bitsandbytes | >=0.49.2 |
+| TRL | >=0.18.2, <=0.24.0 |
+| transformers | >=4.51.3, <=5.5.0 |
+| peft | >=0.18.0 |
+| triton | >=3.6.0 |
+| xformers | 0.0.34 (cu128 wheel) — **attention fallback** |
+| vLLM | 0.16.0 |
+| flash-attn | **NOT INCLUDED** |
+| torchao | NOT included |
+| nvcc + gcc + ninja | YES (can compile FA2) |
+| JupyterLab | YES (port 8888) |
+| llama.cpp | YES (prebuilt) |
+| Image size | 13 GB compressed, ~25-30 GB uncompressed |
+| GPU arch support | sm_75 through sm_120 (A100 sm_80 supported) |
+| Container user | `unsloth` (may need --user root for volume perms) |
+
+### 4. Decision: Use `docker.io/unsloth/unsloth:latest`
 
 Why:
-- Official → all packages compiled as a unit (no ABI mismatches)
-- Eliminates problems 1-5 from our debugging history
-- If FA2 is missing, we can still build it cleanly against a consistent base
-- 50 GB container disk recommendation matches our needs exactly
+- Official → torch+unsloth+bitsandbytes+TRL compiled as a consistent unit
+- Eliminates ALL 5 problems from our debugging history
+- nvcc+gcc+ninja present → FA2 source build works cleanly against torch 2.10
+- CUDA 12.8 toolkit is the container's native toolkit (no forward-compat hacks)
+- Container disk: set to **100 GB** (not 30, not 50 — image + model + checkpoints)
+
+### 5. Caveats
+
+- **No FA2 pre-installed** — build from source (~10-30 min) or use xformers fallback
+- **Python 3.12** — our scripts target 3.11 but should be compatible (test with smoke)
+- **torch 2.10.0** — newer than what we used before, should be backward-compatible
+- **TRL >=0.18.2** — uses `SFTConfig` path (our train_qlora.py already handles this)
+- **User `unsloth`** — may need `--user root` in RunPod template for /workspace perms
 
 ### Setup script created: `setup_unsloth_pod.sh`
 
 Validates pre-installed stack, installs only project deps (DVC, sklearn, xgboost),
-handles FA2 build if not pre-installed, runs smoke test.
+handles FA2 source build (with S3 cache), runs smoke test. Total setup: ~5 min
+without FA2 build, ~15-35 min with FA2 build (or 30 sec if S3-cached wheel exists).
 
 ---
 

@@ -18,9 +18,15 @@
 # RunPod template settings:
 #   Image:          docker.io/unsloth/unsloth:latest
 #   GPU:            A100 80GB (or H100, L40S, RTX 4090 — any Ampere+)
-#   Container Disk: 50 GB (NOT 30 — pip cache + build artifacts need room)
-#   Volume Disk:    100-256 GB (mounted at /workspace)
+#   Container Disk: 100 GB (image is ~25-30 GB uncompressed + model weights + checkpoints)
+#   Volume Disk:    100-256 GB (mounted at /workspace, persists across restarts)
 #   HTTP Port:      8888 (JupyterLab)
+#   Start Command:  (leave blank — image auto-starts Jupyter)
+#
+# Image ships: torch 2.10.0+cu128, unsloth, bitsandbytes, TRL>=0.18, peft,
+#              xformers (attention fallback), triton, vLLM, nvcc+gcc+ninja.
+# Does NOT ship: flash-attn (we build it from source, ~10-30 min with cached wheel).
+# Container user: `unsloth` — set --user root in RunPod if permission issues arise.
 
 set -e
 
@@ -165,12 +171,13 @@ echo "[4/7] FlashAttention-2..."
 if [ "$FA2_VER" != "NOT INSTALLED" ]; then
     echo "  Already installed: v$FA2_VER"
 else
-    echo "  Not pre-installed — attempting source build..."
+    echo "  Not pre-installed (image uses xformers as fallback)."
+    echo "  Building from source for ~10-20% attention speedup..."
 
-    # Check for nvcc (required for source build)
+    # Check for nvcc (required for source build — should be present in unsloth image)
     if ! command -v nvcc &>/dev/null; then
         echo "  WARNING: nvcc not found. Cannot compile flash-attn."
-        echo "  Training will use Triton fallback (~20% slower, still fine)."
+        echo "  Training will use xformers fallback (still works fine)."
     else
         # Determine GPU arch for targeted compilation
         SM_TAG=$($PYTHON -c "import torch; cc=torch.cuda.get_device_capability(0); print(f'{cc[0]}.{cc[1]}')")
@@ -227,7 +234,7 @@ else
         fi
 
         if ! $FA_OK; then
-            echo "  FA2: FAILED — training will use Triton fallback (still works, ~20% slower)"
+            echo "  FA2: FAILED — training will use xformers fallback (still works, ~10-20% slower)"
         fi
     fi
 fi
