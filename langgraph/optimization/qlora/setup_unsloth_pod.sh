@@ -240,8 +240,37 @@ else
 fi
 echo ""
 
-# ─── 5. AWS CLI ──────────────────────────────────────────────────────────────
-echo "[5/7] AWS CLI..."
+# ─── 5. llama.cpp (pre-build to avoid sudo prompt during GGUF export) ────────
+echo "[5/7] llama.cpp (GGUF conversion)..."
+LLAMA_DIR="$HOME/.unsloth/llama.cpp"
+LLAMA_BIN="$LLAMA_DIR/build/bin/llama-quantize"
+
+if [ -f "$LLAMA_BIN" ]; then
+    echo "  Already built: $LLAMA_BIN"
+else
+    if [ -d "$LLAMA_DIR" ] && [ ! -f "$LLAMA_DIR/src/ggml/common" ]; then
+        echo "  Existing clone looks corrupted — removing and re-cloning..."
+        rm -rf "$LLAMA_DIR"
+    fi
+    if [ ! -d "$LLAMA_DIR" ]; then
+        echo "  Cloning llama.cpp..."
+        git clone --depth=1 https://github.com/ggerganov/llama.cpp "$LLAMA_DIR" -q
+    fi
+    echo "  Building llama-quantize (~5-10 min, running in background)..."
+    cmake "$LLAMA_DIR" -B "$LLAMA_DIR/build" \
+        -DBUILD_SHARED_LIBS=OFF -DGGML_CUDA=OFF -DCMAKE_BUILD_TYPE=Release \
+        > /tmp/llama_build.log 2>&1
+    cmake --build "$LLAMA_DIR/build" --config Release -j"$(nproc)" \
+        --target llama-quantize \
+        >> /tmp/llama_build.log 2>&1 &
+    LLAMA_BUILD_PID=$!
+    echo "  Build PID: $LLAMA_BUILD_PID (log: /tmp/llama_build.log)"
+    echo "  Will be ready before training completes. Monitor: tail -f /tmp/llama_build.log"
+fi
+echo ""
+
+# ─── 6. AWS CLI ──────────────────────────────────────────────────────────────
+echo "[6/8] AWS CLI..."
 export PATH="$PATH:$HOME/.local/bin:/usr/local/bin"
 
 if ! command -v aws &>/dev/null; then
@@ -263,7 +292,7 @@ fi
 echo ""
 
 # ─── 6. DVC pull (if AWS configured) ─────────────────────────────────────────
-echo "[6/7] DVC data..."
+echo "[7/8] DVC data..."
 if aws sts get-caller-identity &>/dev/null; then
     if [ ! -f backtest/data/labeled/dataset.jsonl ]; then
         echo "  Pulling dataset + candles from S3..."
@@ -287,7 +316,7 @@ fi
 echo ""
 
 # ─── 7. Smoke test ───────────────────────────────────────────────────────────
-echo "[7/7] Smoke test..."
+echo "[8/8] Smoke test..."
 mkdir -p optimization/qlora/logs optimization/qlora/results
 
 # Quick 3-step training test to verify the full pipeline works
@@ -296,7 +325,7 @@ SMOKE_LOG=/tmp/smoke_test_setup.log
 
 if $PYTHON optimization/qlora/train_qlora.py \
     --max-steps 3 --max-eval 4 --eval-batch-size 4 --diagnostic-samples 0 \
-    --batch-size 2 --tag smoke_test > "$SMOKE_LOG" 2>&1; then
+    --batch-size 2 --no-gguf --tag smoke_test > "$SMOKE_LOG" 2>&1; then
     grep -E "(FA|step|loss)" "$SMOKE_LOG" | head -10
     echo "  Smoke test PASSED"
     # Clean up smoke test artifacts

@@ -810,8 +810,9 @@ class QLoRATrainer:
                 json.dump(result, f, indent=2)
         log.info(f"\nResult saved: {out_path} (canonical copy: {canonical})")
 
-        # Step 6: GGUF export (optional, non-fatal)
-        self.save_gguf()
+        # Step 6: GGUF export (optional, non-fatal; skipped with --no-gguf)
+        if not self.cfg.get("skip_gguf", False):
+            self.save_gguf()
 
         log.info(f"Model saved: {self.cfg['output_dir']}")
         log.info(f"Total time: {elapsed:.1f}s ({elapsed / 60:.1f} min)")
@@ -869,6 +870,10 @@ def parse_args():
         "--resume", action="store_true", help="Resume from the latest checkpoint-N in output_dir if present"
     )
     parser.add_argument("--model", type=str, help="Model name/path (default: Qwen2.5-7B-Instruct-bnb-4bit)")
+    parser.add_argument(
+        "--no-gguf", action="store_true",
+        help="Skip GGUF export (useful for smoke tests — adapters are always saved regardless)",
+    )
     return parser.parse_args()
 
 
@@ -909,6 +914,8 @@ def main():
         config["resume"] = True
     if args.model:
         config["model_name"] = args.model
+    if args.no_gguf:
+        config["skip_gguf"] = True
 
     # Run training
     trainer = QLoRATrainer(config)

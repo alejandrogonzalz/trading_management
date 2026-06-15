@@ -111,7 +111,7 @@ Run a quick 3-step test to confirm the full pipeline (load model → train → e
 ```bash
 python3 optimization/qlora/train_qlora.py \
   --max-steps 3 --max-eval 4 --eval-batch-size 4 \
-  --diagnostic-samples 0 --batch-size 4 --tag smoke_full
+  --diagnostic-samples 0 --batch-size 4 --no-gguf --tag smoke_full
 ```
 
 ### Option B: Background + log file (recommended if on JupyterLab or closing terminal)
@@ -119,7 +119,7 @@ python3 optimization/qlora/train_qlora.py \
 ```bash
 python3 optimization/qlora/train_qlora.py \
   --max-steps 3 --max-eval 4 --eval-batch-size 4 \
-  --diagnostic-samples 0 --batch-size 4 --tag smoke_full \
+  --diagnostic-samples 0 --batch-size 4 --no-gguf --tag smoke_full \
   > optimization/qlora/logs/smoke_full.log 2>&1 &
 echo "PID: $!"
 
