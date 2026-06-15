@@ -801,10 +801,12 @@ class QLoRATrainer:
 
         # Save result JSON (before GGUF — ensures results survive even if GGUF fails).
         # Write a per-tag file (so single-model runs don't clobber each other) plus a
-        # canonical qlora_optimization.json that `compare-stats` reads by default.
+        # tag-scoped canonical qlora_optimization_<tag>.json. Tag-scoping the canonical
+        # name keeps parallel runs on different machines/branches from colliding on the
+        # same path at merge time; pass the explicit file to `compare-stats --a`.
         RESULTS_DIR.mkdir(parents=True, exist_ok=True)
         out_path = RESULTS_DIR / f"qlora_{tag}.json"
-        canonical = RESULTS_DIR / "qlora_optimization.json"
+        canonical = RESULTS_DIR / f"qlora_optimization_{tag}.json"
         for path in (out_path, canonical):
             with open(path, "w") as f:
                 json.dump(result, f, indent=2)
