@@ -6,6 +6,7 @@
 
 **Integrantes del equipo**:
 - Alejandro González Almazán -- A00517113
+- Luis Ángel González Almazán -- Colaborador técnico
 
 **Maestría en Inteligencia Artificial Aplicada**
 Tecnológico de Monterrey
@@ -22,6 +23,14 @@ Tecnológico de Monterrey
 4. [Cronograma de Trabajo](#4-cronograma-de-trabajo)
 5. [Bibliografía](#5-bibliografia)
 6. [Anexos](#6-anexos)
+7. [Stack Tecnológico](#7-stack-tecnologico)
+8. [Fuentes de Datos](#8-fuentes-de-datos)
+9. [Entregables](#9-entregables)
+10. [Hipótesis](#10-hipotesis)
+11. [Riesgos y Mitigaciones](#11-riesgos-y-mitigaciones)
+12. [Fuera de Alcance](#12-fuera-de-alcance)
+13. [Trabajo Futuro](#13-trabajo-futuro)
+14. [Extensión: Ensemble LSTM + LLM en LangGraph](#14-extension-ensemble-lstm--llm-en-langgraph)
 
 ---
 
@@ -512,3 +521,189 @@ Esta comparación podría aportar valor para evaluar si realmente es necesario r
 **Sobre criterio técnico de selección de LLMs**: Qwen 2.5 7B fue seleccionado por compatibilidad con hardware disponible, capacidad de JSON estructurado, y alineación con el modelo en producción. Groq Llama 3.3 70B fue seleccionado por representar la mejor capacidad de razonamiento accesible vía API a costo investigación-viable, garantizando un baseline zero-shot exigente.
 
 **Sobre ReAct Agent**: El Enfoque 3 de este documento es precisamente la comparación ReAct que el profesor sugiere. El agente LangGraph ya implementado en producción constituye esta variante, permitiendo evaluar si el context engineering agéntico (ya construido) supera al fine-tuning (por construir) o si ambos son complementarios.
+
+---
+
+## 7. Stack Tecnológico
+
+**Tabla 9.** Capas tecnológicas del sistema.
+
+| Capa | Tecnología | Función |
+|------|-----------|---------|
+| Extracción de datos | Binance API (pública), Python | Descarga de velas históricas OHLCV |
+| Indicadores técnicos | TA-Lib, Pandas, NumPy | RSI, MACD, EMAs, ADX, ATR, Bollinger Bands, Volume Ratio |
+| Generación de dataset | Python | Etiquetado por retrospectiva, filtrado, serialización JSONL |
+| Fine-tuning local | QLoRA (Unsloth/PEFT), BitsAndBytes, GPU NVIDIA | Entrenamiento con cuantización 4-bit |
+| Fine-tuning cloud | Together AI / AWS SageMaker | Entrenamiento en la nube como alternativa escalable |
+| Modelo base | Qwen 2.5 7B Instruct | LLM a especializar |
+| Evaluación | Python, matplotlib, scikit-learn | Métricas de clasificación, backtest, gráficas |
+| Inferencia | Ollama, GPU NVIDIA local | Serving del modelo fine-tuned vía GGUF |
+| Agente | LangGraph 0.3+ (3 nodos) | Orquestación de la lógica de decisión ReAct |
+| Backend | FastAPI, SQLAlchemy, SQLite (WAL) | API REST, persistencia de operaciones |
+| Frontend | React 19, TypeScript, TailwindCSS | Dashboard de visualización y operación en tiempo real |
+| Infraestructura local | Docker Compose (4 servicios), GPU NVIDIA | Orquestación de contenedores |
+| Infraestructura cloud | AWS SageMaker (entrenamiento), Lightsail (deploy) | GPU cloud + despliegue productivo |
+
+---
+
+## 8. Fuentes de Datos
+
+**Tabla 10.** Fuentes de datos utilizadas.
+
+| Fuente | Tipo | Acceso | Costo |
+|--------|------|--------|-------|
+| Binance API (`/api/v3/klines`) | Velas históricas OHLCV | Pública, sin autenticación | Gratuito |
+| Binance API (`/api/v3/ticker/24hr`) | Estadísticas 24h en tiempo real | Pública, sin autenticación | Gratuito |
+
+Pares objetivo: BTCUSDT, ETHUSDT, BNBUSDT, SOLUSDT, XRPUSDT, DOGEUSDT, ADAUSDT, AVAXUSDT, DOTUSDT, LINKUSDT, MATICUSDT, NEARUSDT.
+
+---
+
+## 9. Entregables
+
+### 9.1 Entregables comprometidos
+
+**Tabla 11.** Entregables del proyecto.
+
+| No. | Entregable | Descripción |
+|-----|-----------|-------------|
+| 1 | Data Pipeline | Script reproducible: descarga velas de Binance, calcula indicadores con TA-Lib, genera labels por retrospectiva |
+| 2 | Dataset JSONL | 56,161 ejemplos etiquetados, split temporal 70/15/15, balanceado (49% LONG / 51% SHORT) |
+| 3 | Fine-tuning local (QLoRA) | Modelo Qwen 2.5 7B entrenado con QLoRA en GPU local, adapters + GGUF, curvas de entrenamiento |
+| 4 | Fine-tuning cloud | Modelo entrenado en AWS SageMaker / Together AI como variante escalable, documentación de costos |
+| 5 | Evaluación comparativa | Tabla de métricas de los 4 enfoques, backtest simulado, gráficas, pruebas estadísticas (McNemar + t-test) |
+| 6 | Integración LangGraph | Modelo fine-tuned operando en `generator_node()` del agente LangGraph vía Ollama |
+| 7 | Reporte técnico | Documento formal con metodología, resultados y conclusiones (Avance 6 PDF) |
+| 8 | Video demostrativo | Demostración del sistema end-to-end (3–5 minutos) |
+| 9 | Presentación final | Material para la sesión de cierre del trimestre |
+
+### 9.2 Entregables adicionales (sujetos a disponibilidad de tiempo)
+
+| No. | Entregable | Descripción | Valor académico |
+|-----|-----------|-------------|----------------|
+| 10 | Análisis exploratorio | Notebook con visualizaciones del dataset (distribución de clases, indicadores, regímenes) | Fortalece la sección de ingeniería de datos |
+| 11 | Pipeline reproducible | Script único que ejecuta el flujo completo | Reproducibilidad científica |
+| 12 | Dashboard comparativo | Vista en el frontend con métricas lado a lado | Visualización de resultados para la presentación |
+| 13 | Despliegue en nube | Infraestructura como código (AWS CDK + Lightsail) con CI/CD | Competencia en MLOps |
+| 14 | Reporte de experimentación | Tabla completa de experimentos con hiperparámetros | Rigor experimental |
+| 15 | Ensemble LSTM + LLM | Nodo adicional en LangGraph que combina probabilidad LSTM con bias del LLM | Combina precisión ML con explicabilidad LLM |
+
+---
+
+## 10. Hipótesis
+
+Un modelo de lenguaje fine-tuned con datos históricos etiquetados del mercado de criptomonedas —donde los labels se derivan del comportamiento real del precio en Binance— superará al modelo genérico (zero-shot) en:
+
+1. **Accuracy de clasificación de dirección** (LONG / SHORT)
+2. **Calidad de los niveles de entrada, take-profit y stop-loss** (ratio riesgo/recompensa, distancia al ATR)
+3. **Coherencia y fundamentación del razonamiento técnico generado** (calibración de confianza)
+
+Un resultado negativo —en el que ningún modelo fine-tuned supere al baseline— se considera académicamente válido, siempre que se documente el análisis de causas, las limitaciones identificadas y las lecciones aprendidas.
+
+---
+
+## 11. Riesgos y Mitigaciones
+
+**Tabla 12.** Riesgos del proyecto y estrategias de mitigación.
+
+| Riesgo | Probabilidad | Impacto | Mitigación |
+|--------|-------------|---------|-----------|
+| Dataset insuficiente en calidad o diversidad | Media | Alto | Ampliar cobertura de pares y timeframes; ajustar umbrales de filtrado del etiquetador |
+| Overfitting al dataset de entrenamiento | Media | Medio | Early stopping (patience=3); monitoreo de validation loss; test set separado temporalmente con embargo |
+| Modelo fine-tuned no supera al baseline | Media | Alto | Documentar análisis causal; iterar en diseño del dataset; resultado negativo es académicamente válido |
+| GPU local insuficiente para entrenamiento | Baja | Medio | Usar modelo de 7B con QLoRA 4-bit (≈8 GB VRAM); delegar a SageMaker o RunPod si necesario |
+| Tiempo insuficiente para completar todas las fases | Media | Alto | La integración LangGraph (Entregable 6) es prescindible; el núcleo son los Entregables 1–5 |
+| Cambio de régimen de mercado durante evaluación | Media | Bajo | El dataset cubre 18 meses con distintos regímenes; el análisis por régimen (ADX alto vs. bajo) está en el plan |
+| Leakage de datos por split incorrecto | Baja (ya corregido) | Alto | `_temporal_split` ahora ordena globalmente por timestamp + embargo; el split positional fue corregido en Jun 2026 |
+
+---
+
+## 12. Fuera de Alcance
+
+| Elemento | Justificación |
+|----------|--------------|
+| Desarrollo de nuevos indicadores técnicos | Los 9 indicadores existentes (RSI, ADX, MACD, ATR, EMA, BB, Volume Ratio, heatmap, structure) son suficientes para el alcance |
+| Desarrollo adicional de frontend | El dashboard existente cumple su función como plataforma de evaluación y demostración |
+| Reentrenamiento continuo del modelo | Se contempla como trabajo futuro; el alcance actual es un modelo estático evaluado en backtest |
+| Trading con capital real | La evaluación es exclusivamente con datos históricos (backtest simulado); no se requiere inversión de capital |
+| Nuevos mercados (acciones, forex) | El dominio está acotado a criptomonedas en Binance |
+
+---
+
+## 13. Trabajo Futuro
+
+- Despliegue en infraestructura cloud (AWS Lightsail) con CI/CD automatizado
+- Reentrenamiento periódico del modelo con datos recientes del mercado (detección de drift)
+- Expansión a mercados adicionales (acciones, forex, commodities)
+- Implementación de sistema de monitoreo de drift del modelo con alertas automáticas
+- Validación en paper trading sobre Binance Testnet antes de capital real
+- Trading con capital real utilizando el modelo fine-tuned validado en entorno controlado
+- Incorporar versiones más recientes de Qwen y Llama a medida que se estabilicen
+- Data augmentation y curriculum learning para mejorar el fine-tuning
+- RLHF con señales de P&L real como reward signal
+
+---
+
+## 14. Extensión: Ensemble LSTM + LLM en LangGraph
+
+> Entregable opcional (No. 15 del §9.2). Aplicable si el QLoRA fine-tuned produce resultados competitivos y hay tiempo disponible.
+
+### Motivación
+
+Los modelos ML (LSTM: ~81–85% accuracy en test) son superiores en predicción pura de dirección, pero no generan razonamiento ni niveles de TP/SL. El LLM fine-tuned genera razonamiento explicable y niveles de precio, pero puede tener menor accuracy pura. Un ensemble combina lo mejor de ambos enfoques.
+
+### Arquitectura propuesta
+
+```mermaid
+flowchart TD
+    IND["Indicadores multi-TF\n(TA-Lib)"]
+
+    subgraph AGENT["LangGraph Agent (4 nodos)"]
+        GEN["generator_node()\nLLM fine-tuned\n→ JSON: bias, entry, tp, sl, reasoning"]
+        LSTM_NODE["lstm_node()\nLSTM pre-entrenado\n→ probabilidad LONG/SHORT"]
+        ENSEMBLE["ensemble_evaluator_node()\nDeterministico\nCombina LLM bias + LSTM prob\n→ confidence final"]
+        OPT["optimizer_node()\nLLM condicional\nAjusta si hay conflicto"]
+
+        GEN --> ENSEMBLE
+        LSTM_NODE --> ENSEMBLE
+        ENSEMBLE -- "coinciden (alta conf)" --> DONE["Setup final"]
+        ENSEMBLE -- "discrepan" --> OPT --> DONE
+    end
+
+    IND --> GEN
+    IND --> LSTM_NODE
+```
+
+### Lógica del `ensemble_evaluator_node`
+
+```python
+def ensemble_evaluator_node(state: TradeState) -> TradeState:
+    llm_bias = state["original"]["bias"]         # "LONG" or "SHORT"
+    lstm_prob = state["lstm_prediction"]           # e.g. {"LONG": 0.85, "SHORT": 0.15}
+    lstm_bias = "LONG" if lstm_prob["LONG"] > 0.5 else "SHORT"
+
+    if llm_bias == lstm_bias:
+        # Both agree → high confidence
+        combined_confidence = (state["original"]["confidence"] + lstm_prob[lstm_bias] * 10) / 2
+        state["needs_optimization"] = False
+    else:
+        # Disagree → low confidence, trigger optimizer or skip trade
+        state["issues"].append(
+            f"LLM says {llm_bias} but LSTM says {lstm_bias} (prob={lstm_prob[lstm_bias]:.2f})"
+        )
+        state["needs_optimization"] = True
+        combined_confidence = 3
+
+    state["evaluation"]["combined_confidence"] = combined_confidence
+    return state
+```
+
+### Métricas adicionales a reportar
+
+| Métrica | Qué mide |
+|---------|----------|
+| Accuracy del ensemble vs LLM solo | ¿Gana precisión al combinar? |
+| Accuracy del ensemble vs LSTM solo | ¿Gana explicabilidad sin perder precisión? |
+| Tasa de conflictos (LLM ≠ LSTM) | ¿Qué tan seguido discrepan los dos modelos? |
+| Accuracy cuando coinciden | ¿La coincidencia predice éxito? |
+| Accuracy cuando discrepan | ¿El conflicto predice fracaso? |
