@@ -32,6 +32,7 @@ RANK="8"
 ALPHA="16"
 EPOCHS="1"
 SKIP_CHECKS=false
+FULL_MAX_STEPS=""        # caps the FULL run only (smoke test always runs 3 steps)
 EXTRA_ARGS=()
 
 while [[ $# -gt 0 ]]; do
@@ -41,10 +42,15 @@ while [[ $# -gt 0 ]]; do
         --rank)         RANK="$2"; shift 2 ;;
         --alpha)        ALPHA="$2"; shift 2 ;;
         --epochs)       EPOCHS="$2"; shift 2 ;;
+        --max-steps)    FULL_MAX_STEPS="$2"; shift 2 ;;
         --skip-checks)  SKIP_CHECKS=true; shift ;;
         *)              EXTRA_ARGS+=("$1"); shift ;;
     esac
 done
+
+# Cap the full run without polluting the smoke test (which sets --max-steps 3).
+FULL_ARGS=()
+[ -n "$FULL_MAX_STEPS" ] && FULL_ARGS+=(--max-steps "$FULL_MAX_STEPS")
 
 LOG_DIR="optimization/qlora/logs"
 mkdir -p "$LOG_DIR" optimization/qlora/results
@@ -261,7 +267,7 @@ python3 optimization/qlora/train_qlora.py \
   --eval-batch-size "$EVAL_BATCH" \
   --diagnostic-samples 200 \
   --tag "$TAG" --output-dir "backtest/data/models/$TAG" \
-  "${EXTRA_ARGS[@]}" \
+  "${FULL_ARGS[@]}" "${EXTRA_ARGS[@]}" \
   2>&1 | tee "$LOG_DIR/run_${TAG}.log"
 
 echo ""

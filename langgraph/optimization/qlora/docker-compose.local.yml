@@ -51,23 +51,38 @@ services:
       stack: 67108864
     volumes:
       - ../../:/workspace
+      # HF cache on a fast container-managed volume, NOT the Windows bind mount.
+      # The image bakes HF_HOME=/workspace/.cache/huggingface, which makes the 5GB
+      # model download to the slow 9p/virtiofs mount and hf_transfer/xet stalls.
+      # Persisting it here also avoids re-downloading across relaunches.
+      - hf-cache:/home/unsloth/.cache
     working_dir: /workspace
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
       - OMP_NUM_THREADS=1
+      # Override the image's HF_HOME (=/workspace/.cache/huggingface → Windows FS).
+      - HF_HOME=/home/unsloth/.cache/huggingface
+      # xet/hf_transfer stalls writing large blobs; use the plain robust downloader.
+      - HF_HUB_ENABLE_HF_TRANSFER=0
       - QLORA_FLAGS=${QLORA_FLAGS:-}
-    command: >
-      bash -c "
+    # The unsloth:latest image ships an ENTRYPOINT (entrypoint.sh) that launches
+    # Jupyter/Studio via supervisord and ignores `command`. Override it with bash
+    # so our training command actually runs.
+    entrypoint: ["bash", "-c"]
+    command:
+      - |
         echo '=== GPU Check ===' &&
         nvidia-smi &&
         echo '' &&
-        python3 -c \"import torch; print(f'PyTorch {torch.__version__}, CUDA {torch.version.cuda}, GPU: {torch.cuda.get_device_name(0)}')\" &&
-        python3 -c \"import flash_attn; print(f'FlashAttention-2: {flash_attn.__version__}')\" 2>/dev/null || echo 'FA2: not available' &&
+        python3 -c "import torch; print(f'PyTorch {torch.__version__}, CUDA {torch.version.cuda}, GPU: {torch.cuda.get_device_name(0)}')" &&
+        python3 -c "import flash_attn; print(f'FlashAttention-2: {flash_attn.__version__}')" 2>/dev/null || echo 'FA2: not available' &&
         echo '' &&
         echo '=== Installing project deps ===' &&
         pip install -q scikit-learn xgboost httpx tqdm pyyaml matplotlib 2>/dev/null &&
         echo '' &&
         echo '=== Starting training ===' &&
         bash optimization/qlora/run_docker_local.sh $${QLORA_FLAGS}
-      "
+
+volumes:
+  hf-cache:
