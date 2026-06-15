@@ -220,7 +220,8 @@ class TestTemporalSplit:
         samples = self._grouped_dataset()
         train, val, test = _temporal_split(samples)
 
-        keys = lambda part: {(s["symbol"], s["timestamp"]) for s in part}
+        def keys(part):
+            return {(s["symbol"], s["timestamp"]) for s in part}
         ktrain, kval, ktest = keys(train), keys(val), keys(test)
         assert ktrain.isdisjoint(kval)
         assert ktrain.isdisjoint(ktest)

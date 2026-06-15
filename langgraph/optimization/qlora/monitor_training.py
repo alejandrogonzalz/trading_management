@@ -167,7 +167,7 @@ def _build_warnings(rows, meta, num_epochs, now_utc):
     # 3. Loss stagnation
     if len(rows) >= LOSS_STAGNATION_ROUNDS + 1:
         recent_losses = [r["loss"] for r in rows[-LOSS_STAGNATION_ROUNDS - 1:]]
-        numeric = [float(l) for l in recent_losses if l != "—"]
+        numeric = [float(loss) for loss in recent_losses if loss != "—"]
         if len(numeric) == LOSS_STAGNATION_ROUNDS + 1 and numeric[-1] >= numeric[0] - 0.001:
             warnings.append(
                 f"LOSS   No improvement in last {LOSS_STAGNATION_ROUNDS} checkpoints "
@@ -210,7 +210,6 @@ def print_table(rows, meta, log_path: Path, num_epochs: int, tz_offset: int):
         secs = (ep_step - last["step"]) * last["speed"]
         epoch_etas.append(last["ts"] + timedelta(seconds=secs) + TZ)
 
-    remaining_train = epoch_etas[-1] - now_local
     remaining_full  = epoch_etas[-1] + timedelta(minutes=GGUF_MINUTES) - now_local
 
     # Warnings
@@ -262,7 +261,7 @@ def print_table(rows, meta, log_path: Path, num_epochs: int, tz_offset: int):
 
     if warnings:
         print(f"\n  {'─' * (len(sep) - 2)}")
-        print(f"  ⚠  WARNINGS")
+        print("  ⚠  WARNINGS")
         print(f"  {'─' * (len(sep) - 2)}")
         for w in warnings:
             kind, msg = w.split("  ", 1)

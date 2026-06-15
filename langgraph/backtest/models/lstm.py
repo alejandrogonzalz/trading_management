@@ -146,7 +146,7 @@ class LSTMPredictor:
         last_train_loss = float("inf")
 
         self.model.train()
-        for epoch in range(max_epochs):
+        for _epoch in range(max_epochs):
             perm = torch.randperm(len(X_train_seq))
             epoch_loss = 0.0
             n_batches = 0

@@ -608,7 +608,6 @@ class BlendingSearcher(BaseSearcher, _DataMixin):
         lstm_model.train_from_sequences(X_base_seqs, y_base_t, X_blend_seqs, y_blend_t)
 
         X_all_norm = (X_all - data["scaler"].mean_) / data["scaler"].scale_
-        X_tv_norm = X_tv_s
         lstm_model.model.eval()
 
         # Blend set meta-features
