@@ -138,8 +138,8 @@ python "$SCRIPT_DIR/train_qlora.py" \
 
 echo ""
 echo "  DONE — $(date)"
-echo "  Result: optimization/qlora/results/qlora_${TAG}.json (+ canonical qlora_optimization.json)"
-echo "  Loss curve: optimization/qlora/results/${TAG}_loss_curve.{json,png}"
+echo "  Result: optimization/qlora/results/$TAG/result.json (canonical: qlora_optimization.json)"
+echo "  Loss curve: optimization/qlora/results/$TAG/loss_curve.{json,png}"
 echo ""
 echo "============================================================"
 echo "  Saving results to git + DVC..."
@@ -158,10 +158,10 @@ echo "  [dvc] model weights pushed to s3://trading-management-dvc/"
 git add \
   "langgraph/backtest/data/models/$TAG.dvc" \
   "langgraph/backtest/data/models/.gitignore" \
-  "langgraph/optimization/qlora/results/qlora_${TAG}.json" \
+  "langgraph/optimization/qlora/results/$TAG/result.json" \
+  "langgraph/optimization/qlora/results/$TAG/loss_curve.json" \
+  "langgraph/optimization/qlora/results/$TAG/loss_curve.png" \
   "langgraph/optimization/qlora/results/qlora_optimization.json" \
-  "langgraph/optimization/qlora/results/${TAG}_loss_curve.json" \
-  "langgraph/optimization/qlora/results/${TAG}_loss_curve.png" \
   2>/dev/null || true
 
 git commit -m "feat(qlora): add $TAG results and DVC model pointer
@@ -169,7 +169,7 @@ git commit -m "feat(qlora): add $TAG results and DVC model pointer
 $(python3 -c "
 import json, sys
 try:
-    r = json.load(open('langgraph/optimization/qlora/results/qlora_${TAG}.json'))
+    r = json.load(open('langgraph/optimization/qlora/results/$TAG/result.json'))
     m = r.get('metrics', r)
     print(f'  Test acc: {m.get(\"direction_accuracy\", m.get(\"test_accuracy\", \"?\")):.4f}')
     print(f'  Win rate: {m.get(\"win_rate\", \"?\"):.4f}  Profit factor: {m.get(\"profit_factor\", \"?\"):.3f}')

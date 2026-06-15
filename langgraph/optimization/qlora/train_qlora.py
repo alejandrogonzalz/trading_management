@@ -683,13 +683,14 @@ class QLoRATrainer:
             return
         tag = self.cfg["tag"]
         history = self.trainer.state.log_history
-        RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-        json_path = RESULTS_DIR / f"{tag}_loss_curve.json"
+        run_dir = RESULTS_DIR / tag
+        run_dir.mkdir(parents=True, exist_ok=True)
+        json_path = run_dir / "loss_curve.json"
         with open(json_path, "w") as f:
             json.dump(history, f, indent=2)
         log.info(f"  Loss curve data: {json_path}")
         try:
-            save_loss_curve_plot(history, RESULTS_DIR / f"{tag}_loss_curve.png", title=f"{tag} — train vs eval loss")
+            save_loss_curve_plot(history, run_dir / "loss_curve.png", title=f"{tag} — train vs eval loss")
         except Exception as e:  # plotting is best-effort; never fail the run over a chart
             log.warning(f"  Loss curve plot failed (non-fatal): {e}")
 
@@ -800,17 +801,17 @@ class QLoRATrainer:
         }
 
         # Save result JSON (before GGUF — ensures results survive even if GGUF fails).
-        # Write a per-tag file (so single-model runs don't clobber each other) plus a
-        # tag-scoped canonical qlora_optimization_<tag>.json. Tag-scoping the canonical
-        # name keeps parallel runs on different machines/branches from colliding on the
-        # same path at merge time; pass the explicit file to `compare-stats --a`.
-        RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-        out_path = RESULTS_DIR / f"qlora_{tag}.json"
-        canonical = RESULTS_DIR / f"qlora_optimization_{tag}.json"
+        # Per-run folder: results/<tag>/result.json + loss_curve.{json,png}.
+        # Also writes results/qlora_optimization.json as the "latest" canonical so
+        # `compare-stats --a optimization/qlora/results/qlora_optimization.json` keeps working.
+        run_dir = RESULTS_DIR / tag
+        run_dir.mkdir(parents=True, exist_ok=True)
+        out_path = run_dir / "result.json"
+        canonical = RESULTS_DIR / "qlora_optimization.json"
         for path in (out_path, canonical):
             with open(path, "w") as f:
                 json.dump(result, f, indent=2)
-        log.info(f"\nResult saved: {out_path} (canonical copy: {canonical})")
+        log.info(f"\nResult saved: {out_path} (canonical: {canonical})")
 
         # Step 6: GGUF export (optional, non-fatal; skipped with --no-gguf)
         if not self.cfg.get("skip_gguf", False):

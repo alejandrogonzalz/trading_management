@@ -76,5 +76,5 @@ python "$SCRIPT_DIR/train_qlora.py" \
 
 echo ""
 echo "  DONE — $(date)"
-echo "  Result: optimization/qlora/results/qlora_${TAG}.json (+ canonical qlora_optimization.json)"
-echo "  Loss curve: optimization/qlora/results/${TAG}_loss_curve.{json,png}"
+echo "  Result: optimization/qlora/results/$TAG/result.json (canonical: qlora_optimization.json)"
+echo "  Loss curve: optimization/qlora/results/$TAG/loss_curve.{json,png}"

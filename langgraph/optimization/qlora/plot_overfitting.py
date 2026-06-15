@@ -155,9 +155,9 @@ def build_dashboard(result_path: Path, out_path: Path | None = None) -> Path:
     result = _load(result_path)
     tag = result.get("tag", result_path.stem)
 
-    # Loss curve lives next to the result JSON as <tag>_loss_curve.json.
+    # Loss curve lives in the same per-run folder as result.json.
     loss_history: list[dict] = []
-    loss_path = result_path.parent / f"{tag}_loss_curve.json"
+    loss_path = result_path.parent / "loss_curve.json"
     if loss_path.exists():
         loss_history = _load(loss_path)
 
