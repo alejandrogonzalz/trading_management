@@ -49,6 +49,7 @@ def cmd_prepare_dataset(args):
 
 
 def cmd_run_backtest(args):
+    split = args.split if args.split != "none" else None
     runner = LLMBacktestRunner(
         dataset_path=args.dataset,
         tag=args.tag,
@@ -56,6 +57,7 @@ def cmd_run_backtest(args):
         model=args.model,
         max_samples=args.max_samples,
         verbose=args.verbose,
+        split=split,
     )
     result = asyncio.run(runner.run())
     print_report(result)
@@ -117,6 +119,12 @@ def main():
     p.add_argument("--model", help="LLM model name")
     p.add_argument("--tag", default="backtest")
     p.add_argument("--max-samples", type=int)
+    p.add_argument(
+        "--split",
+        default="test",
+        choices=["train", "val", "test", "none"],
+        help="Dataset split to evaluate on (default: test). Use 'none' to run on the full dataset.",
+    )
     p.add_argument("--verbose", "-v", action="store_true")
 
     # compare

@@ -62,6 +62,13 @@ class LLMBacktestRunner:
 
         runner = LLMBacktestRunner(dataset_path="...", provider="groq", tag="zero-shot-groq")
         result = asyncio.run(runner.run())
+
+    ``split`` controls which portion of the dataset is evaluated:
+    - ``"test"`` (default) — strict temporal holdout (newest 15%), same samples as
+      MLBacktestRunner and QLoRA evaluation. Required for fair model comparison.
+    - ``"val"`` — middle 15% (useful for prompt tuning without touching test).
+    - ``"train"`` — oldest 70% (sanity checks only).
+    - ``None`` — entire dataset, no splitting. Only use for smoke tests.
     """
 
     def __init__(
@@ -74,6 +81,7 @@ class LLMBacktestRunner:
         candles_dir: Path | None = None,
         mode: str = "FUTURES",
         verbose: bool = False,
+        split: str | None = "test",
     ):
         self.dataset_path = dataset_path
         self.tag = tag
@@ -83,6 +91,7 @@ class LLMBacktestRunner:
         self.candles_dir = candles_dir or CANDLES_DIR
         self.mode = mode
         self.verbose = verbose
+        self.split = split
 
     async def run(self) -> dict[str, Any]:
         if self.provider:
@@ -93,7 +102,18 @@ class LLMBacktestRunner:
         from agent.llm_factory import get_llm_provider
 
         llm = get_llm_provider()
-        samples = _load_jsonl(self.dataset_path)
+        all_samples = _load_jsonl(self.dataset_path)
+
+        if self.split is not None:
+            train, val, test = _temporal_split(all_samples)
+            split_map = {"train": train, "val": val, "test": test}
+            if self.split not in split_map:
+                raise ValueError(f"split must be 'train', 'val', 'test', or None — got {self.split!r}")
+            samples = split_map[self.split]
+            print(f"  Split '{self.split}': {len(samples)}/{len(all_samples)} samples")
+        else:
+            samples = all_samples
+
         if self.max_samples:
             samples = samples[: self.max_samples]
 
