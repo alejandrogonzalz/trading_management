@@ -259,6 +259,48 @@ statistical tests, and answers to all 6 research questions.
 
 ---
 
+### Step 5b — Local Docker Training (optional, $0 cost alternative)
+
+**What:** Run `unsloth/unsloth:latest` locally on the RTX 5070 Ti via Docker Desktop +
+WSL2 GPU passthrough to get FlashAttention-2 — the same image used on RunPod.
+
+**When to use this:**
+- Cloud result is still running and you want a local sanity check in parallel
+- Cloud result was lost / corrupted and you need a recovery run
+- You want a second data point for the thesis infrastructure comparison section (local
+  GPU vs cloud GPU cost-accuracy trade-off)
+
+**Why this is faster than the current Windows native path:**
+
+| Setup | FA2 | Step time | Cost |
+|-------|-----|-----------|------|
+| Windows native (`.venv-finetuning`) | No | ~28s | $0 |
+| **Docker local (RTX 5070 Ti)** | **Yes** | **~5–12s** | **$0** |
+| RunPod A100 80GB | Yes | ~3.6s | ~$3.50/epoch |
+
+**Full guide:** `docs/LOCAL_DOCKER_TRAINING.md`
+
+**Quick start (PowerShell from `langgraph/`):**
+```powershell
+# 1. Confirm GPU is visible to Docker
+docker run --rm --gpus all nvidia/cuda:12.8.0-base-ubuntu22.04 nvidia-smi
+
+# 2. Pull the image (one-time, ~15 GB)
+docker pull docker.io/unsloth/unsloth:latest
+
+# 3. Launch training (smoke test runs first, then full 1-epoch run)
+docker run --rm `
+  --gpus all --ipc=host --ulimit memlock=-1 `
+  -v "${PWD}:/workspace" -w /workspace `
+  docker.io/unsloth/unsloth:latest `
+  bash optimization/qlora/run_docker_local.sh
+```
+
+**Expected output:** `optimization/qlora/results/qlora_docker_local.json`
+(distinct tag from the cloud run — both can coexist)
+
+---
+
 ### Step 6 — LangGraph Integration (conditional on QLoRA result)
 
 **What:** Deploy the fine-tuned model to Ollama and wire it into `generator_node()`.
@@ -402,3 +444,5 @@ conclusions.
 | `docs/QLORA_FINETUNING.md` | QLoRA pipeline status, runbook, constraints |
 | `docs/HYPERPARAMETERS.md` | Hyperparameter explanations and sensitivity |
 | `docs/PROJECT_DEFINITION.md` | Formal thesis proposal — do not modify |
+| `docs/LOCAL_DOCKER_TRAINING.md` | Full guide for Docker-based local fine-tuning (Step 5b) |
+| `optimization/qlora/run_docker_local.sh` | Script that runs inside the container (Step 5b) |
