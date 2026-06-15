@@ -6,7 +6,7 @@ from datetime import datetime
 
 import numpy as np
 
-from backtest.models.features import _load_dataset, _temporal_split, extract_features
+from backtest.models.features import _infer_timeframes, _load_dataset, _temporal_split, extract_features
 
 from .base import BaseSearcher
 
@@ -18,6 +18,9 @@ class LSTMSearcher(BaseSearcher):
 
     def search(self, cfg: dict, dataset_path: str) -> dict:
         import torch
+        # cuDNN version mismatch on RunPod unsloth image (system 9.8.0 vs PyTorch bundled 9.10.2).
+        # Disabling cuDNN falls back to native CUDA kernels — negligible impact on hidden=32 LSTMs.
+        torch.backends.cudnn.enabled = False
         import torch.nn as nn
         from tqdm import tqdm
 
@@ -25,7 +28,8 @@ class LSTMSearcher(BaseSearcher):
         train_s, val_s, _ = _temporal_split(samples, 0.70, 0.15)
         n_train, n_val = len(train_s), len(val_s)
 
-        X_all = np.array([extract_features(s["indicators"]) for s in samples], dtype=np.float32)
+        timeframes = _infer_timeframes(samples)
+        X_all = np.array([extract_features(s["indicators"], timeframes) for s in samples], dtype=np.float32)
         y_all = np.array([1 if s["label"]["bias"] == "LONG" else 0 for s in samples], dtype=np.int32)
 
         mean = X_all[:n_train].mean(axis=0)

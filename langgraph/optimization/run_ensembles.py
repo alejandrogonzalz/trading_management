@@ -43,20 +43,11 @@ from optimization.searchers.ensemble_searcher import (
 DATASET = str(Path(__file__).resolve().parent.parent / "backtest" / "data" / "labeled" / "dataset.jsonl")
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
 
-# Best params from Avance 4
+# Ensemble config — lstm_params and xgb_params are intentionally omitted here.
+# Each searcher loads best_params from optimization/results/{model}_optimization.json
+# via _load_best_params(). Only override here if you want to force specific values.
 ENSEMBLE_CONFIG = {
     "random_state": 42,
-    "lstm_params": {"hidden_size": 32, "num_layers": 3, "sequence_length": 5},
-    "xgb_params": {
-        "n_estimators": 200,
-        "max_depth": 5,
-        "learning_rate": 0.01,
-        "subsample": 0.8,
-        "colsample_bytree": 0.7,
-        "reg_alpha": 0.1,
-        "reg_lambda": 2.0,
-        "min_child_weight": 3,
-    },
     "n_bags": 5,
     "cv_splits": 5,
     "blend_fraction": 0.3,
@@ -76,10 +67,20 @@ SEARCHERS = [
 
 
 def main():
+    force = "--force" in sys.argv
+    tag = None
+    if "--tag" in sys.argv:
+        idx = sys.argv.index("--tag")
+        tag = sys.argv[idx + 1] if idx + 1 < len(sys.argv) else None
+
     log.info("=" * 60)
-    log.info("  ENSEMBLE OPTIMIZATION — Avance 5")
+    log.info("  ENSEMBLE OPTIMIZATION")
     log.info(f"  Started: {datetime.now().isoformat()}")
     log.info(f"  Dataset: {DATASET}")
+    if tag:
+        log.info(f"  Tag: {tag} (results saved as <model>_{tag}_optimization.json)")
+    if force:
+        log.info("  Mode: --force (re-running all, ignoring existing results)")
     log.info("=" * 60)
 
     all_results = []
@@ -87,9 +88,10 @@ def main():
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
     for name, searcher in SEARCHERS:
-        out_path = RESULTS_DIR / f"{name}_optimization.json"
+        filename = f"{name}_{tag}_optimization.json" if tag else f"{name}_optimization.json"
+        out_path = RESULTS_DIR / filename
 
-        if out_path.exists():
+        if out_path.exists() and not force:
             log.info(f"\n  Skipping {name} — already completed ({out_path.name})")
             with open(out_path) as f:
                 all_results.append(json.load(f))

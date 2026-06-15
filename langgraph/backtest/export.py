@@ -84,26 +84,6 @@ def build_training_example(sample: dict[str, Any], mode: Literal["SPOT", "FUTURE
     }
 
 
-def temporal_split(
-    samples: list[dict[str, Any]],
-    train_ratio: float = 0.70,
-    val_ratio: float = 0.15,
-) -> tuple[list[dict], list[dict], list[dict]]:
-    """DEPRECATED — sorts globally by timestamp before splitting.
-
-    Do NOT use for fine-tuning exports: it produces a DIFFERENT partition than
-    the ML/LLM runners (which use backtest.models.features._temporal_split with
-    no sort), which would invalidate the paired McNemar / t-test comparison.
-    export_training_data() now uses the unified _temporal_split. Kept only for
-    backward compatibility.
-    """
-    sorted_samples = sorted(samples, key=lambda s: s.get("timestamp", 0))
-    n = len(sorted_samples)
-    train_end = int(n * train_ratio)
-    val_end = int(n * (train_ratio + val_ratio))
-    return sorted_samples[:train_end], sorted_samples[train_end:val_end], sorted_samples[val_end:]
-
-
 def print_stats(samples: list[dict], split_name: str) -> None:
     if not samples:
         print(f"  {split_name}: 0 samples")
@@ -137,10 +117,11 @@ def export_training_data(
         print("No samples found in dataset.")
         return {"train": 0, "val": 0, "test": 0}
 
-    # Use the SAME split convention as the ML/LLM runners (no global sort, raw
-    # file order) so the fine-tuning train/val/test partitions are identical to
-    # those of LSTM/XGBoost. This is what makes the paired McNemar / t-test
-    # comparison across models valid.
+    # Use the SAME split function as the ML/LLM runners so the fine-tuning
+    # train/val/test partitions are identical to those of LSTM/XGBoost. That
+    # function now does a strict temporal holdout (global sort by timestamp +
+    # lookahead embargo), which is what keeps the paired McNemar / t-test
+    # comparison across models valid AND leak-free.
     train, val, test = _temporal_split(samples)
 
     out = Path(output_dir)

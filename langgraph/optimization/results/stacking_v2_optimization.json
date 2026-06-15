@@ -1,0 +1,32 @@
+{
+  "model": "stacking",
+  "ensemble_type": "heterogeneous",
+  "strategy": "stacking",
+  "best_score": 0.6485053037608486,
+  "best_params": {
+    "meta_coefs": [
+      1.1274275696422804,
+      -0.9212168191194555,
+      0.693286421851925,
+      4.403491678341687
+    ],
+    "base_learners": [
+      "XGBoost",
+      "SVM",
+      "MLP",
+      "LSTM"
+    ]
+  },
+  "val_metrics": {
+    "accuracy": 0.6485053037608486,
+    "f1_macro": 0.6460853375607983,
+    "auc_roc": 0.7083538852418966
+  },
+  "test_metrics": {
+    "accuracy": 0.6160237388724036,
+    "f1_macro": 0.6142205374074813,
+    "auc_roc": 0.6879356331166544
+  },
+  "elapsed_seconds": 1162.9,
+  "timestamp": "2026-06-15T08:48:22.280811"
+}

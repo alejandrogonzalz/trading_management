@@ -46,6 +46,9 @@ strong_bullish_test.json
 # LangGraph cache
 langgraph/.langgraph_api/
 
+# Unsloth compiled Triton kernel cache (generated at runtime, any dir)
+unsloth_compiled_cache/
+
 # Backtest data (generated at runtime)
 langgraph/backtest/data/candles/*.json
 langgraph/backtest/data/results/*.json

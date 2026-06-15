@@ -11,9 +11,9 @@ __pycache__/
 backtest/data/labeled/dataset.jsonl
 backtest/data/labeled/training/
 
-# Optimization outputs — generated at runtime
-optimization/results/
+# Optimization outputs — logs are runtime noise, results are thesis artifacts
 optimization/logs/
+optimization/qlora/logs/
 
 # Fine-tuning generated artifacts
 training_data/

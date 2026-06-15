@@ -22,6 +22,7 @@ from backtest.models import (
     _sorted_timeframes,
     extract_features,
 )
+from backtest.models.features import _temporal_split
 from backtest.pipeline import DataPipeline
 
 # ---------------------------------------------------------------------------
@@ -165,13 +166,130 @@ class TestExtractFeatures:
 
 
 # ---------------------------------------------------------------------------
+# ml_models — temporal split (leakage regression guard)
+# ---------------------------------------------------------------------------
+
+
+class TestTemporalSplit:
+    """Guards against regressing to a positional (per-symbol) split.
+
+    The dataset is grouped by symbol on disk, so a real temporal holdout must
+    sort globally by timestamp and purge the labeler's lookahead window across
+    the val/test boundaries.
+    """
+
+    _EMBARGO_BARS = 24
+    _BASE_TF_MIN = 60
+    _EMBARGO_MS = _EMBARGO_BARS * _BASE_TF_MIN * 60 * 1000  # 86_400_000 (1 day)
+
+    def _grouped_dataset(self, n_per_symbol: int = 100) -> list[dict]:
+        """Two symbols whose timestamps interleave in time but are grouped on disk.
+
+        Symbol A holds the even hourly steps, B the odd ones, so neither symbol
+        is contiguous in time — yet the file lists ALL of A then ALL of B. A
+        positional split would cut by symbol; only a timestamp sort recovers the
+        true temporal order.
+        """
+        samples = []
+        for sym, parity in (("AUSDT", 0), ("BUSDT", 1)):
+            for i in range(n_per_symbol):
+                ts = (2 * i + parity) * 3_600_000  # 1h grid, interleaved by parity
+                s = _make_sample("LONG" if i % 2 == 0 else "SHORT", ts=ts)
+                s["symbol"] = sym
+                samples.append(s)
+        return samples  # NOT globally sorted — grouped A-block then B-block
+
+    def test_global_temporal_order(self):
+        samples = self._grouped_dataset()
+        train, val, test = _temporal_split(samples)
+        assert train and val and test
+        assert max(s["timestamp"] for s in train) < min(s["timestamp"] for s in test)
+        assert max(s["timestamp"] for s in val) < min(s["timestamp"] for s in test)
+
+    def test_embargo_purges_train_boundary(self):
+        samples = self._grouped_dataset()
+        ordered = sorted(samples, key=lambda s: s["timestamp"])
+        n = len(ordered)
+        val_start_ts = ordered[int(n * 0.70)]["timestamp"]
+
+        train, _val, _test = _temporal_split(samples)
+        # No train sample's lookahead horizon may reach into the val window.
+        assert all(s["timestamp"] + self._EMBARGO_MS <= val_start_ts for s in train)
+
+    def test_partitions_disjoint_and_bounded(self):
+        samples = self._grouped_dataset()
+        train, val, test = _temporal_split(samples)
+
+        def keys(part):
+            return {(s["symbol"], s["timestamp"]) for s in part}
+        ktrain, kval, ktest = keys(train), keys(val), keys(test)
+        assert ktrain.isdisjoint(kval)
+        assert ktrain.isdisjoint(ktest)
+        assert kval.isdisjoint(ktest)
+        # Embargo discards some samples, so the parts sum to <= the total.
+        assert len(train) + len(val) + len(test) <= len(samples)
+
+    def test_sort_false_preserves_file_order(self):
+        samples = self._grouped_dataset()
+        train, _val, _test = _temporal_split(samples, sort=False)
+        # Without sorting, the first train sample is the first file row (symbol A).
+        assert train[0]["symbol"] == "AUSDT"
+
+
+# ---------------------------------------------------------------------------
+# heuristic baseline
+# ---------------------------------------------------------------------------
+
+
+class TestHeuristicBaseline:
+    """Guards the multi-TF heuristic used as comparison baseline in train_qlora."""
+
+    def test_bullish_majority_returns_long(self):
+        from optimization.qlora.train_qlora import QLoRATrainer
+
+        ind = {
+            "1h": {"heatmap": "BULLISH", "macd_hist": -0.1},
+            "4h": {"heatmap": "STRONG_BULLISH", "macd_hist": 0.5},
+            "1d": {"heatmap": "NEUTRAL", "macd_hist": 0.0},
+        }
+        assert QLoRATrainer._heuristic_bias(ind) == "LONG"
+
+    def test_bearish_majority_returns_short(self):
+        from optimization.qlora.train_qlora import QLoRATrainer
+
+        ind = {
+            "1h": {"heatmap": "BEARISH", "macd_hist": 0.1},
+            "4h": {"heatmap": "STRONG_BEARISH", "macd_hist": -0.5},
+            "1d": {"heatmap": "NEUTRAL", "macd_hist": 0.0},
+        }
+        assert QLoRATrainer._heuristic_bias(ind) == "SHORT"
+
+    def test_tie_falls_back_to_macd(self):
+        from optimization.qlora.train_qlora import QLoRATrainer
+
+        ind = {
+            "1h": {"heatmap": "BULLISH", "macd_hist": -0.5},
+            "4h": {"heatmap": "BEARISH", "macd_hist": 0.1},
+            "1d": {"heatmap": "NEUTRAL", "macd_hist": 0.0},
+        }
+        # Tie (1 bullish, 1 bearish) → falls back to 1h macd_hist (-0.5 < 0 → SHORT)
+        assert QLoRATrainer._heuristic_bias(ind) == "SHORT"
+
+    def test_flat_dict_treated_as_single_tf(self):
+        from optimization.qlora.train_qlora import QLoRATrainer
+
+        ind = {"heatmap": "STRONG_BEARISH", "macd_hist": 0.5}
+        assert QLoRATrainer._heuristic_bias(ind) == "SHORT"
+
+
+# ---------------------------------------------------------------------------
 # ml_models — predictors
 # ---------------------------------------------------------------------------
 
 
 class TestXGBoostPredictor:
     def test_train_and_predict(self):
-        samples = _make_dataset(120)
+        samples = _make_dataset(400)
         with tempfile.TemporaryDirectory() as td:
             ds = Path(td) / "ds.jsonl"
             _write_dataset(samples, ds)
@@ -186,7 +304,7 @@ class TestXGBoostPredictor:
             assert 0 <= pred["confidence"] <= 10
 
     def test_save_and_load(self):
-        samples = _make_dataset(120)
+        samples = _make_dataset(400)
         with tempfile.TemporaryDirectory() as td:
             ds = Path(td) / "ds.jsonl"
             _write_dataset(samples, ds)
@@ -205,7 +323,7 @@ class TestXGBoostPredictor:
 
 class TestRandomForestPredictor:
     def test_train_and_predict(self):
-        samples = _make_dataset(120)
+        samples = _make_dataset(400)
         with tempfile.TemporaryDirectory() as td:
             ds = Path(td) / "ds.jsonl"
             _write_dataset(samples, ds)
@@ -217,7 +335,7 @@ class TestRandomForestPredictor:
             assert pred["bias"] in ("LONG", "SHORT")
 
     def test_save_and_load_preserves_timeframes(self):
-        samples = _make_dataset(120, tfs=_TF_5)
+        samples = _make_dataset(400, tfs=_TF_5)
         with tempfile.TemporaryDirectory() as td:
             ds = Path(td) / "ds.jsonl"
             _write_dataset(samples, ds)

@@ -10,7 +10,8 @@ from backtest.models.features import _infer_timeframes, _load_dataset, _temporal
 class LSTMPredictor:
     """LSTM model that uses sequences of indicator vectors."""
 
-    def __init__(self, sequence_length: int = 10, hidden_size: int = 64, num_layers: int = 2):
+    def __init__(self, sequence_length: int = 10, hidden_size: int = 64, num_layers: int = 2,
+                 learning_rate: float = 0.001, dropout: float = 0.2, batch_size: int = 32):
         try:
             import torch  # noqa: F401
         except ImportError:
@@ -18,6 +19,9 @@ class LSTMPredictor:
         self.sequence_length = sequence_length
         self.hidden_size = hidden_size
         self.num_layers = num_layers
+        self.learning_rate = learning_rate
+        self.dropout = dropout
+        self.batch_size = batch_size
         self.model = None
         self.input_size: int | None = None
         self._timeframes: list[str] | None = None
@@ -37,9 +41,10 @@ class LSTMPredictor:
         import torch
         import torch.nn as nn
 
-        samples = _load_dataset(dataset_path)
-        self._timeframes = _infer_timeframes(samples)
-        train_s, val_s, _test_s = _temporal_split(samples, 0.70, val_split)
+        raw = _load_dataset(dataset_path)
+        self._timeframes = _infer_timeframes(raw)
+        samples = sorted(raw, key=lambda s: s.get("timestamp", 0))
+        train_s, val_s, _test_s = _temporal_split(samples, 0.70, val_split, sort=False)
 
         X_all = np.array([extract_features(s["indicators"], self._timeframes) for s in samples], dtype=np.float32)
         y_all = np.array([1 if s["label"]["bias"] == "LONG" else 0 for s in samples], dtype=np.int32)
@@ -56,11 +61,11 @@ class LSTMPredictor:
         X_val_seq, y_val = X_val_seq[n_train:], y_val[n_train:]
 
         self.input_size = X_all.shape[1]
-        self.model = _LSTMNet(self.input_size, self.hidden_size, self.num_layers)
+        self.model = _LSTMNet(self.input_size, self.hidden_size, self.num_layers, self.dropout)
 
-        optimizer = torch.optim.Adam(self.model.parameters(), lr=0.001)
+        optimizer = torch.optim.Adam(self.model.parameters(), lr=self.learning_rate)
         criterion = nn.CrossEntropyLoss()
-        batch_size = 32
+        batch_size = self.batch_size
 
         best_val_loss = float("inf")
         patience_counter = 0
@@ -114,6 +119,66 @@ class LSTMPredictor:
             "timeframes": self._timeframes,
             "n_features": self.input_size,
         }
+
+    def train_from_sequences(
+        self,
+        X_train_seq,
+        y_train,
+        X_val_seq,
+        y_val,
+        max_epochs: int = 50,
+        patience: int = 10,
+    ) -> dict:
+        """Train on pre-built sequence tensors (for bootstrap bagging).
+
+        Caller must set self.input_size, self._mean, self._std, self._timeframes
+        before calling.
+        """
+        import torch
+        import torch.nn as nn
+
+        self.model = _LSTMNet(self.input_size, self.hidden_size, self.num_layers, self.dropout)
+        optimizer = torch.optim.Adam(self.model.parameters(), lr=self.learning_rate)
+        criterion = nn.CrossEntropyLoss()
+        best_val = float("inf")
+        no_improve = 0
+        best_state = None
+        last_train_loss = float("inf")
+
+        self.model.train()
+        for _epoch in range(max_epochs):
+            perm = torch.randperm(len(X_train_seq))
+            epoch_loss = 0.0
+            n_batches = 0
+            for i in range(0, len(X_train_seq), self.batch_size):
+                idx = perm[i: i + self.batch_size]
+                optimizer.zero_grad()
+                out = self.model(X_train_seq[idx])
+                loss = criterion(out, y_train[idx])
+                loss.backward()
+                optimizer.step()
+                epoch_loss += loss.item()
+                n_batches += 1
+            last_train_loss = epoch_loss / max(1, n_batches)
+
+            self.model.eval()
+            with torch.no_grad():
+                val_loss = criterion(self.model(X_val_seq), y_val).item()
+            self.model.train()
+
+            if val_loss < best_val - 1e-4:
+                best_val = val_loss
+                no_improve = 0
+                best_state = {k: v.clone() for k, v in self.model.state_dict().items()}
+            else:
+                no_improve += 1
+                if no_improve >= patience:
+                    break
+
+        if best_state:
+            self.model.load_state_dict(best_state)
+        self.model.eval()
+        return {"train_loss": last_train_loss, "val_loss": best_val}
 
     def predict(self, indicators: dict) -> dict:
         import torch
@@ -174,7 +239,7 @@ class LSTMPredictor:
         self._mean = ckpt["mean"]
         self._std = ckpt["std"]
         self._timeframes = ckpt.get("timeframes")
-        self.model = _LSTMNet(self.input_size, self.hidden_size, self.num_layers)
+        self.model = _LSTMNet(self.input_size, self.hidden_size, self.num_layers, getattr(self, "dropout", 0.2))
         self.model.load_state_dict(ckpt["state_dict"])
         self.model.eval()
 
@@ -182,7 +247,7 @@ class LSTMPredictor:
 class _LSTMNet:
     """Minimal LSTM wrapper using torch.nn."""
 
-    def __new__(cls, input_size, hidden_size, num_layers):
+    def __new__(cls, input_size, hidden_size, num_layers, dropout=0.2):
         import torch.nn as nn
 
         class Net(nn.Module):
@@ -192,7 +257,7 @@ class _LSTMNet:
                     input_size=input_size,
                     hidden_size=hidden_size,
                     num_layers=num_layers,
-                    dropout=0.2 if num_layers > 1 else 0.0,
+                    dropout=dropout if num_layers > 1 else 0.0,
                     batch_first=True,
                 )
                 self.fc = nn.Linear(hidden_size, 2)

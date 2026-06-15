@@ -1,0 +1,25 @@
+{
+  "model": "soft_voting",
+  "ensemble_type": "heterogeneous",
+  "strategy": "voting",
+  "best_score": 0.7367405978784957,
+  "best_params": {
+    "weights": {
+      "lstm": 0.3191,
+      "xgboost": 0.326,
+      "svm": 0.3549
+    }
+  },
+  "val_metrics": {
+    "accuracy": 0.7367405978784957,
+    "f1_macro": 0.7340528410760558,
+    "auc_roc": 0.8152329015892792
+  },
+  "test_metrics": {
+    "accuracy": 0.6762017804154302,
+    "f1_macro": 0.6755658576154292,
+    "auc_roc": 0.7404895422129426
+  },
+  "elapsed_seconds": 528.3,
+  "timestamp": "2026-06-15T04:09:00.638443"
+}

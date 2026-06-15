@@ -1,0 +1,380 @@
+{
+  "model": "lstm",
+  "search_method": "random",
+  "best_params": {
+    "hidden_size": 128,
+    "num_layers": 2,
+    "sequence_length": 5,
+    "learning_rate": 0.0005,
+    "dropout": 0.3,
+    "batch_size": 32
+  },
+  "best_score": 0.8219623915139826,
+  "all_results": [
+    {
+      "params": {
+        "hidden_size": 128,
+        "num_layers": 2,
+        "sequence_length": 5,
+        "learning_rate": 0.0005,
+        "dropout": 0.3,
+        "batch_size": 32
+      },
+      "mean_score": 0.8219623915139826,
+      "epochs_trained": 1
+    },
+    {
+      "params": {
+        "hidden_size": 128,
+        "num_layers": 3,
+        "sequence_length": 5,
+        "learning_rate": 0.001,
+        "dropout": 0.3,
+        "batch_size": 64
+      },
+      "mean_score": 0.8197926711668274,
+      "epochs_trained": 1
+    },
+    {
+      "params": {
+        "hidden_size": 128,
+        "num_layers": 3,
+        "sequence_length": 5,
+        "learning_rate": 0.0005,
+        "dropout": 0.3,
+        "batch_size": 16
+      },
+      "mean_score": 0.812198649951784,
+      "epochs_trained": 1
+    },
+    {
+      "params": {
+        "hidden_size": 128,
+        "num_layers": 2,
+        "sequence_length": 10,
+        "learning_rate": 0.001,
+        "dropout": 0.1,
+        "batch_size": 32
+      },
+      "mean_score": 0.8090646094503375,
+      "epochs_trained": 1
+    },
+    {
+      "params": {
+        "hidden_size": 32,
+        "num_layers": 1,
+        "sequence_length": 10,
+        "learning_rate": 0.0005,
+        "dropout": 0.2,
+        "batch_size": 64
+      },
+      "mean_score": 0.8084619093539055,
+      "epochs_trained": 1
+    },
+    {
+      "params": {
+        "hidden_size": 32,
+        "num_layers": 3,
+        "sequence_length": 10,
+        "learning_rate": 0.001,
+        "dropout": 0.2,
+        "batch_size": 64
+      },
+      "mean_score": 0.8074975891996142,
+      "epochs_trained": 1
+    },
+    {
+      "params": {
+        "hidden_size": 64,
+        "num_layers": 1,
+        "sequence_length": 5,
+        "learning_rate": 0.0005,
+        "dropout": 0.3,
+        "batch_size": 32
+      },
+      "mean_score": 0.805327868852459,
+      "epochs_trained": 1
+    },
+    {
+      "params": {
+        "hidden_size": 128,
+        "num_layers": 2,
+        "sequence_length": 10,
+        "learning_rate": 0.001,
+        "dropout": 0.1,
+        "batch_size": 16
+      },
+      "mean_score": 0.8052073288331726,
+      "epochs_trained": 1
+    },
+    {
+      "params": {
+        "hidden_size": 128,
+        "num_layers": 1,
+        "sequence_length": 20,
+        "learning_rate": 0.005,
+        "dropout": 0.1,
+        "batch_size": 16
+      },
+      "mean_score": 0.8042430086788814,
+      "epochs_trained": 1
+    },
+    {
+      "params": {
+        "hidden_size": 32,
+        "num_layers": 2,
+        "sequence_length": 5,
+        "learning_rate": 0.0005,
+        "dropout": 0.3,
+        "batch_size": 64
+      },
+      "mean_score": 0.8038813886210222,
+      "epochs_trained": 1
+    },
+    {
+      "params": {
+        "hidden_size": 32,
+        "num_layers": 2,
+        "sequence_length": 5,
+        "learning_rate": 0.001,
+        "dropout": 0.2,
+        "batch_size": 64
+      },
+      "mean_score": 0.803519768563163,
+      "epochs_trained": 1
+    },
+    {
+      "params": {
+        "hidden_size": 128,
+        "num_layers": 2,
+        "sequence_length": 10,
+        "learning_rate": 0.005,
+        "dropout": 0.2,
+        "batch_size": 32
+      },
+      "mean_score": 0.8021938283510125,
+      "epochs_trained": 1
+    },
+    {
+      "params": {
+        "hidden_size": 32,
+        "num_layers": 2,
+        "sequence_length": 5,
+        "learning_rate": 0.005,
+        "dropout": 0.2,
+        "batch_size": 64
+      },
+      "mean_score": 0.8018322082931534,
+      "epochs_trained": 1
+    },
+    {
+      "params": {
+        "hidden_size": 32,
+        "num_layers": 1,
+        "sequence_length": 10,
+        "learning_rate": 0.0005,
+        "dropout": 0.1,
+        "batch_size": 16
+      },
+      "mean_score": 0.8001446480231437,
+      "epochs_trained": 1
+    },
+    {
+      "params": {
+        "hidden_size": 32,
+        "num_layers": 2,
+        "sequence_length": 10,
+        "learning_rate": 0.0005,
+        "dropout": 0.3,
+        "batch_size": 16
+      },
+      "mean_score": 0.7971311475409836,
+      "epochs_trained": 1
+    },
+    {
+      "params": {
+        "hidden_size": 64,
+        "num_layers": 3,
+        "sequence_length": 5,
+        "learning_rate": 0.005,
+        "dropout": 0.3,
+        "batch_size": 16
+      },
+      "mean_score": 0.796046287367406,
+      "epochs_trained": 1
+    },
+    {
+      "params": {
+        "hidden_size": 128,
+        "num_layers": 3,
+        "sequence_length": 10,
+        "learning_rate": 0.001,
+        "dropout": 0.3,
+        "batch_size": 64
+      },
+      "mean_score": 0.7959257473481196,
+      "epochs_trained": 1
+    },
+    {
+      "params": {
+        "hidden_size": 32,
+        "num_layers": 1,
+        "sequence_length": 5,
+        "learning_rate": 0.005,
+        "dropout": 0.3,
+        "batch_size": 32
+      },
+      "mean_score": 0.7913452266152362,
+      "epochs_trained": 1
+    },
+    {
+      "params": {
+        "hidden_size": 64,
+        "num_layers": 3,
+        "sequence_length": 10,
+        "learning_rate": 0.0005,
+        "dropout": 0.1,
+        "batch_size": 16
+      },
+      "mean_score": 0.790380906460945,
+      "epochs_trained": 1
+    },
+    {
+      "params": {
+        "hidden_size": 128,
+        "num_layers": 3,
+        "sequence_length": 20,
+        "learning_rate": 0.001,
+        "dropout": 0.3,
+        "batch_size": 32
+      },
+      "mean_score": 0.7884522661523626,
+      "epochs_trained": 1
+    },
+    {
+      "params": {
+        "hidden_size": 32,
+        "num_layers": 1,
+        "sequence_length": 10,
+        "learning_rate": 0.0005,
+        "dropout": 0.2,
+        "batch_size": 16
+      },
+      "mean_score": 0.7867647058823529,
+      "epochs_trained": 1
+    },
+    {
+      "params": {
+        "hidden_size": 64,
+        "num_layers": 1,
+        "sequence_length": 10,
+        "learning_rate": 0.001,
+        "dropout": 0.1,
+        "batch_size": 64
+      },
+      "mean_score": 0.7866441658630665,
+      "epochs_trained": 1
+    },
+    {
+      "params": {
+        "hidden_size": 64,
+        "num_layers": 1,
+        "sequence_length": 10,
+        "learning_rate": 0.001,
+        "dropout": 0.2,
+        "batch_size": 64
+      },
+      "mean_score": 0.7801350048216008,
+      "epochs_trained": 1
+    },
+    {
+      "params": {
+        "hidden_size": 32,
+        "num_layers": 3,
+        "sequence_length": 20,
+        "learning_rate": 0.001,
+        "dropout": 0.1,
+        "batch_size": 16
+      },
+      "mean_score": 0.7770009643201543,
+      "epochs_trained": 1
+    },
+    {
+      "params": {
+        "hidden_size": 32,
+        "num_layers": 3,
+        "sequence_length": 20,
+        "learning_rate": 0.0005,
+        "dropout": 0.3,
+        "batch_size": 32
+      },
+      "mean_score": 0.7766393442622951,
+      "epochs_trained": 1
+    },
+    {
+      "params": {
+        "hidden_size": 32,
+        "num_layers": 3,
+        "sequence_length": 20,
+        "learning_rate": 0.005,
+        "dropout": 0.2,
+        "batch_size": 32
+      },
+      "mean_score": 0.7741080038572806,
+      "epochs_trained": 1
+    },
+    {
+      "params": {
+        "hidden_size": 32,
+        "num_layers": 2,
+        "sequence_length": 20,
+        "learning_rate": 0.0005,
+        "dropout": 0.3,
+        "batch_size": 32
+      },
+      "mean_score": 0.7732642237222758,
+      "epochs_trained": 1
+    },
+    {
+      "params": {
+        "hidden_size": 128,
+        "num_layers": 1,
+        "sequence_length": 10,
+        "learning_rate": 0.0005,
+        "dropout": 0.2,
+        "batch_size": 32
+      },
+      "mean_score": 0.7691658630665381,
+      "epochs_trained": 1
+    },
+    {
+      "params": {
+        "hidden_size": 32,
+        "num_layers": 3,
+        "sequence_length": 20,
+        "learning_rate": 0.001,
+        "dropout": 0.2,
+        "batch_size": 16
+      },
+      "mean_score": 0.7618129218900676,
+      "epochs_trained": 1
+    },
+    {
+      "params": {
+        "hidden_size": 64,
+        "num_layers": 3,
+        "sequence_length": 20,
+        "learning_rate": 0.0005,
+        "dropout": 0.1,
+        "batch_size": 16
+      },
+      "mean_score": 0.7591610414657667,
+      "epochs_trained": 1
+    }
+  ],
+  "total_fits": 30,
+  "elapsed_seconds": 6158.0,
+  "timestamp": "2026-06-15T08:07:43.726238",
+  "dataset_size": 47522,
+  "cv_splits": 1
+}

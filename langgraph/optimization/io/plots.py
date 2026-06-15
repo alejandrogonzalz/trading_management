@@ -38,6 +38,42 @@ def save_optimization_plot(result: dict, output_path: Path):
     log.info(f"Plot saved to {out}")
 
 
+def save_loss_curve_plot(log_history: list[dict], output_path: Path, title: str | None = None):
+    """Plot train vs eval loss per step from a HF ``trainer.state.log_history``.
+
+    The overfitting tell is eval loss rising while train loss keeps falling.
+    Train-loss records carry ``loss``; eval records carry ``eval_loss`` (both with
+    ``step``). Skips cleanly if neither series is present.
+    """
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    train = [(r["step"], r["loss"]) for r in log_history if "loss" in r and "step" in r]
+    evals = [(r["step"], r["eval_loss"]) for r in log_history if "eval_loss" in r and "step" in r]
+    if not train and not evals:
+        log.info("No loss history to plot, skipping loss curve.")
+        return
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+    if train:
+        ax.plot(*zip(*train), color="#3498db", label="train_loss")
+    if evals:
+        ax.plot(*zip(*evals), color="#e74c3c", marker="o", markersize=3, label="eval_loss")
+    ax.set_xlabel("Step")
+    ax.set_ylabel("Loss")
+    ax.set_title(title or "Training vs Eval Loss")
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    plt.tight_layout()
+    out = Path(output_path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out, dpi=150)
+    plt.close(fig)
+    log.info(f"Loss curve saved to {out}")
+
+
 def save_comparison_plot(data: dict, output: Path):
     """Bar chart comparing best scores across all models, plus heatmaps for 2D grids."""
     import matplotlib

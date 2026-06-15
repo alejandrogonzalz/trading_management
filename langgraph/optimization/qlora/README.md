@@ -7,87 +7,121 @@ Fine-tunes Qwen 2.5 7B (4-bit quantized) with LoRA adapters for crypto trade-dir
 ```
 qlora/
 ├── train_qlora.py       ← Main training script (self-contained pipeline)
-├── sagemaker_setup.sh   ← One-command SageMaker environment setup
-├── run_qlora_search.sh  ← Runs all 5 configs sequentially with logging
-├── SAGEMAKER_GUIDE.md   ← Step-by-step SageMaker console walkthrough
+├── setup_unsloth_pod.sh ← RunPod setup (validates stack, installs project deps)
+├── run_cloud.sh         ← ONE cloud training run on the fixed split
+├── run_local.sh         ← ONE local training run (RTX 5070 Ti), optional
+├── run_local.ps1        ← PowerShell wrapper for Windows local training
+├── setup_ec2.sh         ← Legacy: EC2 DLAMI from-scratch setup (not the primary path)
+├── plot_overfitting.py  ← Overfitting dashboard from a result JSON
+├── RUNPOD_GUIDE.md      ← Full RunPod walkthrough (primary cloud path)
+├── LOCAL_GUIDE.md       ← Local Windows training guide (RTX 5070 Ti)
 ├── README.md            ← This file
-├── results/             ← Output JSONs from each config (gitignored weights)
-└── logs/                ← Training logs per config
+├── results/             ← Output JSONs (+ archive/ for the invalid old sweep)
+└── logs/                ← Training logs per run
 
 # Config lives with the other model configs:
-optimization/configs/qlora.yaml  ← Hyperparameter search space + recommended combos
+optimization/configs/qlora.yaml  ← Hyperparameter reference (NOT swept anymore)
 ```
 
-## Quick Start (SageMaker)
+> **No config sweep.** The thesis needs one defensible model, not five. The old
+> 3-/5-config sweep scripts were removed; their results are archived under
+> `results/archive/` and must not be cited (trained on a contaminated split with
+> partial single-symbol eval). See `docs/AUDITORIA_QLORA_LEAKAGE_OVERFITTING.md`.
+
+## Quick Start (RunPod A100 80GB — recommended)
 
 ```bash
-# On the SageMaker instance terminal:
-git clone https://github.com/alejandrogonzalz/trading_management.git
+# 1. Clone and set up (no venv needed — /opt/venv is pre-activated in the image)
+cd /workspace/work
+git clone https://github.com/luisaga215/trading_management.git
 cd trading_management/langgraph
-bash optimization/qlora/sagemaker_setup.sh
+bash optimization/qlora/setup_unsloth_pod.sh
 
-# Then:
-tmux new -s qlora
-source .venv/bin/activate
-bash optimization/qlora/run_qlora_search.sh
+# 2. Configure AWS + pull data (REQUIRED for financial metrics)
+aws configure
+dvc pull backtest/data/labeled/dataset.jsonl backtest/data/candles
+
+# 3. Smoke test (3 steps, confirms FA2 + dataset + pipeline work)
+python3 optimization/qlora/train_qlora.py \
+  --max-steps 3 --max-eval 10 --eval-batch-size 1 \
+  --diagnostic-samples 0 --batch-size 4 --tag smoke_full
+
+# 4. Full training run (~4h, ~$5 on A100 @ $1.39/hr)
+nohup bash optimization/qlora/run_cloud.sh \
+  > optimization/qlora/logs/run_cloud.log 2>&1 &
+tail -f optimization/qlora/logs/run_cloud.log
 ```
 
-See [SAGEMAKER_GUIDE.md](SAGEMAKER_GUIDE.md) for the full walkthrough.
+See [RUNPOD_GUIDE.md](RUNPOD_GUIDE.md) for the full walkthrough including monitoring
+commands, ML grid search in parallel, post-training backup, and troubleshooting.
 
 ## Quick Start (Local — Windows RTX 5070 Ti)
 
 ```powershell
 cd langgraph
-.\.venv-finetuning\Scripts\python.exe optimization\qlora\train_qlora.py --epochs 1
+.\.venv-finetuning\Scripts\python.exe optimization\qlora\train_qlora.py --epochs 1 --tag qlora_local
 ```
+
+See [LOCAL_GUIDE.md](LOCAL_GUIDE.md) for the full walkthrough.
 
 ## What the script does
 
 `train_qlora.py` runs a 5-step pipeline:
 
-1. **prepare_data()** — exports 56K labeled samples into chat-format JSONL (train/val/test, 70/15/15 temporal split)
+1. **prepare_data()** — exports 56K labeled samples into chat-format JSONL (strict temporal split + embargo, 70/15/15)
 2. **load_model()** — loads Qwen 2.5 7B in 4-bit + applies LoRA adapters (~40M trainable params, 0.6% of total)
-3. **train()** — SFT with TRL's SFTTrainer, cosine LR, checkpoints every 250 steps, keeps best by eval_loss
-4. **save_model()** — saves LoRA adapters (~80MB) + merged GGUF (Q4_K_M, ~4GB) for Ollama
-5. **evaluate()** — greedy decoding on 8,425 test samples, trade simulation, full metrics
+3. **train()** — SFT with TRL's SFTTrainer, cosine LR, checkpoints every 250 steps, **early stopping** (patience 3), keeps best by eval_loss
+4. **save_loss_curve()** — dumps `trainer.state.log_history` → `results/<tag>_loss_curve.json` + PNG (train vs eval loss)
+5. **save_model()** — saves LoRA adapters (~80MB) + merged GGUF (Q4_K_M, ~4GB) for Ollama
+6. **evaluate()** — greedy decoding on the test split (strided), trade simulation, full metrics, **plus** train/val/test accuracy + `gap` and a heuristic baseline
 
-## Hyperparameter Configs
+## Overfitting diagnostics
 
-From `qlora.yaml` — the 5 recommended combos:
+`evaluate()` emits:
+- `overfitting`: `train_acc`, `val_acc`, `test_acc`, `gap = train_acc - test_acc`
+- `baseline_metrics`: a heatmap/MACD heuristic on the same test set
+- `<tag>_loss_curve.{json,png}`: train vs eval loss per step
 
-| Config | LR | Rank | Alpha | Epochs | Rationale |
-|--------|-----|------|-------|--------|-----------|
-| 1 (default) | 2e-5 | 16 | 32 | 3 | Literature default, safe bet |
-| 2 | 5e-5 | 8 | 16 | 3 | Aggressive LR, tests if task is "easy" |
-| 3 | 1e-5 | 32 | 64 | 3 | Conservative, max capacity |
-| 4 | 1e-4 | 16 | 32 | 1 | Fast learning, single epoch |
-| 5 | 5e-5 | 16 | 32 | 3 | Mid-range LR, standard rank |
+## Recommended config
+
+A single config trained on the fixed split:
+
+| LR | Rank | Alpha | Epochs | Batch | Grad accum |
+|-----|------|-------|--------|-------|------------|
+| 2e-5 | 16 | 32 | 2 (cloud) | 8 A100+FA2 / 2 L40S | 2 / 8 |
 
 ## Output
 
 Each run produces:
-- `results/qlora_optimization.json` — full metrics + per-sample predictions for paired statistical tests
-- `backtest/data/models/qlora_qwen25_7b/` — LoRA adapters + GGUF model file
+- `results/qlora_<tag>.json` — full metrics + per-sample predictions for paired statistical tests
+- `results/qlora_optimization.json` — canonical copy (what `compare-stats` reads by default)
+- `results/<tag>_loss_curve.{json,png}` — loss history + chart
+- `backtest/data/models/<tag>/` — LoRA adapters + GGUF model file
 
 ## CLI Flags
 
 ```
---lr FLOAT         Learning rate (default: 2e-5)
---rank INT         LoRA rank (default: 16)
---alpha INT        LoRA alpha (default: 32)
---epochs INT       Training epochs (default: 3)
---batch-size INT   Per-device batch size (default: 1 local, use 8 on SageMaker)
---max-steps INT    Cap training steps (for smoke tests)
---max-eval INT     Cap evaluation samples (for quick testing)
---resume           Resume from latest checkpoint in output_dir
---model STR        Override base model name/path
---config PATH      Load config from YAML file
+--lr FLOAT              Learning rate (default: 2e-5)
+--rank INT              LoRA rank (default: 16)
+--alpha INT             LoRA alpha (default: 32)
+--epochs INT            Training epochs (default: 3)
+--batch-size INT        Per-device batch size (default: 1 local, 2-8 cloud)
+--grad-accum INT        Gradient accumulation steps (default: 16)
+--eval-batch-size INT   Prompts per generate() call during eval (default: 1)
+--diagnostic-samples N  Train/val subset for the overfitting gap (default 500; 0 disables)
+--tag STR               Run tag — names result/loss-curve files and the model id
+--max-steps INT         Cap training steps (for smoke tests)
+--max-eval INT          Cap evaluation samples (for smoke tests only)
+--output-dir PATH       Where adapters/checkpoints are written
+--resume                Resume from latest checkpoint in output_dir
+--model STR             Override base model name/path
+--config PATH           Load config from YAML file
 ```
 
 ## Timing
 
-| Environment | Per epoch | 3 epochs | Cost |
+| Environment | Per epoch | 2 epochs | Cost |
 |-------------|-----------|----------|------|
-| Local (RTX 5070 Ti 16GB) | ~15-19h | ~2 days | "free" |
-| SageMaker ml.g6e.xlarge (L40S 48GB) | ~1-2h | ~3-6h | ~$6-12 |
-| Full search (5 configs × 3 epochs) | — | ~15-30h | ~$30-60 |
+| RunPod A100 80GB (FA2, batch=8) | ~1.5–2h | **~3–3.5h** | **~$5** |
+| RunPod L40S 48GB (FA2, batch=4) | ~3–4h | ~6–7h | ~$6 |
+| Local RTX 5070 Ti (Triton, batch=1) | ~15–19h | N/A (1 epoch only) | $0 |

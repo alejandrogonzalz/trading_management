@@ -1,0 +1,22 @@
+{
+  "model": "adaboost",
+  "ensemble_type": "homogeneous",
+  "strategy": "boosting",
+  "best_score": 0.6405808080808081,
+  "best_params": {
+    "learning_rate": 0.5,
+    "n_estimators": 100
+  },
+  "val_metrics": {
+    "accuracy": 0.6459739633558341,
+    "f1_macro": 0.6393416731412277,
+    "auc_roc": 0.715239207205178
+  },
+  "test_metrics": {
+    "accuracy": 0.6009495548961424,
+    "f1_macro": 0.6000434849993415,
+    "auc_roc": 0.6740640400334739
+  },
+  "elapsed_seconds": 125.2,
+  "timestamp": "2026-06-15T03:34:41.067876"
+}

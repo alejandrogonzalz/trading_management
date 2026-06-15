@@ -32,11 +32,12 @@ LANGGRAPH_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(LANGGRAPH_ROOT))
 
 from agent.prompts import build_system_prompt, build_user_prompt
-from backtest.evaluation.metrics import compute_all_metrics
+from backtest.evaluation.metrics import compute_all_metrics, direction_accuracy
 from backtest.evaluation.runner import CANDLES_DIR, _load_candles_map
 from backtest.evaluation.simulate import _parse_prediction, simulate_trade
 from backtest.export import export_training_data
 from backtest.models.features import _load_dataset, _temporal_split
+from optimization.io.plots import save_loss_curve_plot
 
 logging.basicConfig(
     level=logging.INFO,
@@ -44,6 +45,10 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 log = logging.getLogger(__name__)
+
+# Suppress the noisy "max_new_tokens vs max_length" warning that fires on every
+# generate() call (one per eval sample — thousands of lines of useless spam).
+logging.getLogger("transformers.generation.configuration_utils").setLevel(logging.ERROR)
 
 DATASET_PATH = str(LANGGRAPH_ROOT / "backtest" / "data" / "labeled" / "dataset.jsonl")
 TRAINING_DATA_DIR = LANGGRAPH_ROOT / "training_data"
@@ -80,7 +85,20 @@ class QLoRATrainer:
         "mode": "FUTURES",
         "max_steps": None,  # cap optimizer steps (smoke tests); None = full epochs
         "max_eval_samples": None,
+        # Per-batch size for evaluation generation. 1 = the original exact
+        # per-sample greedy path. >1 batches prompts through a single padded
+        # generate() call — the throughput lever that turns an hours-long serial
+        # test eval into minutes. Safe on >=48GB GPUs at 16; try 32 on 80GB.
+        # Independent of the training batch_size (that's VRAM-bound on activations
+        # + gradients; eval has no gradients so it can go much wider).
+        "eval_batch_size": 1,
+        # Subset size used to measure train/val direction accuracy for the
+        # overfitting gap. The full test split is always evaluated; train/val are
+        # capped because generation is expensive and a few hundred samples are
+        # enough to estimate the gap. Set to 0 to skip the gap diagnostics.
+        "diagnostic_samples": 500,
         "resume": False,  # resume from latest checkpoint-N in output_dir if present
+        "tag": "qlora_qwen25_7b",  # names result/loss-curve files and the model id
         "output_dir": str(MODELS_DIR / "qlora_qwen25_7b"),
     }
 
@@ -200,6 +218,7 @@ class QLoRATrainer:
     def train(self) -> dict[str, Any]:
         """Run SFT training with early stopping based on validation loss."""
         import trl
+        from transformers import EarlyStoppingCallback
         from trl import SFTTrainer
 
         log.info("Loading datasets...")
@@ -261,6 +280,7 @@ class QLoRATrainer:
                 train_dataset=train_dataset,
                 eval_dataset=val_dataset,
                 args=sft_config,
+                callbacks=[EarlyStoppingCallback(early_stopping_patience=3)],
             )
         else:
             # TRL < 0.12: legacy API with TrainingArguments + params in SFTTrainer
@@ -299,6 +319,7 @@ class QLoRATrainer:
                 dataset_text_field="text",
                 max_seq_length=self.cfg["max_seq_length"],
                 packing=False,
+                callbacks=[EarlyStoppingCallback(early_stopping_patience=3)],
             )
 
         log.info("Starting training...")
@@ -343,113 +364,305 @@ class QLoRATrainer:
             log.warning(f"  GGUF export failed (non-fatal): {e}")
             log.warning("  Adapters are saved — convert to GGUF manually later if needed.")
 
-    def evaluate(self) -> dict[str, Any]:
-        """Evaluate the fine-tuned model on the test split.
+    def _predict_split(
+        self,
+        samples: list[dict[str, Any]],
+        candles_map: dict,
+        ts_idx_map: dict,
+        system_prompt: str,
+        simulate: bool = True,
+        label: str = "test",
+    ) -> dict[str, Any]:
+        """Generate one prediction per sample — the per-sample backtest core.
 
-        Mirrors LLMBacktestRunner exactly so the result is comparable to the
-        other models: same temporal test split, same prompts, full prediction
-        parsing (bias + entry/tp/sl), trade simulation against future candles,
-        and the same metric set (direction accuracy, win rate, profit factor,
-        Sharpe, max drawdown).
-
-        Critically, it emits one prediction per test sample (a fallback on
-        parse failure rather than skipping) and stores ``sample_keys`` so the
-        paired McNemar / t-test can align this model against the others.
+        Shared by the full TEST backtest and the capped TRAIN/VAL accuracy
+        probes. Emits exactly one prediction per sample (parse failures fall back
+        to a bias-only prediction rather than being dropped) plus ``sample_keys``
+        for paired stats. Trade simulation against future candles runs only when
+        ``simulate=True`` (TEST); the gap probes need direction accuracy only.
         """
-        import torch
-        from unsloth import FastLanguageModel
-
-        log.info("Evaluating on test set...")
-        FastLanguageModel.for_inference(self.model)
-
-        # Use the SAME labeled dataset + temporal split convention as the ML/LLM
-        # runners (no sort) so the test set — and therefore the paired stats —
-        # are aligned with LSTM/XGBoost/zero-shot results.
-        all_samples = _load_dataset(DATASET_PATH)
-        _train, _val, test = _temporal_split(all_samples)
-
-        max_samples = self.cfg.get("max_eval_samples")
-        if max_samples is not None and max_samples < len(test):
-            if max_samples == 0:
-                log.info("  --max-eval 0: skipping evaluation")
-                return {"accuracy": 0, "metrics": {}, "total_evaluated": 0, "errors": 0,
-                        "predictions": [], "actuals": [], "trade_results": [], "sample_keys": []}
-            test = test[:max_samples]
-            log.info(f"  Evaluating on first {max_samples} test samples")
-        log.info(f"  Test samples: {len(test)}")
-
-        candles_map, ts_idx_map = _load_candles_map(CANDLES_DIR)
-        system_prompt = build_system_prompt(self.cfg["mode"])
-
         predictions: list[dict[str, Any]] = []
         actuals: list[dict[str, Any]] = []
         trade_results: list[dict[str, Any]] = []
         sample_keys: list[str] = []
         parse_errors = 0
 
-        for i, sample in enumerate(test):
-            if (i + 1) % 100 == 0:
-                log.info(f"  Progress: {i + 1}/{len(test)} ({parse_errors} parse errors)")
+        total = len(samples)
+        batch_size = max(1, int(self.cfg.get("eval_batch_size", 1) or 1))
 
+        # Pre-build the chat-templated prompt for every sample (strings only, so
+        # this is cheap) up front, so generation can run in batches. Normalize a
+        # single-TF indicator dict to the {"1h": {...}} shape the prompt builder
+        # expects — same guard the original per-sample loop applied.
+        prompts: list[str] = []
+        for sample in samples:
             symbol = sample.get("symbol", "BTCUSDT")
-            label = sample["label"]
             indicators = sample["indicators"]
             if indicators and not isinstance(next(iter(indicators.values())), dict):
                 indicators = {"1h": indicators}
-
             user_prompt = build_user_prompt(symbol, indicators)
-            input_text = self.tokenizer.apply_chat_template(
-                [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
-                tokenize=False,
-                add_generation_prompt=True,
+            prompts.append(
+                self.tokenizer.apply_chat_template(
+                    [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
+                    tokenize=False,
+                    add_generation_prompt=True,
+                )
             )
-            inputs = self.tokenizer(input_text, return_tensors="pt").to(self.model.device)
 
+        # Batched generation is the throughput lever. A serial greedy decode is
+        # latency-bound (~5-17s/sample depending on GPU), so the full test set can
+        # take many hours one-at-a-time. Decoding `batch_size` prompts in one
+        # padded generate() call is near-free until compute-bound, cutting eval to
+        # minutes. batch_size=1 reproduces the original exact per-sample path. If a
+        # batched generate ever fails (e.g. an Unsloth fast-path quirk on padded
+        # input), we fall back to the proven serial path for THAT batch only, so
+        # results are never wrong or dropped — only slower.
+        n_batches = (total + batch_size - 1) // batch_size
+        log_every = 1 if n_batches <= 20 else min(50, max(1, n_batches // 20))
+        start_t = time.time()
+        log.info(
+            f"  [{label}] generating predictions for {total} samples "
+            f"(batch_size={batch_size}, {n_batches} batches)"
+        )
+
+        for b in range(n_batches):
+            b_start = b * batch_size
+            b_end = min(b_start + batch_size, total)
+            batch_samples = samples[b_start:b_end]
+            batch_prompts = prompts[b_start:b_end]
+
+            if batch_size == 1:
+                generated_texts = [self._generate_single(batch_prompts[0])]
+            else:
+                try:
+                    generated_texts = self._generate_batch(batch_prompts)
+                except Exception as exc:  # noqa: BLE001 — degrade gracefully, never drop samples
+                    log.warning(
+                        f"  [{label}] batched generate failed ({exc}); "
+                        f"falling back to per-sample for batch {b + 1}/{n_batches}"
+                    )
+                    generated_texts = [self._generate_single(p) for p in batch_prompts]
+
+            for sample, generated in zip(batch_samples, generated_texts):
+                symbol = sample.get("symbol", "BTCUSDT")
+                label_obj = sample["label"]
+
+                # Full prediction parse (bias + entry/tp/sl). On failure, fall back
+                # to a bias-only prediction so the sample still counts toward the
+                # paired comparison (its trade simulates as ERROR, pnl 0).
+                prediction = _parse_prediction(generated)
+                if prediction is None:
+                    parse_errors += 1
+                    bias_kw = self._parse_bias(generated)
+                    prediction = {"bias": bias_kw or "LONG", "confidence": 0}
+                prediction.setdefault("confidence", 5)
+
+                predictions.append(prediction)
+                actuals.append(label_obj)
+                sample_keys.append(f"{symbol}@{sample['timestamp']}")
+
+                if simulate:
+                    candle_idx = ts_idx_map.get(symbol, {}).get(sample["timestamp"])
+                    if candle_idx is not None and candle_idx + 1 < len(candles_map.get(symbol, [])):
+                        future = candles_map[symbol][candle_idx + 1 : candle_idx + 25]
+                        trade_results.append(simulate_trade(prediction, future))
+                    else:
+                        trade_results.append({"outcome": "ERROR", "pnl_pct": 0, "hold_bars": 0})
+
+            if (b + 1) % log_every == 0 or (b + 1) == n_batches:
+                done = b_end
+                elapsed = time.time() - start_t
+                rate = done / elapsed if elapsed > 0 else 0.0
+                eta = (total - done) / rate if rate > 0 else 0.0
+                log.info(
+                    f"  [{label}] {done}/{total} "
+                    f"({parse_errors} parse errors, {rate:.2f} samples/s, ETA {eta:.0f}s)"
+                )
+
+        return {
+            "predictions": predictions,
+            "actuals": actuals,
+            "trade_results": trade_results,
+            "sample_keys": sample_keys,
+            "parse_errors": parse_errors,
+        }
+
+    def _generate_single(self, input_text: str) -> str:
+        """Greedy-decode one prompt — the original, proven per-sample path.
+
+        Used for eval_batch_size=1 and as the safe fallback when a batched
+        generate fails, so a fast-path quirk never costs correctness.
+        """
+        import torch
+
+        inputs = self.tokenizer(input_text, return_tensors="pt").to(self.model.device)
+        with torch.no_grad():
+            output_ids = self.model.generate(**inputs, max_new_tokens=256, do_sample=False)
+        return self.tokenizer.decode(
+            output_ids[0][inputs["input_ids"].shape[1] :], skip_special_tokens=True
+        )
+
+    def _generate_batch(self, input_texts: list[str]) -> list[str]:
+        """Greedy-decode a batch of prompts with LEFT padding.
+
+        Decoder-only generation requires left padding so every sequence's newly
+        generated tokens begin at the same column (the shared, padded input
+        width); right padding would splice pad tokens into the continuation and
+        corrupt the output. Greedy + left padding makes each row's result
+        identical to decoding it alone. Padding side is saved and restored so no
+        other state is disturbed.
+        """
+        import torch
+
+        tok = self.tokenizer
+        if tok.pad_token_id is None:  # Qwen2.5 ships a pad token, but be safe
+            tok.pad_token = tok.eos_token
+        prev_side = tok.padding_side
+        tok.padding_side = "left"
+        try:
+            enc = tok(input_texts, return_tensors="pt", padding=True).to(self.model.device)
             with torch.no_grad():
                 output_ids = self.model.generate(
-                    **inputs,
+                    **enc,
                     max_new_tokens=256,
-                    do_sample=False,  # greedy decoding — deterministic, reproducible
+                    do_sample=False,
+                    pad_token_id=tok.pad_token_id,
                 )
-            generated = self.tokenizer.decode(
-                output_ids[0][inputs["input_ids"].shape[1] :],
-                skip_special_tokens=True,
+            # Left padding makes the prompt width uniform across the batch, so the
+            # generated continuation for every row starts at the same column.
+            gen = output_ids[:, enc["input_ids"].shape[1] :]
+            return tok.batch_decode(gen, skip_special_tokens=True)
+        finally:
+            tok.padding_side = prev_side
+
+    @staticmethod
+    def _heuristic_bias(indicators: dict[str, Any]) -> str:
+        """Multi-TF majority-vote heuristic used as a comparison baseline.
+
+        Majority-class accuracy is only ~50%, so the meaningful contrast is
+        against an indicator heuristic: if the fine-tuned model barely beats
+        this, the task is easy; if it clearly beats it, the model learned
+        something non-trivial. Uses all available timeframes (not just 1h)
+        for a fairer ~53% baseline on the strict temporal test set.
+        """
+        if indicators and not isinstance(next(iter(indicators.values())), dict):
+            indicators = {"1h": indicators}
+        bullish = sum(1 for v in indicators.values()
+                      if isinstance(v, dict) and "BULLISH" in v.get("heatmap", ""))
+        bearish = sum(1 for v in indicators.values()
+                      if isinstance(v, dict) and "BEARISH" in v.get("heatmap", ""))
+        if bullish > bearish:
+            return "LONG"
+        if bearish > bullish:
+            return "SHORT"
+        base = indicators.get("1h", next(iter(indicators.values()), {}))
+        return "LONG" if base.get("macd_hist", 0) >= 0 else "SHORT"
+
+    def evaluate(self) -> dict[str, Any]:
+        """Backtest the fine-tuned model and measure the overfitting gap.
+
+        Runs the LLMBacktestRunner-compatible per-sample backtest on the full
+        temporal TEST split — same prompts, full prediction parse, trade
+        simulation, full metric set, and ``sample_keys`` for paired stats.
+
+        Adds the diagnostics the audit flagged as missing: direction accuracy on
+        capped TRAIN and VAL subsets → ``gap = train_acc - test_acc`` (the direct
+        memorization signal), and a heuristic indicator baseline on the same test
+        set so the headline accuracy is read against ~51% majority-class honestly.
+        """
+        import torch  # noqa: F401  (kept here so a missing GPU stack fails fast)
+        from unsloth import FastLanguageModel
+
+        log.info("Evaluating on test set...")
+        FastLanguageModel.for_inference(self.model)
+
+        # SAME labeled dataset + temporal split as the ML/LLM runners (now a
+        # strict temporal holdout) so the test set — and the paired stats — align
+        # with LSTM/XGBoost/zero-shot results.
+        all_samples = _load_dataset(DATASET_PATH)
+        train, val, test = _temporal_split(all_samples)
+
+        empty = {
+            "accuracy": 0, "metrics": {}, "total_evaluated": 0, "errors": 0,
+            "predictions": [], "actuals": [], "trade_results": [], "sample_keys": [],
+            "train_acc": None, "val_acc": None, "test_acc": 0, "gap": None,
+            "baseline_metrics": {},
+        }
+        max_samples = self.cfg.get("max_eval_samples")
+        if max_samples is not None and max_samples < len(test):
+            if max_samples == 0:
+                log.info("  --max-eval 0: skipping evaluation")
+                return empty
+            # Evenly STRIDE across the full (timestamp-sorted) test split instead
+            # of taking a prefix. test[:N] would only cover the EARLIEST slice of
+            # the holdout window — one market regime, possibly skewed by symbol —
+            # so a bigger N still wouldn't be representative. Striding picks
+            # roughly every k-th sample, spanning the whole test period and all
+            # symbols, so a sub-sample stays a faithful mini-test set. Greedy decode
+            # is deterministic, so this selection is reproducible across runs.
+            full_test_n = len(test)
+            stride = full_test_n / max_samples
+            test = [test[int(i * stride)] for i in range(max_samples)]
+            log.info(
+                f"  Evaluating on {len(test)} test samples strided across the full "
+                f"holdout (every ~{stride:.1f}th of {full_test_n})"
             )
+        log.info(f"  Test samples: {len(test)}")
 
-            # Full prediction parse (bias + entry/tp/sl). On failure, fall back
-            # to a bias-only prediction so the sample still counts toward the
-            # paired comparison (its trade simulates as ERROR, pnl 0).
-            prediction = _parse_prediction(generated)
-            if prediction is None:
-                parse_errors += 1
-                bias_kw = self._parse_bias(generated)
-                prediction = {"bias": bias_kw or "LONG", "confidence": 0}
-            prediction.setdefault("confidence", 5)
+        candles_map, ts_idx_map = _load_candles_map(CANDLES_DIR)
+        system_prompt = build_system_prompt(self.cfg["mode"])
 
-            predictions.append(prediction)
-            actuals.append(label)
-            sample_keys.append(f"{symbol}@{sample['timestamp']}")
-
-            candle_idx = ts_idx_map.get(symbol, {}).get(sample["timestamp"])
-            if candle_idx is not None and candle_idx + 1 < len(candles_map.get(symbol, [])):
-                future = candles_map[symbol][candle_idx + 1 : candle_idx + 25]
-                trade_results.append(simulate_trade(prediction, future))
-            else:
-                trade_results.append({"outcome": "ERROR", "pnl_pct": 0, "hold_bars": 0})
+        # --- Full TEST backtest (with trade simulation) ---
+        test_out = self._predict_split(test, candles_map, ts_idx_map, system_prompt, simulate=True, label="test")
+        predictions = test_out["predictions"]
+        actuals = test_out["actuals"]
+        trade_results = test_out["trade_results"]
+        sample_keys = test_out["sample_keys"]
+        parse_errors = test_out["parse_errors"]
 
         metrics = compute_all_metrics(predictions, actuals, trade_results) if predictions else {}
-        accuracy = metrics.get("direction_accuracy", 0.0)
+        test_acc = metrics.get("direction_accuracy", 0.0)
+
+        # --- Overfitting gap: TRAIN/VAL direction accuracy on capped subsets ---
+        n_diag = self.cfg.get("diagnostic_samples") or 0
+        train_acc = val_acc = gap = None
+        if n_diag > 0:
+            train_sub, val_sub = train[:n_diag], val[:n_diag]
+            log.info(f"  Gap diagnostics: train subset={len(train_sub)}, val subset={len(val_sub)}")
+            if train_sub:
+                t = self._predict_split(train_sub, candles_map, ts_idx_map, system_prompt, simulate=False, label="train")
+                train_acc = direction_accuracy(t["predictions"], t["actuals"])
+            if val_sub:
+                v = self._predict_split(val_sub, candles_map, ts_idx_map, system_prompt, simulate=False, label="val")
+                val_acc = direction_accuracy(v["predictions"], v["actuals"])
+            if train_acc is not None:
+                gap = train_acc - test_acc
+
+        # --- Heuristic indicator baseline on the SAME test set ---
+        baseline_preds = [{"bias": self._heuristic_bias(s["indicators"]), "confidence": 5} for s in test]
+        baseline_acc = direction_accuracy(baseline_preds, actuals) if actuals else 0.0
+        baseline_metrics = {"direction_accuracy": baseline_acc, "kind": "indicator_heuristic"}
+
         log.info(
-            f"  Test accuracy: {accuracy:.4f}  win_rate={metrics.get('win_rate', 0):.4f}  "
+            f"  Test accuracy: {test_acc:.4f}  win_rate={metrics.get('win_rate', 0):.4f}  "
             f"profit_factor={metrics.get('profit_factor', 0):.3f}"
         )
+        if gap is not None:
+            log.info(f"  Train acc: {train_acc:.4f}  Val acc: {val_acc:.4f}  Gap(train-test): {gap:+.4f}")
+        log.info(f"  Heuristic baseline accuracy: {baseline_acc:.4f}")
         log.info(f"  Parse errors: {parse_errors}")
 
         return {
-            "accuracy": accuracy,
+            "accuracy": test_acc,
             "metrics": metrics,
             "total_evaluated": len(predictions),
             "errors": parse_errors,
+            # Overfitting diagnostics (None when --diagnostic-samples 0).
+            "train_acc": train_acc,
+            "val_acc": val_acc,
+            "test_acc": test_acc,
+            "gap": gap,
+            "baseline_metrics": baseline_metrics,
             # Per-sample arrays — required for the paired McNemar + t-test.
             # Same schema as LLMBacktestRunner (predictions are dicts with bias).
             "predictions": predictions,
@@ -457,6 +670,29 @@ class QLoRATrainer:
             "trade_results": trade_results,
             "sample_keys": sample_keys,
         }
+
+    def save_loss_curve(self):
+        """Persist per-step train/eval loss (JSON + PNG) for overfitting analysis.
+
+        ``train_loss`` reported at the end is a run average and not directly
+        comparable to ``eval_loss``; the per-step curve shows where (if) eval loss
+        starts rising while train loss keeps falling — the visual overfitting
+        signal for the thesis.
+        """
+        if self.trainer is None:
+            return
+        tag = self.cfg["tag"]
+        history = self.trainer.state.log_history
+        run_dir = RESULTS_DIR / tag
+        run_dir.mkdir(parents=True, exist_ok=True)
+        json_path = run_dir / "loss_curve.json"
+        with open(json_path, "w") as f:
+            json.dump(history, f, indent=2)
+        log.info(f"  Loss curve data: {json_path}")
+        try:
+            save_loss_curve_plot(history, run_dir / "loss_curve.png", title=f"{tag} — train vs eval loss")
+        except Exception as e:  # plotting is best-effort; never fail the run over a chart
+            log.warning(f"  Loss curve plot failed (non-fatal): {e}")
 
     def _parse_bias(self, text: str) -> str | None:
         """Extract bias (LONG/SHORT) from model output."""
@@ -503,6 +739,9 @@ class QLoRATrainer:
         # Step 3: Train
         train_info = self.train()
 
+        # Step 3b: Persist the loss curve (JSON + PNG) before anything can fail
+        self.save_loss_curve()
+
         # Step 4: Save LoRA adapters
         self.save_model()
 
@@ -515,9 +754,10 @@ class QLoRATrainer:
         # trade_results/sample_keys) live at the TOP level — the same schema as
         # LLMBacktestRunner — so stats_tests.compare() and analyze_results can
         # read them directly for the paired McNemar / t-test.
+        tag = self.cfg["tag"]
         result = {
-            "model": "qlora_qwen25_7b",
-            "tag": "qlora_qwen25_7b",
+            "model": tag,
+            "tag": tag,
             "ensemble_type": "single",
             "strategy": "fine_tuning",
             "best_score": test_metrics["accuracy"],
@@ -541,6 +781,14 @@ class QLoRATrainer:
                 "errors": test_metrics["errors"],
                 **test_metrics["metrics"],
             },
+            # Overfitting diagnostics (Apéndice A): train/val/test accuracy + gap.
+            "overfitting": {
+                "train_acc": test_metrics["train_acc"],
+                "val_acc": test_metrics["val_acc"],
+                "test_acc": test_metrics["test_acc"],
+                "gap": test_metrics["gap"],
+            },
+            "baseline_metrics": test_metrics["baseline_metrics"],
             "metrics": test_metrics["metrics"],
             "predictions": test_metrics["predictions"],
             "actuals": test_metrics["actuals"],
@@ -552,15 +800,22 @@ class QLoRATrainer:
             "timestamp": datetime.now().isoformat(),
         }
 
-        # Save result JSON (before GGUF — ensures results survive even if GGUF fails)
-        RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-        out_path = RESULTS_DIR / "qlora_optimization.json"
-        with open(out_path, "w") as f:
-            json.dump(result, f, indent=2)
-        log.info(f"\nResult saved: {out_path}")
+        # Save result JSON (before GGUF — ensures results survive even if GGUF fails).
+        # Per-run folder: results/<tag>/result.json + loss_curve.{json,png}.
+        # Also writes results/qlora_optimization.json as the "latest" canonical so
+        # `compare-stats --a optimization/qlora/results/qlora_optimization.json` keeps working.
+        run_dir = RESULTS_DIR / tag
+        run_dir.mkdir(parents=True, exist_ok=True)
+        out_path = run_dir / "result.json"
+        canonical = RESULTS_DIR / "qlora_optimization.json"
+        for path in (out_path, canonical):
+            with open(path, "w") as f:
+                json.dump(result, f, indent=2)
+        log.info(f"\nResult saved: {out_path} (canonical: {canonical})")
 
-        # Step 6: GGUF export (optional, non-fatal)
-        self.save_gguf()
+        # Step 6: GGUF export (optional, non-fatal; skipped with --no-gguf)
+        if not self.cfg.get("skip_gguf", False):
+            self.save_gguf()
 
         log.info(f"Model saved: {self.cfg['output_dir']}")
         log.info(f"Total time: {elapsed:.1f}s ({elapsed / 60:.1f} min)")
@@ -595,7 +850,22 @@ def parse_args():
     parser.add_argument("--alpha", type=int, help="LoRA alpha")
     parser.add_argument("--epochs", type=int, help="Number of training epochs")
     parser.add_argument("--batch-size", type=int, help="Per-device batch size")
-    parser.add_argument("--max-eval", type=int, help="Max samples to evaluate (for quick testing)")
+    parser.add_argument(
+        "--max-eval",
+        type=int,
+        help="Cap test-eval samples, strided evenly across the full holdout (representative). Omit = full test.",
+    )
+    parser.add_argument(
+        "--eval-batch-size",
+        type=int,
+        help="Prompts per generate() call during eval. 1=serial (default); 16-32 on big GPUs cuts eval to minutes.",
+    )
+    parser.add_argument(
+        "--diagnostic-samples",
+        type=int,
+        help="Train/val subset size for the overfitting gap (default 500; 0 disables)",
+    )
+    parser.add_argument("--tag", type=str, help="Run tag — names result/loss-curve files and the model id")
     parser.add_argument("--max-steps", type=int, help="Cap optimizer steps (smoke test the training loop)")
     parser.add_argument("--grad-accum", type=int, help="Gradient accumulation steps (default: 16)")
     parser.add_argument("--output-dir", type=str, help="Output directory for model checkpoints/adapters")
@@ -603,6 +873,10 @@ def parse_args():
         "--resume", action="store_true", help="Resume from the latest checkpoint-N in output_dir if present"
     )
     parser.add_argument("--model", type=str, help="Model name/path (default: Qwen2.5-7B-Instruct-bnb-4bit)")
+    parser.add_argument(
+        "--no-gguf", action="store_true",
+        help="Skip GGUF export (useful for smoke tests — adapters are always saved regardless)",
+    )
     return parser.parse_args()
 
 
@@ -627,6 +901,12 @@ def main():
         config["batch_size"] = args.batch_size
     if args.max_eval is not None:
         config["max_eval_samples"] = args.max_eval
+    if args.eval_batch_size is not None:
+        config["eval_batch_size"] = args.eval_batch_size
+    if args.diagnostic_samples is not None:
+        config["diagnostic_samples"] = args.diagnostic_samples
+    if args.tag:
+        config["tag"] = args.tag
     if args.max_steps:
         config["max_steps"] = args.max_steps
     if args.grad_accum:
@@ -637,6 +917,8 @@ def main():
         config["resume"] = True
     if args.model:
         config["model_name"] = args.model
+    if args.no_gguf:
+        config["skip_gguf"] = True
 
     # Run training
     trainer = QLoRATrainer(config)
@@ -644,10 +926,16 @@ def main():
 
     # Print summary
     m = result["metrics"]
+    ov = result["overfitting"]
+    base = result.get("baseline_metrics", {}).get("direction_accuracy")
     print(f"\n{'=' * 60}")
     print(f"  RESULT: Test Accuracy = {result['test_metrics']['accuracy']:.4f}")
     print(f"  Win Rate = {m.get('win_rate', 0):.4f}  Profit Factor = {m.get('profit_factor', 0):.3f}")
     print(f"  Sharpe = {m.get('sharpe_ratio', 0):.3f}  Max Drawdown = {m.get('max_drawdown', 0):.2f}%")
+    if ov.get("gap") is not None:
+        print(f"  Train = {ov['train_acc']:.4f}  Val = {ov['val_acc']:.4f}  Gap(train-test) = {ov['gap']:+.4f}")
+    if base is not None:
+        print(f"  Heuristic baseline = {base:.4f}")
     print(f"  Time = {result['elapsed_seconds']:.0f}s")
     print(f"{'=' * 60}")
 

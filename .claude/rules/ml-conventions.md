@@ -2,6 +2,12 @@
 
 ## Data Handling
 - Temporal split 70/15/15 — NEVER shuffle financial time series
+- **"Temporal split" means a strict temporal holdout**: `features._temporal_split`
+  sorts ALL samples globally by `timestamp` and applies a time-based **embargo**
+  (default 24 bars × base TF) at each val/test boundary to purge the labeler's
+  lookahead. **File order ≠ temporal order** — `dataset.jsonl` is grouped by
+  symbol, so a positional cut leaks (per-symbol, not by time). Do not reintroduce
+  a positional split. (History: `docs/AUDITORIA_QLORA_LEAKAGE_OVERFITTING.md`.)
 - Random seed: 42 everywhere (numpy, torch, sklearn, random)
 - StandardScaler fit on train only, transform val/test separately
 - Dataset path: `langgraph/backtest/data/labeled/dataset.jsonl` (56,161 samples)
@@ -19,14 +25,21 @@
 
 ## Results & Serialization
 - Optimization results: `langgraph/optimization/results/{model}_optimization.json`
-- QLoRA results: `langgraph/optimization/qlora/results/qlora_config*.json`
+- QLoRA results: `langgraph/optimization/qlora/results/qlora_<tag>.json` (+ canonical `qlora_optimization.json`)
 - Backtest results: `langgraph/backtest/data/results/{tag}.json`
 - Model files: torch.save() for LSTM (.pt), pickle for sklearn (.pkl), .save_model() for XGBoost
-- QLoRA models: adapters + GGUF in `langgraph/backtest/data/models/qlora_config*/` (DVC-tracked)
+- QLoRA models: adapters + GGUF in `langgraph/backtest/data/models/<tag>/` (DVC-tracked)
 
 ## Current Best Models (2026-06-13)
-- QLoRA fine-tuned (config 1): 92% direction acc (lr=2e-5, rank=16, epochs=2) — trade metrics pending
-- Bagging-LSTM: 83.37% test acc (5 bags, AUC-ROC=0.9157) — best ML model (Avance 5)
+- ⚠️ **All numbers below predate the leakage fix and must be RE-MEASURED** on the
+  strict temporal split before citing. They were trained on a positional
+  (per-symbol) split — see `docs/AUDITORIA_QLORA_LEAKAGE_OVERFITTING.md` + Tarea 7
+  of `docs/GUIA_IMPLEMENTACION_FIX_QLORA.md`.
+- ~~QLoRA fine-tuned (config 1): 92% direction acc~~ — **INVALID** (contaminated
+  split + partial single-symbol eval, financial metrics 0). Archived under
+  `optimization/qlora/results/archive/`. Re-train one model (`run_cloud.sh`).
+- Bagging-LSTM: 83.37% test acc (5 bags, AUC-ROC=0.9157) — best ML model (Avance 5),
+  **re-measure** (same `_temporal_split`, same leakage)
 - LSTM individual: 81.5% test acc (hidden=32, layers=3, seq_len=5, dropout=0.1, lr=0.001)
 - Blending ensemble: 81.89% test acc
 - SVM (RBF): 70.8% val acc

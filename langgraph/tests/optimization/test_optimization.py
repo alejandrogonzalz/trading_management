@@ -13,7 +13,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from optimization.io.results import load_all_results, save_result
 from optimization.pipeline import OptimizerPipeline
 from optimization.searchers.base import BaseSearcher
-from optimization.searchers.qlora_searcher import QLoRASearcher
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -101,16 +100,6 @@ def lstm_cfg() -> dict:
     }
 
 
-@pytest.fixture
-def qlora_cfg() -> dict:
-    return {
-        "param_grid": {
-            "learning_rate": [1e-4, 2e-4],
-            "lora_rank": [16, 32],
-        }
-    }
-
-
 # ---------------------------------------------------------------------------
 # BaseSearcher
 # ---------------------------------------------------------------------------
@@ -138,40 +127,8 @@ class TestBaseSearcher:
 
 
 # ---------------------------------------------------------------------------
-# QLoRASearcher
-# ---------------------------------------------------------------------------
-
-
-class TestQLoRASearcher:
-    def test_search_returns_standard_format(self, qlora_cfg, capsys):
-        searcher = QLoRASearcher()
-        result = searcher.search(qlora_cfg, "")
-
-        assert result["model"] == "qlora"
-        assert result["search_method"] == "manual"
-        assert result["best_score"] is None
-        assert result["best_params"] is None
-        assert isinstance(result["all_results"], list)
-        assert "timestamp" in result
-
-    def test_search_picks_up_to_5_configs(self, qlora_cfg, capsys):
-        searcher = QLoRASearcher()
-        result = searcher.search(qlora_cfg, "")
-        assert len(result["recommended_configs"]) <= 5
-
-    def test_search_respects_recommended_configs(self, capsys):
-        cfg = {
-            "recommended_configs": [{"lr": 1e-4, "rank": 16}],
-            "param_grid": {},
-        }
-        searcher = QLoRASearcher()
-        result = searcher.search(cfg, "")
-        assert result["recommended_configs"] == [{"lr": 1e-4, "rank": 16}]
-
-    def test_search_prints_output(self, qlora_cfg, capsys):
-        QLoRASearcher().search(qlora_cfg, "")
-        captured = capsys.readouterr()
-        assert "QLoRA" in captured.out
+# QLoRASearcher — removed (qlora_searcher.py deleted; fine-tuning now lives
+# entirely in optimization/qlora/train_qlora.py as a standalone pipeline).
 
 
 # ---------------------------------------------------------------------------
@@ -426,11 +383,10 @@ class TestOptimizerPipeline:
         p = OptimizerPipeline("lstm", self._make_yaml_cfg(tmp_path))
         assert isinstance(p._get_searcher(), LSTMSearcher)
 
-    def test_get_searcher_qlora(self, tmp_path):
-        from optimization.searchers.qlora_searcher import QLoRASearcher
-
+    def test_get_searcher_qlora_raises(self, tmp_path):
         p = OptimizerPipeline("qlora", self._make_yaml_cfg(tmp_path))
-        assert isinstance(p._get_searcher(), QLoRASearcher)
+        with pytest.raises(ValueError, match="Unknown model"):
+            p._get_searcher()
 
     def test_get_searcher_unknown_raises(self, tmp_path):
         p = OptimizerPipeline("unknown_model", self._make_yaml_cfg(tmp_path))
