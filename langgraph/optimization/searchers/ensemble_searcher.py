@@ -26,7 +26,11 @@ class _DataMixin:
     def _load_all(self, dataset_path: str):
         samples = _load_dataset(dataset_path)
         timeframes = _infer_timeframes(samples)
-        train_s, val_s, test_s = _temporal_split(samples, 0.70, 0.15)
+        # Sort globally by timestamp so data["samples"] is in temporal order.
+        # _temporal_split creates a new sorted list internally (sorted()) without
+        # modifying the caller's list, so pass sort=False to avoid double-sort.
+        sorted_samples = sorted(samples, key=lambda s: s.get("timestamp", 0))
+        train_s, val_s, test_s = _temporal_split(sorted_samples, 0.70, 0.15, sort=False)
 
         X_train, y_train = _samples_to_xy(train_s, timeframes)
         X_val, y_val = _samples_to_xy(val_s, timeframes)
@@ -39,8 +43,9 @@ class _DataMixin:
         X_trainval = np.vstack([X_train, X_val])
         y_trainval = np.concatenate([y_train, y_val])
 
+        n_total = len(sorted_samples)
         return {
-            "samples": samples,
+            "samples": sorted_samples,            # temporal order — X_all built here aligns with n_train_raw/n_val_raw
             "timeframes": timeframes,
             "X_train": X_train,
             "y_train": y_train,
@@ -57,6 +62,8 @@ class _DataMixin:
             "scaler": scaler,
             "n_train": len(train_s),
             "n_val": len(val_s),
+            "n_train_raw": int(n_total * 0.70),   # val region start index in sorted_samples
+            "n_val_raw": int(n_total * 0.85),     # test region start index in sorted_samples
         }
 
     def _evaluate(self, y_true, y_pred, y_proba=None):
@@ -103,7 +110,8 @@ class BaggingLSTMSearcher(BaseSearcher, _DataMixin):
             [extract_features(s["indicators"], data["timeframes"]) for s in data["samples"]],
             dtype=np.float32,
         )
-        n_train, n_val = data["n_train"], data["n_val"]
+        n_train_raw, n_val_raw = data["n_train_raw"], data["n_val_raw"]
+        n_val = data["n_val"]
         all_probas_val, all_probas_test = [], []
 
         for bag in range(n_bags):
@@ -120,11 +128,14 @@ class BaggingLSTMSearcher(BaseSearcher, _DataMixin):
 
             predictor.model.eval()
             with torch.no_grad():
+                # n_train_raw / n_val_raw are the positional boundaries in the temporally
+                # sorted X_all. The embargo trims from the END of val, so trim val probas
+                # to [:n_val] to exclude those embargo samples.
                 val_proba = torch.softmax(
-                    predictor.model(self._build_lstm_sequences(X_norm, sl, n_train, n_train + n_val)), dim=1
-                )[:, 1].numpy()
+                    predictor.model(self._build_lstm_sequences(X_norm, sl, n_train_raw, n_val_raw)), dim=1
+                )[:, 1].numpy()[:n_val]
                 test_proba = torch.softmax(
-                    predictor.model(self._build_lstm_sequences(X_norm, sl, n_train + n_val, len(data["samples"]))),
+                    predictor.model(self._build_lstm_sequences(X_norm, sl, n_val_raw, len(data["samples"]))),
                     dim=1,
                 )[:, 1].numpy()
 
@@ -237,7 +248,8 @@ class VotingSearcher(BaseSearcher, _DataMixin):
             [extract_features(s["indicators"], data["timeframes"]) for s in data["samples"]],
             dtype=np.float32,
         )
-        n_train, n_val = data["n_train"], data["n_val"]
+        n_train_raw, n_val_raw = data["n_train_raw"], data["n_val_raw"]
+        n_val = data["n_val"]
 
         # LSTM
         torch.manual_seed(random_state)
@@ -249,10 +261,10 @@ class VotingSearcher(BaseSearcher, _DataMixin):
         lstm.model.eval()
         with torch.no_grad():
             lstm_val = torch.softmax(
-                lstm.model(self._build_lstm_sequences(X_norm, sl, n_train, n_train + n_val)), dim=1
-            )[:, 1].numpy()
+                lstm.model(self._build_lstm_sequences(X_norm, sl, n_train_raw, n_val_raw)), dim=1
+            )[:, 1].numpy()[:n_val]
             lstm_test = torch.softmax(
-                lstm.model(self._build_lstm_sequences(X_norm, sl, n_train + n_val, len(data["samples"]))), dim=1
+                lstm.model(self._build_lstm_sequences(X_norm, sl, n_val_raw, len(data["samples"]))), dim=1
             )[:, 1].numpy()
 
         # XGBoost
@@ -331,7 +343,8 @@ class StackingSearcher(BaseSearcher, _DataMixin):
             [extract_features(s["indicators"], data["timeframes"]) for s in data["samples"]],
             dtype=np.float32,
         )
-        n_train, n_val = data["n_train"], data["n_val"]
+        n_train_raw, n_val_raw = data["n_train_raw"], data["n_val_raw"]
+        n_val = data["n_val"]
 
         tscv = TimeSeriesSplit(n_splits=n_splits)
         oof = np.zeros((n_tv, 4))
@@ -363,15 +376,18 @@ class StackingSearcher(BaseSearcher, _DataMixin):
             torch.manual_seed(random_state)
             lstm_f = LSTMPredictor(**lstm_params)
             lstm_f.train(dataset_path)
-            X_norm = (X_all - lstm_f._mean) / lstm_f._std
+            # OOF fold indices are relative to X_trainval (0..n_tv-1). Use X_tv_norm
+            # so sequence lookback stays within the trainval array and avoids the
+            # embargo gap that exists between train and val in the full sorted X_all.
+            X_tv_norm = (X_tv - lstm_f._mean) / lstm_f._std
             sl = lstm_f.sequence_length
 
             lstm_f.model.eval()
             with torch.no_grad():
-                fold_seqs = self._build_lstm_sequences(X_norm, sl, vl_idx[0], vl_idx[-1] + 1)
+                fold_seqs = self._build_lstm_sequences(X_tv_norm, sl, vl_idx[0], vl_idx[-1] + 1)
                 oof[vl_idx, 3] = torch.softmax(lstm_f.model(fold_seqs), dim=1)[:, 1].numpy()
 
-            del lstm_f, X_norm, fold_seqs
+            del lstm_f, X_tv_norm, fold_seqs
             gc.collect()
 
         # Meta-learner
@@ -407,10 +423,10 @@ class StackingSearcher(BaseSearcher, _DataMixin):
 
         with torch.no_grad():
             lstm_val_p = torch.softmax(
-                lstm_final.model(self._build_lstm_sequences(X_all_norm, sl, n_train, n_train + n_val)), dim=1
-            )[:, 1].numpy()
+                lstm_final.model(self._build_lstm_sequences(X_all_norm, sl, n_train_raw, n_val_raw)), dim=1
+            )[:, 1].numpy()[:n_val]
             lstm_test_p = torch.softmax(
-                lstm_final.model(self._build_lstm_sequences(X_all_norm, sl, n_train + n_val, len(data["samples"]))),
+                lstm_final.model(self._build_lstm_sequences(X_all_norm, sl, n_val_raw, len(data["samples"]))),
                 dim=1,
             )[:, 1].numpy()
 
@@ -488,7 +504,8 @@ class BlendingSearcher(BaseSearcher, _DataMixin):
             [extract_features(s["indicators"], data["timeframes"]) for s in data["samples"]],
             dtype=np.float32,
         )
-        n_train, n_val = data["n_train"], data["n_val"]
+        n_train_raw, n_val_raw = data["n_train_raw"], data["n_val_raw"]
+        n_val = data["n_val"]
 
         # Base learners
         xgb_model = xgb.XGBClassifier(**xgb_params, eval_metric="logloss", random_state=random_state)
@@ -510,13 +527,17 @@ class BlendingSearcher(BaseSearcher, _DataMixin):
         lstm_model = LSTMPredictor(**lstm_params)
         lstm_model.train(dataset_path)
         X_all_norm = (X_all - lstm_model._mean) / lstm_model._std
+        # X_trainval is already in temporal order (train_s then val_s, post-embargo).
+        # split_idx and n_tv are indices relative to X_trainval, so use X_tv_norm
+        # for blend sequences to avoid the embargo gap present in the full X_all.
+        X_tv_norm = (data["X_trainval"] - lstm_model._mean) / lstm_model._std
         sl = lstm_model.sequence_length
         lstm_model.model.eval()
 
         # Blend set meta-features
         with torch.no_grad():
             lstm_blend = torch.softmax(
-                lstm_model.model(self._build_lstm_sequences(X_all_norm, sl, split_idx, n_tv)), dim=1
+                lstm_model.model(self._build_lstm_sequences(X_tv_norm, sl, split_idx, n_tv)), dim=1
             )[:, 1].numpy()
 
         blend_meta = np.column_stack(
@@ -534,10 +555,10 @@ class BlendingSearcher(BaseSearcher, _DataMixin):
         # Test & val predictions
         with torch.no_grad():
             lstm_val_p = torch.softmax(
-                lstm_model.model(self._build_lstm_sequences(X_all_norm, sl, n_train, n_train + n_val)), dim=1
-            )[:, 1].numpy()
+                lstm_model.model(self._build_lstm_sequences(X_all_norm, sl, n_train_raw, n_val_raw)), dim=1
+            )[:, 1].numpy()[:n_val]
             lstm_test_p = torch.softmax(
-                lstm_model.model(self._build_lstm_sequences(X_all_norm, sl, n_train + n_val, len(data["samples"]))),
+                lstm_model.model(self._build_lstm_sequences(X_all_norm, sl, n_val_raw, len(data["samples"]))),
                 dim=1,
             )[:, 1].numpy()
 
