@@ -110,7 +110,7 @@ Run a quick 3-step test to confirm the full pipeline (load model → train → e
 
 ```bash
 python3 optimization/qlora/train_qlora.py \
-  --max-steps 3 --max-eval 10 --eval-batch-size 1 \
+  --max-steps 3 --max-eval 4 --eval-batch-size 4 \
   --diagnostic-samples 0 --batch-size 4 --tag smoke_full
 ```
 
@@ -118,7 +118,7 @@ python3 optimization/qlora/train_qlora.py \
 
 ```bash
 python3 optimization/qlora/train_qlora.py \
-  --max-steps 3 --max-eval 10 --eval-batch-size 1 \
+  --max-steps 3 --max-eval 4 --eval-batch-size 4 \
   --diagnostic-samples 0 --batch-size 4 --tag smoke_full \
   > optimization/qlora/logs/smoke_full.log 2>&1 &
 echo "PID: $!"
@@ -132,8 +132,8 @@ tail -f optimization/qlora/logs/smoke_full.log
 | Signal | Expected | Problem if... |
 |--------|----------|--------------|
 | `FA [... FA2 = True]` | Flash-attn active | `FA2 = False` → xformers fallback (slower, still works) |
-| `step 1/3 ... step 3/3` | 3 training steps | Crash on step 0 = OOM or import error |
-| `s/it` timing | ~1.5–2s/step (A100+FA2) | >5s/step = FA2 not active |
+| `step 1/3 ... step 3/3` | 3 training steps in ~60s | Crash on step 0 = OOM or import error |
+| Eval completes (1 batch of 4) | ~90s for generation warmup, then done | `--eval-batch-size 1` is slow; always use ≥4 for smoke |
 | No OOM | No CUDA memory errors | Retry with `--batch-size 2` |
 
 If batch-size 4 OOMs, retry with `--batch-size 2`. If that also OOMs, check `nvidia-smi`

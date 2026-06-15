@@ -295,7 +295,7 @@ echo "  Running 3-step smoke test (should take <30s)..."
 SMOKE_LOG=/tmp/smoke_test_setup.log
 
 if $PYTHON optimization/qlora/train_qlora.py \
-    --max-steps 3 --max-eval 5 --eval-batch-size 1 --diagnostic-samples 0 \
+    --max-steps 3 --max-eval 4 --eval-batch-size 4 --diagnostic-samples 0 \
     --batch-size 2 --tag smoke_test > "$SMOKE_LOG" 2>&1; then
     grep -E "(FA|step|loss)" "$SMOKE_LOG" | head -10
     echo "  Smoke test PASSED"
