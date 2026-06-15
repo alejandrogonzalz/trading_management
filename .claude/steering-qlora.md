@@ -133,8 +133,13 @@ tail -f optimization/qlora/logs/run_cloud.log
 nvidia-smi
 ps aux | grep train_qlora | grep -v grep
 
-# SageMaker — backup to S3
-aws s3 cp --recursive backtest/data/models/qlora_cloud/ s3://trading-management-dvc/models/qlora_cloud/
+# Save model to DVC + git after training (run from repo root: trading_management/)
+dvc add langgraph/backtest/data/models/qlora_cloud/
+dvc push
+git add langgraph/backtest/data/models/qlora_cloud.dvc
+git commit -m "feat(qlora): add qlora_cloud model weights (DVC)"
+git push
+# NOTE: always run dvc add from trading_management/ (the DVC root), NOT from langgraph/
 
 # Local — smoke test (caps eval; only for testing the loop)
 .\.venv-finetuning\Scripts\python.exe optimization\qlora\train_qlora.py --max-steps 3 --max-eval 10
@@ -146,6 +151,62 @@ python -m cli compare-stats --a optimization/qlora/results/qlora_optimization.js
 ollama create trading-qwen-ft -f backtest/data/models/qlora_cloud/Modelfile
 # Then set LLM_MODEL=trading-qwen-ft in .env
 ```
+
+---
+
+## DVC Debug & Validation
+
+**The DVC root is `trading_management/` — always run `dvc` commands from there, NOT from `langgraph/`.**
+
+```bash
+# 1. Check what DVC thinks is out of sync (local vs remote)
+cd trading_management/
+dvc status          # local cache vs working tree
+dvc status --cloud  # local cache vs S3 remote
+
+# 2. Count files in S3 and total size
+aws s3 ls s3://trading-management-dvc/dvc/files/md5/ --recursive | wc -l
+aws s3 ls s3://trading-management-dvc/dvc/files/md5/ --recursive \
+  | awk '{sum+=$3} END {printf "%.1f GB\n", sum/1024/1024/1024}'
+
+# 3. Verify a specific model's files are really in S3
+#    Step A: download the directory manifest (replace HASH with the md5 from the .dvc file)
+DVC_HASH=$(python3 -c "import yaml; print(yaml.safe_load(open('langgraph/backtest/data/models/qlora_cloud.dvc'))['outs'][0]['md5'])")
+PREFIX="${DVC_HASH:0:2}"; REST="${DVC_HASH:2}"
+aws s3 cp "s3://trading-management-dvc/dvc/files/md5/$PREFIX/$REST" /tmp/manifest.json
+python3 -c "import json; files=json.load(open('/tmp/manifest.json')); print(f'{len(files)} files in manifest')"
+
+#    Step B: cross-check a key local file's MD5 against the manifest
+md5sum langgraph/backtest/data/models/qlora_cloud/adapter_model.safetensors
+# Must match the hash listed for adapter_model.safetensors in the manifest above
+
+#    Step C: confirm that hash actually exists as a physical file in S3
+FILE_HASH="<paste md5 from Step B>"
+aws s3 ls "s3://trading-management-dvc/dvc/files/md5/${FILE_HASH:0:2}/${FILE_HASH:2}"
+# Should print a file size > 0. If empty → file is missing from S3, run dvc push.
+
+# 4. Quick one-liner: validate the 3 most important qlora_cloud files
+for f in adapter_model.safetensors "gguf_gguf/Qwen2.5-7B-Instruct.Q4_K_M.gguf" adapter_config.json; do
+  h=$(md5sum "langgraph/backtest/data/models/qlora_cloud/$f" | awk '{print $1}')
+  result=$(aws s3 ls "s3://trading-management-dvc/dvc/files/md5/${h:0:2}/${h:2}" 2>/dev/null)
+  [ -n "$result" ] && echo "✓ $f" || echo "✗ MISSING: $f (hash=$h)"
+done
+
+# 5. Pull the model back (disaster recovery — confirms S3 is the source of truth)
+dvc pull langgraph/backtest/data/models/qlora_cloud.dvc
+
+# 6. S3 bucket protection status
+aws s3api get-bucket-versioning --bucket trading-management-dvc
+aws s3api get-bucket-policy --bucket trading-management-dvc
+```
+
+### Common mistakes
+| Mistake | Symptom | Fix |
+|---------|---------|-----|
+| `dvc add` from `langgraph/` | Files not found by `dvc status` from repo root | Re-run `dvc add` from `trading_management/` |
+| `dvc push` before `dvc add` | "Everything is up to date" but S3 has 0 bytes | `dvc add` first, then `dvc push` |
+| `dvc push` says up-to-date but files missing | 180 files in S3 but all tiny | Check total size: must be >20GB for qlora_cloud |
+| DVC cache empty after `dvc add` | Cache dir shows 0 bytes | `dvc add` ran from wrong directory; files never cached |
 
 ---
 
