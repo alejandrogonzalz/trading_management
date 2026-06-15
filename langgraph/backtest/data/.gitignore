@@ -1,2 +1,2 @@
 /candles
-/results
+# results/ tracked in git — thesis comparison artifacts (small JSONs, not binary weights)

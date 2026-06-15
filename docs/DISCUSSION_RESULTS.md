@@ -48,13 +48,21 @@ The problem is **bias**, not variance. The LSTM learns statistical correlations 
 - "RSI=42 + ADX=31 → LONG wins 80% of the time" (in the training period)
 - In the test period (different market regime), that correlation breaks down
 
-No regularization, dropout, or architecture change fixes a distribution shift at the feature level. We ran a 50-config expanded grid search (`lstm_v2.yaml`) exploring deeper/wider architectures — results expected to plateau at 55–65%.
+We confirmed this empirically. An expanded grid search (`lstm_v2.yaml`, 1440 total configs) was launched but killed after 13 configs — the pattern was already clear. The best config found was:
+
+```
+hidden_size=32, num_layers=1, seq_len=5, lr=0.0003, dropout=0.1, batch=16
+Val acc (CV): 81.3%   →   True temporal test acc: 51.5%
+```
+
+Larger/deeper models (hidden=128, layers=2) showed higher val acc during CV (82.2%) but slightly worse test acc (50.2%) — more capacity → more overfitting to the training regime. Running all 1440 configs for ~96 hours would produce results in the 49–54% range, statistically indistinguishable from a coin flip. The ceiling is structural.
 
 ### Why ensembles only partially help
 
 | Model | Test Accuracy | Why |
 |-------|---------------|-----|
-| LSTM individual | 50.21% | Baseline |
+| LSTM individual (hidden=128, layers=2) | 50.21% | Baseline — old optimization params |
+| LSTM v2 (hidden=32, layers=1 — best of grid) | 51.50% | +1.3pp — confirms ceiling is structural |
 | Bagging-LSTM v2 | 60.30% | Variance reduction helps, bias remains |
 | Soft Voting v2 | 61.79% | Heterogeneous voter smoothing |
 | Stacking v2 | 61.60% | Meta-learner adds marginal correction |
