@@ -1,0 +1,24 @@
+# LSTM v2 — expanded grid search (~50 random iterations)
+# Changes vs lstm.yaml:
+#   - Added lr: 0.0001, 0.0003 (slower convergence, more stable)
+#   - Added sequence_length: 30, 50 (multi-day patterns in 1h data)
+#   - Added hidden_size: 256 (more capacity ceiling)
+#   - Kept batch_size small (sequences are expensive in memory)
+
+model: lstm
+search_method: random
+n_iter: 50
+cv_splits: 1
+
+param_grid:
+  hidden_size: [32, 64, 128, 256]
+  num_layers: [1, 2, 3]
+  sequence_length: [5, 10, 20, 30, 50]
+  learning_rate: [0.0001, 0.0003, 0.0005, 0.001]
+  dropout: [0.1, 0.2, 0.3]
+  batch_size: [16, 32]
+
+training:
+  max_epochs: 50
+  patience: 10
+  seed: 42
