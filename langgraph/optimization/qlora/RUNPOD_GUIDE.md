@@ -191,6 +191,47 @@ echo "Resume PID: $!"
 tail -f optimization/qlora/logs/run_cloud_resume.log
 ```
 
+### Running multiple configs for comparison
+
+`run_cloud.sh` accepts `--tag`, `--lr`, `--rank`, `--alpha`, and `--epochs` flags.
+Each run produces its own result JSON and model directory, so they don't overwrite
+each other. Run sequentially after your first model finishes:
+
+```bash
+# Config 1 — default (safe bet, already running or done)
+bash optimization/qlora/run_cloud.sh --tag config1
+
+# Config 2 — aggressive (higher lr, smaller adapters, more epochs)
+bash optimization/qlora/run_cloud.sh --tag config2 --lr 0.00005 --rank 8 --epochs 3
+
+# Config 3 — conservative (lower lr, larger adapters)
+bash optimization/qlora/run_cloud.sh --tag config3 --lr 0.00001 --rank 32 --epochs 2
+```
+
+| Config | LR | Rank | Alpha | Epochs | Hypothesis |
+|--------|-----|------|-------|--------|-----------|
+| config1 | 2e-5 | 16 | 32 | 2 | Literature default — works in 90% of cases |
+| config2 | 5e-5 | 8 | 16 | 3 | Task is easy — small adapter + more passes suffice |
+| config3 | 1e-5 | 32 | 64 | 2 | Task is complex — needs more adapter capacity |
+
+Each produces:
+- `optimization/qlora/results/qlora_<tag>.json` — metrics + per-sample predictions
+- `backtest/data/models/<tag>/` — adapters + GGUF
+
+Compare results afterwards:
+```bash
+python -m cli compare-stats \
+  --a optimization/qlora/results/qlora_config1.json \
+  --b optimization/qlora/results/qlora_config2.json
+
+python -m cli compare-stats \
+  --a optimization/qlora/results/qlora_config1.json \
+  --b optimization/qlora/results/qlora_config3.json
+```
+
+Any extra flags (e.g. `--resume`, `--max-steps 3`) are forwarded to `train_qlora.py`.
+Env vars (`BATCH`, `GRAD_ACCUM`, `MAX_EVAL`, `EVAL_BATCH`) still work for GPU tuning.
+
 ---
 
 ## Step 6: ML Grid Search in Parallel (CPU only)

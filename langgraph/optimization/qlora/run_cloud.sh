@@ -2,8 +2,7 @@
 # QLoRA — single cloud training run (RunPod / EC2 / SageMaker GPU)
 #
 # Trains ONE model on the fixed strict-temporal split and evaluates a strided,
-# representative slice of the test set. The thesis needs one defensible cloud
-# model, not a config sweep.
+# representative slice of the test set.
 #
 # Usage (tmux recommended; nohup on SageMaker Studio):
 #   cd trading_management/langgraph
@@ -11,7 +10,11 @@
 #   dvc pull backtest/data/labeled/dataset.jsonl backtest/data/candles   # REQUIRED
 #   tmux new -s qlora
 #   bash optimization/qlora/run_cloud.sh 2>&1 | tee optimization/qlora/logs/run_cloud.log
-#   # Ctrl+B, D to detach; tmux attach -t qlora to reattach
+#
+# Run with different configs (pass flags BEFORE the -- separator):
+#   bash optimization/qlora/run_cloud.sh --tag config2 --lr 0.00005 --rank 8 --epochs 3
+#   bash optimization/qlora/run_cloud.sh --tag config3 --lr 0.00001 --rank 32 --epochs 2
+#   bash optimization/qlora/run_cloud.sh --tag config1_resume --resume
 #
 # Tune for the instance via env vars (defaults are SAFE for a 48GB L40S w/o FA2):
 #   BATCH=8 GRAD_ACCUM=2 EVAL_BATCH=32 MAX_EVAL=3000 bash optimization/qlora/run_cloud.sh
@@ -21,6 +24,7 @@
 #     sure the chosen BATCH/EVAL_BATCH don't OOM before committing to the long run.
 #
 # Flags explained:
+#   --tag NAME          Names result files and model output dir. Default: qlora_cloud.
 #   --lr 0.00002        Learning rate. 2e-5 is the sweet spot for QLoRA on instruct models.
 #   --rank 16           LoRA adapter dimension (~40M trainable params, 0.6% of 7B).
 #   --alpha 32          Adapter scaling factor (2×rank = standard default).
@@ -29,16 +33,15 @@
 #   --grad-accum $GA    Mini-batches accumulated → effective batch = BATCH×GA (keep =16).
 #   --max-eval $MAX_EVAL  Test samples to eval, STRIDED across the full holdout
 #                       (representative, not a prefix). Set to 0/empty to eval all 8425.
-#   --eval-batch-size $EVAL_BATCH  Prompts per generate() call. This is what makes a
-#                       3000+ eval take minutes not hours. 16 safe on 48GB, 32 on 80GB.
+#   --eval-batch-size $EVAL_BATCH  Prompts per generate() call. 16 safe on 48GB, 32 on 80GB.
 #   --diagnostic-samples 200  Measure train/val accuracy (200 each) for the overfitting gap.
-#   --tag qlora_cloud   Names result files and the model output directory.
 #   --output-dir ...    Where adapters + GGUF are saved (DVC-tracked for S3 backup).
-#   "$@"                Forwards extra flags (e.g. --resume to continue from checkpoint).
+#   --resume            Continue from the latest checkpoint in output-dir.
+#   Any extra flags are forwarded to train_qlora.py.
 #
 # Expected timing (defaults vary by GPU):
 #   Training:  ~2-3h on A100/H100 (FA2, BATCH=8); ~12h on L40S (no FA2, BATCH=2)
-#   Eval:      ~10-30 min (3000 strided test + 400 diag, batched) — no longer the bottleneck
+#   Eval:      ~10-30 min (3000 strided test + 400 diag, batched)
 #   GGUF:      ~15 min
 #   TOTAL:     ~3-4h on A100/H100; COST ~$5-13 ($1.39 A100 → $3.29 H100 per hr)
 
@@ -58,7 +61,24 @@ mkdir -p "$LOG_DIR"
 # output-dir paths are relative to CWD → run from langgraph/ root.
 cd "$LANGGRAPH_ROOT"
 
+# Parse script-level flags (consumed here, not forwarded to train_qlora.py)
 TAG="qlora_cloud"
+LR="0.00002"
+RANK="16"
+ALPHA="32"
+EPOCHS="2"
+EXTRA_ARGS=()
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --tag)      TAG="$2"; shift 2 ;;
+        --lr)       LR="$2"; shift 2 ;;
+        --rank)     RANK="$2"; shift 2 ;;
+        --alpha)    ALPHA="$2"; shift 2 ;;
+        --epochs)   EPOCHS="$2"; shift 2 ;;
+        *)          EXTRA_ARGS+=("$1"); shift ;;
+    esac
+done
 # Auto-detect GPU VRAM and set optimal batch sizes.
 # Override with env vars if needed: BATCH=4 GRAD_ACCUM=4 bash run_cloud.sh
 VRAM_MB=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null | head -1 | tr -d ' ')
@@ -87,11 +107,12 @@ else
 fi
 MAX_EVAL="${MAX_EVAL:-3000}"
 echo "============================================================"
-echo "  QLoRA — single cloud run ($TAG)"
+echo "  QLoRA — cloud run: $TAG"
 echo "  Started: $(date)"
 echo "  GPU: $(nvidia-smi --query-gpu=name,memory.total --format=csv,noheader 2>/dev/null || echo 'GPU not detected')"
 echo "  Working dir: $PWD"
-echo "  BATCH=$BATCH GRAD_ACCUM=$GRAD_ACCUM (effective $((BATCH * GRAD_ACCUM))) | MAX_EVAL=$MAX_EVAL EVAL_BATCH=$EVAL_BATCH"
+echo "  Config: lr=$LR rank=$RANK alpha=$ALPHA epochs=$EPOCHS"
+echo "  Batch:  BATCH=$BATCH GRAD_ACCUM=$GRAD_ACCUM (effective $((BATCH * GRAD_ACCUM))) | MAX_EVAL=$MAX_EVAL EVAL_BATCH=$EVAL_BATCH"
 echo "============================================================"
 
 # --max-eval is now STRIDED across the full 8,425-sample test holdout, so the
@@ -103,17 +124,17 @@ echo "============================================================"
 EVAL_FLAG=(--eval-batch-size "$EVAL_BATCH")
 [ -n "$MAX_EVAL" ] && EVAL_FLAG+=(--max-eval "$MAX_EVAL")
 python "$SCRIPT_DIR/train_qlora.py" \
-    --lr 0.00002 \
-    --rank 16 \
-    --alpha 32 \
-    --epochs 2 \
+    --lr "$LR" \
+    --rank "$RANK" \
+    --alpha "$ALPHA" \
+    --epochs "$EPOCHS" \
     --batch-size "$BATCH" \
     --grad-accum "$GRAD_ACCUM" \
     "${EVAL_FLAG[@]}" \
     --diagnostic-samples 200 \
     --tag "$TAG" \
     --output-dir "backtest/data/models/$TAG" \
-    "$@" 2>&1 | _ts
+    "${EXTRA_ARGS[@]}" 2>&1 | _ts
 
 echo ""
 echo "  DONE — $(date)"
