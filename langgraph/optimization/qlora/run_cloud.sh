@@ -141,5 +141,48 @@ echo "  DONE — $(date)"
 echo "  Result: optimization/qlora/results/qlora_${TAG}.json (+ canonical qlora_optimization.json)"
 echo "  Loss curve: optimization/qlora/results/${TAG}_loss_curve.{json,png}"
 echo ""
-echo "  Backup the model to S3:"
-echo "    aws s3 cp --recursive backtest/data/models/$TAG/ s3://trading-management-dvc/models/$TAG/"
+echo "============================================================"
+echo "  Saving results to git + DVC..."
+echo "============================================================"
+
+# Go to repo root (DVC root is one level above langgraph/)
+REPO_ROOT="$(cd "$LANGGRAPH_ROOT/.." && pwd)"
+cd "$REPO_ROOT"
+
+# 1. DVC-track the model weights and push to S3
+dvc add "langgraph/backtest/data/models/$TAG/"
+dvc push
+echo "  [dvc] model weights pushed to s3://trading-management-dvc/"
+
+# 2. Stage and commit everything: DVC pointer + result JSONs + loss curves
+git add \
+  "langgraph/backtest/data/models/$TAG.dvc" \
+  "langgraph/backtest/data/models/.gitignore" \
+  "langgraph/optimization/qlora/results/qlora_${TAG}.json" \
+  "langgraph/optimization/qlora/results/qlora_optimization.json" \
+  "langgraph/optimization/qlora/results/${TAG}_loss_curve.json" \
+  "langgraph/optimization/qlora/results/${TAG}_loss_curve.png" \
+  2>/dev/null || true
+
+git commit -m "feat(qlora): add $TAG results and DVC model pointer
+
+$(python3 -c "
+import json, sys
+try:
+    r = json.load(open('langgraph/optimization/qlora/results/qlora_${TAG}.json'))
+    m = r.get('metrics', r)
+    print(f'  Test acc: {m.get(\"direction_accuracy\", m.get(\"test_accuracy\", \"?\")):.4f}')
+    print(f'  Win rate: {m.get(\"win_rate\", \"?\"):.4f}  Profit factor: {m.get(\"profit_factor\", \"?\"):.3f}')
+except Exception as e:
+    print(f'  (metrics unavailable: {e})')
+" 2>/dev/null || echo "  (metrics unavailable)")
+
+Model: backtest/data/models/$TAG/ (DVC-tracked, weights in S3)
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>" 2>/dev/null || echo "  [git] nothing new to commit"
+
+# 3. Push commits to remote
+git push
+echo "  [git] commits pushed to origin"
+echo ""
+echo "  All done. Model in S3, results in git."
