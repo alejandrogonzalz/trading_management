@@ -42,6 +42,14 @@ echo "============================================================"
 echo ""
 PYTHON=$(command -v python3 || command -v python)
 
+# Ensure PyTorch's bundled cuDNN takes precedence over any system cuDNN in LD_LIBRARY_PATH.
+# Without this, a mismatched system cuDNN (e.g. 9.8.0 vs PyTorch's 9.10.2) causes a
+# RuntimeError on the first LSTM .to(device) call.
+TORCH_LIB=$($PYTHON -c "import torch, os; print(os.path.join(os.path.dirname(torch.__file__), 'lib'))" 2>/dev/null || true)
+if [ -n "$TORCH_LIB" ] && [ -d "$TORCH_LIB" ]; then
+    export LD_LIBRARY_PATH="$TORCH_LIB:${LD_LIBRARY_PATH:-}"
+fi
+
 echo "[1/3] LSTM grid search..."
 $PYTHON optimization/optimize.py \
   --model lstm \
