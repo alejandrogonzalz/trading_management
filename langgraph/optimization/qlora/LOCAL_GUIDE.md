@@ -5,7 +5,7 @@ VRAM) running Windows with PowerShell. This is a cheaper second data point to th
 cloud model: same fixed strict-temporal split, 1 epoch capped at 1500 steps (~14h
 overnight, $0 compute).
 
-> The cloud guide is `EC2_GUIDE.md`. This is the local counterpart. Same dataset,
+> The cloud guide is `RUNPOD_GUIDE.md`. This is the local counterpart. Same dataset,
 > same split, different hardware constraints: batch=1, no FlashAttention-2, Triton
 > kernels only.
 
@@ -13,17 +13,17 @@ overnight, $0 compute).
 
 ## Cost analysis (local vs cloud)
 
-| | Local (RTX 5070 Ti) | EC2 g6e.xlarge (L40S) |
+| | Local (RTX 5070 Ti) | RunPod A100 80GB |
 |---|---|---|
-| GPU | RTX 5070 Ti 16GB | NVIDIA L40S 48GB |
-| Compute cost | **$0** | ~$9-13 |
-| FlashAttention-2 | No (Triton) | Yes |
-| Throughput | ~28 s/step | ~4-5 s/step (FA2) |
-| Batch size | 1 | 2-4 |
-| Training (1500 steps) | **~11.7 h** | ~2 h |
-| Eval (200 samples) | ~2 h | <1 h |
-| Total | **~14 h** | ~3 h |
-| Tradeoff | Ties up the workstation overnight | Costs money, must stop instance |
+| GPU | RTX 5070 Ti 16GB | NVIDIA A100 80GB |
+| Compute cost | **$0** | ~$5–6 |
+| FlashAttention-2 | No (Triton) | Yes (pre-installed) |
+| Throughput | ~28 s/step | ~1.5–2 s/step (FA2, batch=8) |
+| Batch size | 1 | 8 |
+| Training (2 epochs) | N/A (1 epoch, 1500 steps) | ~3–3.5 h |
+| Eval (test set strided) | ~2 h (200 samples) | ~10–15 min (3000 batched) |
+| Total | **~14 h** | ~4 h |
+| Tradeoff | Ties up the workstation overnight | Costs ~$5, stop the pod when done |
 
 Local is free but slow. Run overnight (disable sleep) and use the machine normally
 the next morning. The cloud model is the primary result; local is optional validation.

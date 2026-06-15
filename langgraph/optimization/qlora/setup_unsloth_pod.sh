@@ -89,8 +89,8 @@ if [ "$TORCH_GPU" != "True" ]; then
     ERRORS=$((ERRORS+1))
 fi
 
-# unsloth
-UNSLOTH_OK=$($PYTHON -c "from unsloth import FastLanguageModel; print('OK')" 2>/dev/null) || UNSLOTH_OK="FAIL"
+# unsloth — suppress stdout too (startup banner prints to stdout, not stderr)
+UNSLOTH_OK=$($PYTHON -c "from unsloth import FastLanguageModel; print('OK')" &>/dev/null && echo "OK" || echo "FAIL")
 echo "  unsloth:      $UNSLOTH_OK"
 [ "$UNSLOTH_OK" != "OK" ] && ERRORS=$((ERRORS+1))
 
@@ -292,20 +292,25 @@ mkdir -p optimization/qlora/logs optimization/qlora/results
 
 # Quick 3-step training test to verify the full pipeline works
 echo "  Running 3-step smoke test (should take <30s)..."
+SMOKE_LOG=/tmp/smoke_test_setup.log
+
 if $PYTHON optimization/qlora/train_qlora.py \
     --max-steps 3 --max-eval 5 --eval-batch-size 1 --diagnostic-samples 0 \
-    --batch-size 2 --tag smoke_test 2>&1 | grep -E "(FA|step|loss|Error|OOM)" | head -20; then
+    --batch-size 2 --tag smoke_test > "$SMOKE_LOG" 2>&1; then
+    grep -E "(FA|step|loss)" "$SMOKE_LOG" | head -10
     echo "  Smoke test PASSED"
     # Clean up smoke test artifacts
     rm -rf backtest/data/models/smoke_test 2>/dev/null || true
     rm -f optimization/qlora/results/qlora_smoke_test.json 2>/dev/null || true
 else
+    grep -E "(FA|step|loss|Error|OOM|Traceback|FileNotFoundError)" "$SMOKE_LOG" | head -20
     echo "  Smoke test FAILED — check output above"
     echo "  Common fixes:"
     echo "    - OOM: reduce --batch-size to 1"
     echo "    - Import error: check torch/unsloth versions above"
-    echo "    - Dataset not found: run dvc pull first"
+    echo "    - Dataset not found: run 'aws configure' then 'dvc pull backtest/data/labeled/dataset.jsonl backtest/data/candles'"
 fi
+rm -f "$SMOKE_LOG"
 echo ""
 
 # ─── Summary ─────────────────────────────────────────────────────────────────

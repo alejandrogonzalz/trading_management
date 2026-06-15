@@ -6,7 +6,7 @@
 |------|-------|-------|
 | ML models code | `langgraph/backtest/models/` | features.py, sklearn_models.py, lstm.py |
 | Optimization | `langgraph/optimization/` | pipeline.py, searchers/, configs/ |
-| QLoRA fine-tuning | `langgraph/optimization/qlora/` | train_qlora.py, run_cloud.sh, run_local.sh, setup_ec2.sh, EC2_GUIDE.md |
+| QLoRA fine-tuning | `langgraph/optimization/qlora/` | train_qlora.py, run_cloud.sh, run_local.sh, setup_unsloth_pod.sh, RUNPOD_GUIDE.md |
 | QLoRA results | `langgraph/optimization/qlora/results/` | qlora_<tag>.json (+ archive/ = invalid old sweep) |
 | Dataset | `langgraph/backtest/data/labeled/dataset.jsonl` | 56K samples, NEVER modify |
 | Raw candles | `langgraph/backtest/data/candles/` | Per-symbol JSON, DVC-tracked |
@@ -22,7 +22,7 @@
 ## Virtual Environments
 - ML/backtest: `langgraph/.venv/` (Python 3.11) — torch, sklearn, xgboost
 - QLoRA (local Windows): `langgraph/.venv-finetuning/` — unsloth, trl, bitsandbytes
-- QLoRA (cloud GPU, EC2/SageMaker): `langgraph/.venv/` (created by setup_ec2.sh)
+- QLoRA (RunPod cloud): no venv needed — `/opt/venv` pre-activated in `unsloth/unsloth:latest` image
 
 ## DVC (Data Version Control)
 - Remote: `s3://trading-management-dvc/`

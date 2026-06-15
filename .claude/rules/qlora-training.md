@@ -243,7 +243,7 @@ FlashAttention-2 installs cleanly on Linux. Both together typically cut a
 The dataset is tiny (`backtest/data/labeled/dataset.jsonl`, ~56k samples) so
 data transfer is trivial.
 
-Full step-by-step + cost analysis: see [`optimization/qlora/EC2_GUIDE.md`](../../langgraph/optimization/qlora/EC2_GUIDE.md).
+Full step-by-step + cost analysis: see [`optimization/qlora/RUNPOD_GUIDE.md`](../../langgraph/optimization/qlora/RUNPOD_GUIDE.md).
 
 ### Instance options
 | Instance | GPU | VRAM | ~$/hr | Notes |

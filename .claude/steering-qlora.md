@@ -58,18 +58,13 @@ the other combos as a reference only.
 
 ## Infrastructure
 
-### EC2 g6e.xlarge + Deep Learning AMI (primary training — recommended)
-- GPU: NVIDIA L40S 48GB (Ada `sm_89`), ~$1.86/hr on-demand
-- AMI: `Deep Learning OSS Nvidia Driver AMI GPU PyTorch 2.x (Ubuntu 22.04)`
-- Venv: `.venv/` (created by `setup_ec2.sh`, NO --system-site-packages)
-- **FlashAttention-2 WORKS** (matched CUDA) → ~4-5s/step, ~5-7h for 3 epochs
-- Launch with `nohup` (tmux also available on raw EC2). STOP the instance when done.
-- Guide: `optimization/qlora/EC2_GUIDE.md` (includes EC2-vs-SageMaker cost analysis)
-
-### SageMaker Studio (fallback only)
-- ml.g6e.xlarge L40S 48GB, ~$2.00-2.35/hr — same `setup_ec2.sh` works here
-- No FA2 (container CUDA mismatch) → ~8.7s/step (~2x slower), no tmux → nohup
-- Use only if EC2 quota/access is blocked; EC2 is cheaper and faster
+### RunPod A100 80GB (primary training — recommended)
+- Image: `docker.io/unsloth/unsloth:latest` (torch 2.10+cu128, FA2 2.8.3 pre-installed)
+- GPU: NVIDIA A100 80GB PCIe (`sm_80`), ~$1.39/hr
+- **No venv needed** — `/opt/venv` is pre-activated, use `python3` directly
+- **FlashAttention-2 pre-installed** → BATCH=8, ~1.5-2s/step, ~3-4h for 2 epochs, ~$5
+- Launch with `nohup`. Container user: `unsloth`, /workspace is writable.
+- Guide: `optimization/qlora/RUNPOD_GUIDE.md`
 
 ### Local (RTX 5070 Ti 16GB, Windows)
 - Path: `C:\Users\alex\projects\trading_management\langgraph`
@@ -93,13 +88,11 @@ the other combos as a reference only.
    NEVER cut by file position (`dataset.jsonl` is grouped by symbol → per-symbol leak).
 9. **Full test eval, no `--max-eval`** — the cap is what limited the old eval to one
    symbol (LINK). Leave it off for real runs; only use it for smoke tests.
-10. **flash-attn prebuilt wheels are ABI-incompatible with pip PyTorch** — flash-attn
-    2.8+ auto-downloads a `cxx11abiFALSE` wheel compiled against conda PyTorch (CXX11
-    ABI=True); pip-installed PyTorch uses old ABI (`Ss` mangling). Symptom: `undefined
-    symbol: c10::Error … __cxx11::string`. Fix: `FLASH_ATTENTION_FORCE_BUILD=TRUE`
-    forces source compilation. `setup_runpod.sh` handles this + caches the built wheel
-    in S3 (`s3://trading-management-dvc/wheels/`) so future pods install in ~30 sec
-    instead of ~15 min. See `EC2_GUIDE.md § Flash-Attn ABI Mismatch` for the full story.
+10. **flash-attn is pre-installed on the unsloth image** — `unsloth/unsloth:latest`
+    ships flash-attn 2.8.3 compiled against its own torch, so no build is needed.
+    On bare torch images (`setup_runpod.sh` path), ABI mismatch was an issue: prebuilt
+    wheels use `cxx11abiFALSE` (conda ABI) but pip torch uses old ABI. Fix was
+    `FLASH_ATTENTION_FORCE_BUILD=TRUE`. On the unsloth image this is already resolved.
 11. **Overfitting diagnostics emitted** — real `EarlyStoppingCallback` (patience 3),
     `overfitting`{train/val/test acc + gap}, `baseline_metrics` (heuristic), and a
     `<tag>_loss_curve.{json,png}`. Read the gap, not just accuracy.
@@ -111,10 +104,10 @@ the other combos as a reference only.
 | File | Purpose |
 |------|---------|
 | `optimization/qlora/train_qlora.py` | Main training + evaluation script |
-| `optimization/qlora/run_cloud.sh` | Single cloud run (SageMaker) on the fixed split |
+| `optimization/qlora/run_cloud.sh` | Single cloud run (RunPod/EC2) on the fixed split |
 | `optimization/qlora/run_local.sh` | Single local run (RTX 5070 Ti), optional |
-| `optimization/qlora/setup_ec2.sh` | GPU-instance env setup (EC2 DLAMI; works on SageMaker too) |
-| `optimization/qlora/EC2_GUIDE.md` | Step-by-step EC2 walkthrough + cost analysis |
+| `optimization/qlora/setup_unsloth_pod.sh` | RunPod setup for `unsloth/unsloth:latest` image |
+| `optimization/qlora/RUNPOD_GUIDE.md` | Full RunPod walkthrough + cost analysis |
 | `optimization/qlora/results/qlora_<tag>.json` | Result JSON (+ canonical `qlora_optimization.json`) |
 | `optimization/qlora/results/archive/` | Invalid old sweep results (do NOT cite) |
 | `optimization/qlora/logs/` | Training logs per run |
