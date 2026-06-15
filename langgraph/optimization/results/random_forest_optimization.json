@@ -662,8 +662,8 @@
     }
   ],
   "total_fits": 80,
-  "elapsed_seconds": 438.2,
-  "timestamp": "2026-06-15T01:41:16.649339",
+  "elapsed_seconds": 324.2,
+  "timestamp": "2026-06-15T19:39:36.894633",
   "dataset_size": 47522,
   "cv_splits": 3
 }

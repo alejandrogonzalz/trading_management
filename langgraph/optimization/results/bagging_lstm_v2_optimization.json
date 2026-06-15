@@ -22,8 +22,8 @@
     "f1_macro": 0.6013183387564107,
     "auc_roc": 0.6791259865371666
   },
-  "elapsed_seconds": 360.9,
-  "timestamp": "2026-06-15T08:14:20.837772",
+  "elapsed_seconds": 659.7,
+  "timestamp": "2026-06-15T19:45:16.711087",
   "test_y_true": [
     0,
     1,

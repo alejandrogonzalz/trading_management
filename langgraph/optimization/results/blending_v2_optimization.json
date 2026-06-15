@@ -2,7 +2,7 @@
   "model": "blending",
   "ensemble_type": "heterogeneous",
   "strategy": "blending",
-  "best_score": 0.6608003857280618,
+  "best_score": 0.6569431051108968,
   "best_params": {
     "blend_fraction": 0.3,
     "base_learners": [
@@ -13,15 +13,15 @@
     ]
   },
   "val_metrics": {
-    "accuracy": 0.6608003857280618,
-    "f1_macro": 0.6515175480629285,
-    "auc_roc": 0.716614887295181
+    "accuracy": 0.6569431051108968,
+    "f1_macro": 0.6481152814238248,
+    "auc_roc": 0.7104067591509884
   },
   "test_metrics": {
-    "accuracy": 0.6359643916913946,
-    "f1_macro": 0.6310124961499355,
-    "auc_roc": 0.7088089985150873
+    "accuracy": 0.6332344213649852,
+    "f1_macro": 0.6276144552806919,
+    "auc_roc": 0.706262330834059
   },
-  "elapsed_seconds": 292.3,
-  "timestamp": "2026-06-15T08:53:16.466951"
+  "elapsed_seconds": 281.9,
+  "timestamp": "2026-06-15T20:23:40.754231"
 }
