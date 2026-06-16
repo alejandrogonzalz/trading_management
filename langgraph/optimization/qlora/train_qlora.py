@@ -88,7 +88,7 @@ class QLoRATrainer:
         "learning_rate": 0.00002,
         "lora_rank": 16,
         "lora_alpha": 32,
-        "lora_dropout": 0.0,
+        "lora_dropout": 0.05,
         "epochs": 3,
         "batch_size": 1,
         "gradient_accumulation_steps": 16,
@@ -119,6 +119,7 @@ class QLoRATrainer:
         # unfiltered dataset for the drawdown-filter ablation.
         "dataset_path": DATASET_PATH,
         "training_data_dir": str(TRAINING_DATA_DIR),
+        "use_atr_tp_sl": False,
     }
 
     def __init__(self, config: dict[str, Any] | None = None):
@@ -146,6 +147,7 @@ class QLoRATrainer:
             dataset_path=dataset_path,
             output_dir=training_data_dir,
             mode=self.cfg["mode"],
+            use_atr_tp_sl=self.cfg.get("use_atr_tp_sl", False),
         )
         log.info(f"  Train: {counts['train']}, Val: {counts['val']}, Test: {counts['test']}")
         return counts
@@ -291,9 +293,9 @@ class QLoRATrainer:
                 logging_steps=25,
                 per_device_eval_batch_size=1,
                 eval_strategy="steps",
-                eval_steps=250,
+                eval_steps=150,
                 save_strategy="steps",
-                save_steps=250,
+                save_steps=150,
                 save_total_limit=3,
                 load_best_model_at_end=True,
                 metric_for_best_model="eval_loss",
@@ -310,7 +312,7 @@ class QLoRATrainer:
                 train_dataset=train_dataset,
                 eval_dataset=val_dataset,
                 args=sft_config,
-                callbacks=[EarlyStoppingCallback(early_stopping_patience=3)],
+                callbacks=[EarlyStoppingCallback(early_stopping_patience=4, early_stopping_threshold=0.001)],
             )
         else:
             # TRL < 0.12: legacy API with TrainingArguments + params in SFTTrainer
@@ -331,9 +333,9 @@ class QLoRATrainer:
                 logging_steps=25,
                 per_device_eval_batch_size=1,
                 eval_strategy="steps",
-                eval_steps=250,
+                eval_steps=150,
                 save_strategy="steps",
-                save_steps=250,
+                save_steps=150,
                 save_total_limit=3,
                 load_best_model_at_end=True,
                 metric_for_best_model="eval_loss",
@@ -350,7 +352,7 @@ class QLoRATrainer:
                 dataset_text_field="text",
                 max_seq_length=self.cfg["max_seq_length"],
                 packing=False,
-                callbacks=[EarlyStoppingCallback(early_stopping_patience=3)],
+                callbacks=[EarlyStoppingCallback(early_stopping_patience=4, early_stopping_threshold=0.001)],
             )
 
         log.info("Starting training...")
@@ -1020,6 +1022,12 @@ def parse_args():
         help="Skip GGUF export (useful for smoke tests — adapters are always saved regardless)",
     )
     parser.add_argument(
+        "--use-atr-tp-sl",
+        action="store_true",
+        help="Use ATR-based forward-looking TP/SL in training labels instead of hindsight-derived values. "
+        "Breaks the circular dependency where the model learns to replicate price targets derived from future data.",
+    )
+    parser.add_argument(
         "--eval-only",
         type=str,
         metavar="ADAPTERS_DIR",
@@ -1072,6 +1080,9 @@ def main():
     ds_path, ds_export_dir = DATASET_TYPES[args.dataset_type]
     config["dataset_path"] = args.dataset or ds_path
     config["training_data_dir"] = ds_export_dir
+
+    if args.use_atr_tp_sl:
+        config["use_atr_tp_sl"] = True
 
     if args.no_gguf:
         config["skip_gguf"] = True
