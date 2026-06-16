@@ -51,8 +51,20 @@ log = logging.getLogger(__name__)
 # generate() call (one per eval sample — thousands of lines of useless spam).
 logging.getLogger("transformers.generation.configuration_utils").setLevel(logging.ERROR)
 
-DATASET_PATH = str(LANGGRAPH_ROOT / "backtest" / "data" / "labeled" / "dataset.jsonl")
+_LABELED_DIR = LANGGRAPH_ROOT / "backtest" / "data" / "labeled"
+DATASET_PATH = str(_LABELED_DIR / "dataset.jsonl")
+# Unfiltered dataset produced by `cli.py prepare-dataset --no-drawdown-filter`
+# (the experiment/no-drawdown-filter ablation — see docs/AUDIT_QLORA_88PCT.md §2).
+DATASET_PATH_NO_FILTER = str(_LABELED_DIR / "dataset_no_drawdown_filter.jsonl")
 TRAINING_DATA_DIR = LANGGRAPH_ROOT / "training_data"
+# Separate export dir for the no-filter run so its chat-format train/val/test
+# splits never overwrite the filtered run's (the two experiments stay isolated).
+TRAINING_DATA_DIR_NO_FILTER = LANGGRAPH_ROOT / "training_data_no_filter"
+# Maps --dataset-type → (labeled dataset path, chat-export dir).
+DATASET_TYPES = {
+    "filtered": (DATASET_PATH, str(TRAINING_DATA_DIR)),
+    "no_filter": (DATASET_PATH_NO_FILTER, str(TRAINING_DATA_DIR_NO_FILTER)),
+}
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
 MODELS_DIR = LANGGRAPH_ROOT / "backtest" / "data" / "models"
 
@@ -101,6 +113,12 @@ class QLoRATrainer:
         "resume": False,  # resume from latest checkpoint-N in output_dir if present
         "tag": "qlora_qwen25_7b",  # names result/loss-curve files and the model id
         "output_dir": str(MODELS_DIR / "qlora_qwen25_7b"),
+        # Labeled dataset used for BOTH training-data export and test evaluation,
+        # plus the chat-format export dir. Defaults reproduce the original run
+        # exactly. --dataset-type no_filter (or --dataset PATH) swaps in the
+        # unfiltered dataset for the drawdown-filter ablation.
+        "dataset_path": DATASET_PATH,
+        "training_data_dir": str(TRAINING_DATA_DIR),
     }
 
     def __init__(self, config: dict[str, Any] | None = None):
@@ -111,12 +129,22 @@ class QLoRATrainer:
 
     def prepare_data(self) -> dict[str, int]:
         """Export labeled dataset to chat-format JSONL splits for SFT."""
-        log.info(f"Exporting training data from {DATASET_PATH}")
-        log.info(f"  Output: {TRAINING_DATA_DIR}/")
+        dataset_path = self.cfg["dataset_path"]
+        training_data_dir = self.cfg["training_data_dir"]
+        log.info(f"Exporting training data from {dataset_path}")
+        log.info(f"  Output: {training_data_dir}/")
+
+        if not Path(dataset_path).exists():
+            raise FileNotFoundError(
+                f"Labeled dataset not found: {dataset_path}\n"
+                "  For --dataset-type no_filter, generate it first with:\n"
+                "    python -m cli prepare-dataset --no-drawdown-filter\n"
+                "  (and `dvc pull backtest/data/candles` if candles are missing)."
+            )
 
         counts = export_training_data(
-            dataset_path=DATASET_PATH,
-            output_dir=str(TRAINING_DATA_DIR),
+            dataset_path=dataset_path,
+            output_dir=training_data_dir,
             mode=self.cfg["mode"],
         )
         log.info(f"  Train: {counts['train']}, Val: {counts['val']}, Test: {counts['test']}")
@@ -173,7 +201,7 @@ class QLoRATrainer:
         """
         from datasets import Dataset
 
-        path = TRAINING_DATA_DIR / f"{split}.jsonl"
+        path = Path(self.cfg["training_data_dir"]) / f"{split}.jsonl"
         examples = []
         with open(path) as f:
             for line in f:
@@ -581,7 +609,7 @@ class QLoRATrainer:
         # SAME labeled dataset + temporal split as the ML/LLM runners (now a
         # strict temporal holdout) so the test set — and the paired stats — align
         # with LSTM/XGBoost/zero-shot results.
-        all_samples = _load_dataset(DATASET_PATH)
+        all_samples = _load_dataset(self.cfg["dataset_path"])
         train, val, test = _temporal_split(all_samples)
 
         empty = {
@@ -971,6 +999,22 @@ def parse_args():
     )
     parser.add_argument("--model", type=str, help="Model name/path (default: Qwen2.5-7B-Instruct-bnb-4bit)")
     parser.add_argument(
+        "--dataset-type",
+        choices=["filtered", "no_filter"],
+        default="filtered",
+        help=(
+            "Which labeled dataset to train + evaluate on. 'filtered' (default) = "
+            "the production dataset.jsonl. 'no_filter' = dataset_no_drawdown_filter.jsonl "
+            "(the drawdown-filter ablation; generate it first with "
+            "`cli prepare-dataset --no-drawdown-filter`). See docs/AUDIT_QLORA_88PCT.md §2."
+        ),
+    )
+    parser.add_argument(
+        "--dataset",
+        type=str,
+        help="Explicit labeled dataset path. Overrides --dataset-type if given.",
+    )
+    parser.add_argument(
         "--no-gguf",
         action="store_true",
         help="Skip GGUF export (useful for smoke tests — adapters are always saved regardless)",
@@ -1021,6 +1065,14 @@ def main():
         config["resume"] = True
     if args.model:
         config["model_name"] = args.model
+
+    # Dataset selection: --dataset-type picks a known (dataset, export-dir) pair;
+    # an explicit --dataset path overrides just the dataset (export dir still
+    # follows the type, so no_filter exports stay in training_data_no_filter/).
+    ds_path, ds_export_dir = DATASET_TYPES[args.dataset_type]
+    config["dataset_path"] = args.dataset or ds_path
+    config["training_data_dir"] = ds_export_dir
+
     if args.no_gguf:
         config["skip_gguf"] = True
 

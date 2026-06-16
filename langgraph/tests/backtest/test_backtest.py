@@ -14,7 +14,7 @@ from agent.prompts import build_system_prompt, build_user_prompt
 from backtest.evaluation.metrics import compute_all_metrics
 from backtest.evaluation.simulate import _parse_prediction, simulate_trade
 from backtest.ingestion.fetcher import _ms
-from backtest.ingestion.labeler import label_candle
+from backtest.ingestion.labeler import generate_labeled_dataset, label_candle
 from backtest.models import (
     RandomForestPredictor,
     XGBoostPredictor,
@@ -512,6 +512,56 @@ class TestLabelCandle:
         result = label_candle(candles, point, 0, lookahead=24)
         assert result is None
 
+    # -- drawdown-before-profit filter toggle (experiment/no-drawdown-filter) --
+
+    @staticmethod
+    def _drawdown_scenario() -> list[dict]:
+        """A clean LONG setup whose price dips to the stop (49,500) BEFORE hitting
+        TP — so the drawdown filter discards it, but every OTHER filter passes.
+
+        entry=50,000, atr=500 → sl=49,500, threshold=1.5%. The first future candle
+        dips to 49,400 (< sl) yet only 1.2% below entry, so the whipsaw filter
+        (>1.5% in the first 4 candles) does NOT catch it. A later candle reaches
+        51,500 > tp(51,050), and max_up(3%) > 1.5×max_down(1.2%) keeps it LONG.
+        """
+        base = {"open": 50000.0, "high": 50100.0, "low": 49900.0, "close": 50000.0, "volume": 100}
+        candles = [{"timestamp": i, **base} for i in range(30)]
+        # candle[1]: drawdown dip below the 49,500 stop (but within whipsaw bound)
+        candles[1] = {"timestamp": 1, "open": 50000.0, "high": 50100.0, "low": 49400.0, "close": 49800.0, "volume": 100}
+        # candle[5]: take-profit hit (tp = 50000 * (1 + 0.03*0.7) = 51,050)
+        candles[5] = {"timestamp": 5, "open": 50500.0, "high": 51500.0, "low": 50400.0, "close": 51200.0, "volume": 100}
+        return candles
+
+    def test_drawdown_filter_on_discards_noisy_sample(self):
+        candles = self._drawdown_scenario()
+        point = self._make_point(50000.0, atr=500.0)
+        point["timestamp"] = candles[0]["timestamp"]
+        # Default behaviour = filter ON: SL touched before TP → discarded.
+        assert label_candle(candles, point, 0, lookahead=24) is None
+        assert label_candle(candles, point, 0, lookahead=24, apply_drawdown_filter=True) is None
+
+    def test_drawdown_filter_off_keeps_directionally_correct_sample(self):
+        candles = self._drawdown_scenario()
+        point = self._make_point(50000.0, atr=500.0)
+        point["timestamp"] = candles[0]["timestamp"]
+        # Filter OFF: the same noisy-but-correct setup is kept, still labelled LONG.
+        result = label_candle(candles, point, 0, lookahead=24, apply_drawdown_filter=False)
+        assert result is not None
+        assert result["label"]["bias"] == "LONG"
+
+    def test_generate_dataset_forwards_drawdown_flag(self):
+        candles = self._drawdown_scenario()
+        point = self._make_point(50000.0, atr=500.0)
+        point["timestamp"] = candles[0]["timestamp"]
+
+        filtered = generate_labeled_dataset(candles, [point], "BTCUSDT", apply_drawdown_filter=True)
+        unfiltered = generate_labeled_dataset(candles, [point], "BTCUSDT", apply_drawdown_filter=False)
+
+        assert filtered == []
+        assert len(unfiltered) == 1
+        assert unfiltered[0]["symbol"] == "BTCUSDT"
+        assert unfiltered[0]["label"]["bias"] == "LONG"
+
 
 # ---------------------------------------------------------------------------
 # pipeline (minimal / structural)
@@ -527,6 +577,12 @@ class TestDataPipeline:
         pipe = DataPipeline()
         assert pipe.base_tf == "1h"
         assert "1h" in pipe.timeframes
+        # Drawdown filter is ON by default — production behaviour is unchanged.
+        assert pipe.apply_drawdown_filter is True
+
+    def test_apply_drawdown_filter_flag_stored(self):
+        pipe = DataPipeline(apply_drawdown_filter=False)
+        assert pipe.apply_drawdown_filter is False
 
     def test_date_range_format(self):
         pipe = DataPipeline(months=3)

@@ -16,7 +16,7 @@ from backtest.evaluation.compare import compare  # noqa: E402
 from backtest.evaluation.report import print_comparison, print_report  # noqa: E402
 from backtest.evaluation.runner import LLMBacktestRunner, MLBacktestRunner  # noqa: E402
 from backtest.export import export_training_data  # noqa: E402
-from backtest.pipeline import DataPipeline  # noqa: E402
+from backtest.pipeline import LABELED_DIR, DataPipeline  # noqa: E402
 
 _DEFAULT_SYMBOLS_STR = ",".join(DEFAULT_SYMBOLS)
 _DEFAULT_TIMEFRAMES_STR = ",".join(DEFAULT_TIMEFRAMES)
@@ -40,10 +40,22 @@ def cmd_prepare_dataset(args):
     timeframes = [t.strip() for t in args.timeframes.split(",")]
     base_tf = args.interval if args.interval in timeframes else "1h"
 
+    output_path = Path(args.output) if args.output else None
+    apply_drawdown_filter = not args.no_drawdown_filter
+    if not apply_drawdown_filter:
+        print("Drawdown-before-profit filter DISABLED (no-drawdown-filter ablation).")
+        if output_path is None:
+            # Never silently overwrite the production dataset.jsonl with an
+            # unfiltered build — default to a clearly-named sibling file.
+            output_path = LABELED_DIR / "dataset_no_drawdown_filter.jsonl"
+            print(f"  No --output given; writing to {output_path}")
+
     pipe = DataPipeline(
         symbols=symbols,
         timeframes=timeframes,
         base_tf=base_tf,
+        output_path=output_path,
+        apply_drawdown_filter=apply_drawdown_filter,
     )
     pipe.build_dataset()
 
@@ -111,6 +123,17 @@ def main():
     p.add_argument("--symbols", default=_DEFAULT_SYMBOLS_STR)
     p.add_argument("--interval", default="1h")
     p.add_argument("--timeframes", default=_DEFAULT_TIMEFRAMES_STR)
+    p.add_argument("--output", help="Output JSONL path (default: data/labeled/dataset.jsonl)")
+    p.add_argument(
+        "--no-drawdown-filter",
+        action="store_true",
+        help=(
+            "Skip the labeler's drawdown-before-profit survivorship filter "
+            "(experiment/no-drawdown-filter ablation). Defaults output to "
+            "data/labeled/dataset_no_drawdown_filter.jsonl so the production "
+            "dataset is never overwritten. See docs/AUDIT_QLORA_88PCT.md §2."
+        ),
+    )
 
     # run-backtest
     p = sub.add_parser("run-backtest", help="Run backtest with LLM predictions")

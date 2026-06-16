@@ -11,12 +11,23 @@ def label_candle(
     candle_index: int,
     lookahead: int = 24,
     atr_multiplier: float = 1.5,
+    apply_drawdown_filter: bool = True,
 ) -> dict[str, Any] | None:
     """Label a single candle using hindsight.
 
     indicator_point["indicators"] can be either:
     - flat dict: {"price": ..., "rsi": ...} (single-TF, backward compat)
     - multi-TF dict: {"1h": {...}, "4h": {...}, ...}
+
+    ``apply_drawdown_filter`` (default True) controls the drawdown-before-profit
+    check (see below). When True (the production default), a sample is discarded
+    if its stop-loss would have been hit before its take-profit within the
+    lookahead window — i.e. only trades that worked cleanly in hindsight survive.
+    Setting it False keeps those "noisy but directionally correct" samples, which
+    is the `experiment/no-drawdown-filter` ablation: it measures how much that
+    survivorship filter inflates the reported accuracy (see audit §2,
+    docs/AUDIT_QLORA_88PCT.md). ALL OTHER filters (ADX, volume, R:R, directional
+    clarity, whipsaw) are unchanged — only the drawdown filter is toggled.
 
     Returns a labeled dict or None if the candle is ambiguous/filtered.
     """
@@ -78,19 +89,24 @@ def label_candle(
         if early_rise > threshold_pct:
             return None
 
-    # Drawdown-before-profit check
-    if bias == "LONG":
-        for c in future:
-            if c["low"] <= sl:
-                return None
-            if c["high"] >= tp:
-                break
-    else:
-        for c in future:
-            if c["high"] >= sl:
-                return None
-            if c["low"] <= tp:
-                break
+    # Drawdown-before-profit check (survivorship filter — see audit §2).
+    # Discards a sample whose SL would have triggered before its TP within the
+    # lookahead window, so only cleanly-profitable trades remain. Toggled off by
+    # the no-drawdown-filter ablation to keep directionally-correct-but-noisy
+    # samples and measure this filter's effect on accuracy.
+    if apply_drawdown_filter:
+        if bias == "LONG":
+            for c in future:
+                if c["low"] <= sl:
+                    return None
+                if c["high"] >= tp:
+                    break
+        else:
+            for c in future:
+                if c["high"] >= sl:
+                    return None
+                if c["low"] <= tp:
+                    break
 
     confidence = min(10, int((reward / risk) * 3 + ind.get("adx", 0) / 10))
 
@@ -114,8 +130,13 @@ def generate_labeled_dataset(
     indicator_points: list[dict[str, Any]],
     symbol: str,
     lookahead: int = 24,
+    apply_drawdown_filter: bool = True,
 ) -> list[dict[str, Any]]:
-    """Generate labeled dataset from candles and indicator points."""
+    """Generate labeled dataset from candles and indicator points.
+
+    ``apply_drawdown_filter`` is forwarded to :func:`label_candle`. Leave it True
+    for the production dataset; set False for the no-drawdown-filter ablation.
+    """
     ts_to_idx = {c["timestamp"]: i for i, c in enumerate(candles)}
 
     labeled = []
@@ -123,7 +144,7 @@ def generate_labeled_dataset(
         idx = ts_to_idx.get(point["timestamp"])
         if idx is None:
             continue
-        result = label_candle(candles, point, idx, lookahead=lookahead)
+        result = label_candle(candles, point, idx, lookahead=lookahead, apply_drawdown_filter=apply_drawdown_filter)
         if result is not None:
             result["symbol"] = symbol
             labeled.append(result)

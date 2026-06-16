@@ -234,6 +234,61 @@ Env vars (`BATCH`, `GRAD_ACCUM`, `MAX_EVAL`, `EVAL_BATCH`) still work for GPU tu
 
 ---
 
+## Variant: No-Drawdown-Filter Experiment
+
+Trains/evaluates on a dataset built **without** the labeler's drawdown-before-profit
+survivorship filter, to measure how much it inflates the 88% (audit §2). Full
+rationale + interpretation: `.claude/EXPERIMENT_NO_DRAWDOWN_FILTER.md`. Only the
+data-prep step and one extra flag differ from the standard run above.
+
+```bash
+# 1. Candles only (the unfiltered dataset is BUILT here, not pulled)
+dvc pull backtest/data/candles
+
+# 2. Build the unfiltered dataset (CPU, ~5-15 min). Prints exact sample counts —
+#    that is your dataset size, no training needed to find out.
+python3 -m cli prepare-dataset \
+  --symbols BTCUSDT,ETHUSDT,BNBUSDT,SOLUSDT,XRPUSDT,ADAUSDT,AVAXUSDT,DOTUSDT,DOGEUSDT,LINKUSDT,MATICUSDT,NEARUSDT \
+  --timeframes "1h,4h,1d" \
+  --no-drawdown-filter
+# → backtest/data/labeled/dataset_no_drawdown_filter.jsonl  (production dataset.jsonl untouched)
+
+# 3. (Optional but recommended) smoke test the no_filter path first
+python3 optimization/qlora/train_qlora.py \
+  --dataset-type no_filter --max-steps 3 --max-eval 4 --eval-batch-size 4 \
+  --diagnostic-samples 0 --batch-size 4 --no-gguf --tag smoke_no_filter
+
+# 4. Full run — hyperparameters MATCH the qlora_cloud baseline (single-variable
+#    ablation: only the dataset changes). --dataset-type is forwarded by run_cloud.sh.
+nohup bash optimization/qlora/run_cloud.sh \
+  --tag qlora_no_drawdown_filter \
+  --lr 0.00002 --rank 16 --alpha 32 --epochs 2 \
+  --dataset-type no_filter \
+  > optimization/qlora/logs/qlora_no_drawdown_filter.log 2>&1 &
+echo "PID: $!"
+```
+
+**Expected time/cost** (A100 80GB): the unfiltered dataset is **75,289 samples vs
+56,161 — measured +34.1%** (the drawdown filter removes 19,128 setups), so training
+scales ~1.34×: **~4–4.7 h, ~$6–8** (vs ~3.5 h / ~$5–6 for the filtered run). Eval
+(`--max-eval 3000`) and GGUF are unchanged.
+
+**Paired comparison** (the no-filter test set differs from the filtered one — re-run
+zero-shot on it first):
+
+```bash
+python3 -m cli run-backtest \
+  --dataset backtest/data/labeled/dataset_no_drawdown_filter.jsonl \
+  --provider ollama --split test --tag zero-shot-no-filter
+python3 -m cli compare-stats \
+  --a optimization/qlora/results/qlora_no_drawdown_filter/result.json \
+  --b backtest/data/results/zero-shot-no-filter.json
+```
+
+Then DVC-track the new model + dataset (Step 8 pattern, with `TAG=qlora_no_drawdown_filter`).
+
+---
+
 ## Step 6: ML Grid Search in Parallel (CPU only)
 
 Launch while QLoRA trains — all three blocks run on CPU, don't interfere with the GPU job.

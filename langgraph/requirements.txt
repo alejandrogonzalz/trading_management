@@ -19,6 +19,7 @@ numpy
 TA-Lib
 pytest
 pytest-asyncio
+ruff>=0.10.0
 xgboost
 scikit-learn
 torch

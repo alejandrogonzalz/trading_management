@@ -47,6 +47,7 @@ class DataPipeline:
         lookahead: int = 24,
         output_path: Path | None = None,
         candles_dir: Path | None = None,
+        apply_drawdown_filter: bool = True,
     ):
         self.symbols = symbols
         self.timeframes = timeframes
@@ -55,6 +56,10 @@ class DataPipeline:
         self.lookahead = lookahead
         self.output_path = output_path or (LABELED_DIR / "dataset.jsonl")
         self.candles_dir = candles_dir or CANDLES_DIR
+        # When False, the labeler's drawdown-before-profit filter is skipped so
+        # directionally-correct-but-noisy samples are retained (the
+        # no-drawdown-filter ablation). All other quality filters are unchanged.
+        self.apply_drawdown_filter = apply_drawdown_filter
 
         if base_tf not in timeframes:
             raise ValueError(f"base_tf='{base_tf}' must be in timeframes={timeframes}")
@@ -133,7 +138,13 @@ class DataPipeline:
                 continue
             print(f"  {len(indicators)} indicator points")
 
-            labeled = generate_labeled_dataset(candles_by_tf[self.base_tf], indicators, sym, lookahead=self.lookahead)
+            labeled = generate_labeled_dataset(
+                candles_by_tf[self.base_tf],
+                indicators,
+                sym,
+                lookahead=self.lookahead,
+                apply_drawdown_filter=self.apply_drawdown_filter,
+            )
             longs = sum(1 for s in labeled if s["label"]["bias"] == "LONG")
             print(f"  {len(labeled)} labeled samples  ({longs} LONG / {len(labeled) - longs} SHORT)")
 
