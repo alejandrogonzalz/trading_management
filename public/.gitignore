@@ -1,0 +1,16 @@
+# LaTeX build artifacts
+*.aux
+*.log
+*.out
+*.toc
+*.fdb_latexmk
+*.fls
+*.synctex.gz
+*.bbl
+*.blg
+*.nav
+*.snm
+*.vrb
+
+# Compiled PDF (regenerate with pdflatex)
+*.pdf

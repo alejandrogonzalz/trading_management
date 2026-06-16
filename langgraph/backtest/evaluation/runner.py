@@ -10,7 +10,7 @@ from typing import Any
 
 from agent.prompts import build_system_prompt, build_user_prompt
 from backtest.evaluation.metrics import compute_all_metrics
-from backtest.evaluation.simulate import _parse_prediction, simulate_trade
+from backtest.evaluation.simulate import _parse_prediction, simulate_trade, simulate_trade_atr
 from backtest.models.features import _load_dataset, _temporal_split, extract_features
 from backtest.models.sklearn_models import get_predictor
 
@@ -122,7 +122,7 @@ class LLMBacktestRunner:
 
         print(f"LLM backtest: {len(samples)} samples | provider={os.getenv('LLM_PROVIDER')} | mode={self.mode}")
 
-        predictions, actuals, trade_results, sample_keys = [], [], [], []
+        predictions, actuals, trade_results, atr_trade_results, sample_keys = [], [], [], [], []
         errors = 0
         start = time.time()
 
@@ -130,6 +130,7 @@ class LLMBacktestRunner:
             symbol = sample.get("symbol", "BTCUSDT")
             label = sample["label"]
             indicators = sample["indicators"]
+            atr_raw = sample.get("atr_raw", 0)
             if indicators and not isinstance(next(iter(indicators.values())), dict):
                 indicators = {"1h": indicators}
 
@@ -159,9 +160,12 @@ class LLMBacktestRunner:
             if candle_idx is not None and candle_idx + 1 < len(candles_map.get(symbol, [])):
                 future = candles_map[symbol][candle_idx + 1 : candle_idx + 25]
                 trade_result = simulate_trade(prediction, future)
+                atr_result = simulate_trade_atr(prediction, atr_raw, future)
             else:
                 trade_result = {"outcome": "ERROR", "pnl_pct": 0, "hold_bars": 0}
+                atr_result = {"outcome": "ERROR", "pnl_pct": 0, "hold_bars": 0}
             trade_results.append(trade_result)
+            atr_trade_results.append(atr_result)
 
             if self.verbose:
                 ts = sample.get("timestamp", "")
@@ -175,6 +179,7 @@ class LLMBacktestRunner:
                 print(f"  Progress: {i + 1}/{len(samples)} ({time.time() - start:.0f}s, {errors} errors)")
 
         metrics = compute_all_metrics(predictions, actuals, trade_results) if predictions else {}
+        atr_metrics = compute_all_metrics(predictions, actuals, atr_trade_results) if predictions else {}
         result = {
             "tag": self.tag,
             "provider": os.getenv("LLM_PROVIDER", "unknown"),
@@ -186,9 +191,13 @@ class LLMBacktestRunner:
             "errors": errors,
             "elapsed_seconds": round(time.time() - start, 2),
             "metrics": metrics,
+            # Forward-looking ATR simulation (1.5×ATR TP, 1.0×ATR SL, 0.1% fees).
+            # Breaks the circular TP/SL dependency in LLM-predicted exits.
+            "metrics_atr": atr_metrics,
             "predictions": predictions,
             "actuals": actuals,
             "trade_results": trade_results,
+            "atr_trade_results": atr_trade_results,
             "sample_keys": sample_keys,
         }
 
@@ -330,6 +339,7 @@ class MLBacktestRunner:
                 )
 
         elapsed = time.time() - start
+        # MLBacktestRunner already uses forward-looking ATR exits — metrics == metrics_atr.
         metrics = compute_all_metrics(predictions, actuals, trade_results) if predictions else {}
 
         result = {
@@ -343,9 +353,11 @@ class MLBacktestRunner:
             "elapsed_seconds": round(elapsed, 2),
             "train_info": train_info,
             "metrics": metrics,
+            "metrics_atr": metrics,  # identical: ML runner already uses ATR exits
             "predictions": predictions,
             "actuals": actuals,
             "trade_results": trade_results,
+            "atr_trade_results": trade_results,
             "sample_keys": sample_keys,
         }
 

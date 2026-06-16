@@ -362,3 +362,121 @@ QLoRA at 88.03% (McNemar chi²=557, p≈0) demonstrates that pre-trained world k
 
 7. **Why does Random Forest beat LSTM despite LSTM being designed for time series?**  
    *Answered in Section 2: RF's hard decision thresholds ("RSI > 65 → SHORT") are more regime-stable than LSTM's learned numerical weight combinations. LSTM memorizes training-period temporal dynamics; when the market regime shifts, those weights become noise. RF's structural simplicity is its advantage, not its weakness — a well-known phenomenon in financial ML.*
+
+---
+
+## 8. Limitations and Methodological Caveats
+
+> **Code is correct — the following are design constraints, not implementation bugs.**
+> The temporal split, embargo, indicator pipeline, and accuracy computation all passed adversarial audit.
+> The limitations below affect *interpretation*, not the validity of the direction accuracy measurement.
+
+### 8.1 Dataset Survivorship Bias (Medium severity)
+
+The labeling algorithm applies quality filters before assigning a direction:
+- `ADX >= 15` — minimum trend strength required
+- `volume_ratio >= 0.5` — minimum liquidity
+- `R:R >= 1.0` — reward-to-risk at least 1:1
+- Whipsaw filter — discards samples that reverse sharply in the first 4 candles
+- Drawdown filter — **only samples where the trade would have worked (TP hit before SL) are kept**
+
+Of ~250,000 raw candles, only 56,161 samples (~22%) survive these filters. The 88% direction accuracy is measured on this pre-filtered universe — not on arbitrary market conditions.
+
+**Implication:** the accuracy claim must be stated as "88% on high-quality, pre-selected setups that meet quantitative quality criteria." It is not "88% of all market moments." This is a design choice, not a flaw — the thesis objective is to classify *good* setups, not all candles — but it must be disclosed.
+
+### 8.2 Circular TP/SL in Trade Simulation (High severity — financial metrics only)
+
+The labeler derives TP/SL from hindsight:
+```python
+tp = entry * (1 + max_up * 0.7)   # 70% of the actual future price maximum
+sl = entry - 1 * atr               # 1 ATR below entry
+```
+
+The model learns to replicate these values during training (median TP deviation from label: 0.74%). The simulator then asks "did price reach the model's predicted TP?" — almost always YES on correct-direction trades, because the TP was calibrated to a price the market actually reached.
+
+This creates a circular dependency: label TP is derived from future prices that DID materialize → model mimics label TP → simulator confirms the TP "works." The profit factor of 12.92 and win rate of 61.67% are therefore **artifacts of the evaluation methodology, not evidence of tradeable alpha**.
+
+**Implication:**
+- **Direction accuracy (88%)**: primary metric, methodologically sound, cite freely.
+- **Win rate and profit factor**: report as simulation results with an explicit caveat. Do not claim them as evidence of live trading viability.
+- **Comparison ranking is still valid**: even inflated by the same methodology, the fine-tuned model's financial metrics are dramatically better than zero-shot — that relative gap is real.
+
+### 8.3 Flawed Train Diagnostic (Low severity — overfitting claim only)
+
+The train accuracy diagnostic (`70.5%`) samples the **oldest 500 training examples** — the earliest timestamps in the dataset (early 2023, FTX aftermath, atypical volatility). These are genuinely harder and from a different market regime than the 2025 test set. The "negative overfitting gap" (test > train) is therefore partly explained by regime difference, not purely by the model's generalization ability.
+
+The loss curve confirms the model is not memorizing training data (train/eval loss gap = 0.015), so overfitting is not occurring — but the gap magnitude (−17.5pp) overstates the generalization advantage because the train diagnostic is not representative of the full training period.
+
+### 8.4 Sub-Sampled Test Evaluation (Low severity)
+
+The fine-tuned model was evaluated on 3,000 of 8,425 test samples using stride-based sub-sampling (every ~2.8th sample). The sub-sampling spans all symbols and the full time range so it is not biased, but evaluating 35.6% of the test set reduces statistical power. The 95% CI on 3,000 samples at 88% accuracy is ±1.2pp (86.8%–89.2%) — tight enough for the thesis conclusion, but worth disclosing.
+
+### 8.5 Information Asymmetry vs ML Models (Medium severity)
+
+The ML feature vector contains 30 numeric features (9 per timeframe × 3 TFs + 3 cross-TF). The LLM prompt includes exact price levels, categorical heatmap/structure labels as text (`"STRONG_BULLISH"`, `"BREAKOUT"`), and the symbol name — a richer representation that enables symbol-specific pattern learning and contextual reasoning the flat vector cannot express.
+
+The LLM sees strictly more information than the ML models. The 88% vs 64% gap is partly explained by this information asymmetry, not solely by the LLM's superior inductive bias.
+
+### 8.6 No Transaction Costs or Slippage
+
+The trade simulation fills at exact TP/SL prices with no maker/taker fees (Binance: 0.1% per side = 0.2% round-trip), no slippage, and no execution latency. At ~37 trades/day (implied by the test period), fees alone would subtract ~7.4%/day. The reported financial metrics are pre-cost upper bounds.
+
+### 8.7 Single Fixed Test Window
+
+One fixed temporal test split (most recent 15%, ~81 days) cannot distinguish between a model that genuinely generalizes and one that matches the specific regime of the test period. Walk-forward validation was outside the thesis scope given the ~$12/run training cost.
+
+---
+
+## 9. Thesis Disclaimer Paragraphs
+
+> Copy-paste these into the appropriate sections of the thesis document.
+
+### 9.1 Methodology section — after describing the dataset
+
+> The labeled dataset was constructed by applying a series of quality filters to the raw
+> multi-timeframe indicator data. Samples were retained only when minimum trend strength
+> (ADX ≥ 15), minimum volume (volume ratio ≥ 0.5), favorable reward-to-risk ratio (R:R ≥ 1.0),
+> and absence of immediate reversal (whipsaw filter) were all satisfied. Of approximately
+> 250,000 raw indicator snapshots, 56,161 samples (22.4%) met these criteria.
+> All accuracy measurements reported in this work apply to this pre-selected subset of
+> high-quality setups and should not be generalized to arbitrary market conditions.
+
+### 9.2 Results section — after reporting financial metrics
+
+> The trade simulation estimates profit factor, win rate, and Sharpe ratio by replaying
+> each model's predicted entry, take-profit, and stop-loss levels against the historical
+> price series. For the fine-tuned model, these TP/SL values were learned from
+> hindsight-calibrated training labels (TP = entry × (1 + observed\_max\_up × 0.7);
+> SL = entry − 1 × ATR). Consequently, the reported profit factor (12.92) and win rate
+> (61.67%) reflect the quality of the model's directional prediction and its ability to
+> replicate hindsight-optimal trade sizing, but not forward-looking trading viability.
+> These metrics are reported as a comparative ranking signal across models rather than
+> as a projection of live trading performance. Live deployment would require replacing
+> the learned TP/SL with a forward-looking exit strategy and incorporating transaction
+> costs and slippage.
+
+### 9.3 Model Comparison section — when discussing the LLM vs ML gap
+
+> The comparison between the fine-tuned LLM (88.03%) and classical ML models (XGBoost
+> 63.6%, Random Forest 64.2%) is not strictly equivalent with respect to input information.
+> Classical ML models receive a flat feature vector of 30 numeric values; the LLM receives
+> a natural-language prompt encoding the same indicators as semantic qualitative descriptors
+> (e.g., `"heatmap: STRONG_BULLISH"`, `"structure: BREAKOUT"`), price levels, and the
+> asset symbol. The accuracy gap therefore reflects both the benefit of fine-tuning and
+> the benefit of richer input representation. This is a deliberate design choice: providing
+> the LLM with the same human-readable context that a professional analyst would use
+> captures the information available at decision time more faithfully than a reduced
+> numeric encoding.
+
+### 9.4 Conclusions / Future Work section
+
+> Several limitations constrain the generalizability of these results. First, all
+> evaluations use a single fixed temporal test split; walk-forward validation across
+> multiple non-overlapping test windows would provide stronger evidence of robustness
+> to market regime changes. Second, the trade simulation does not account for transaction
+> costs, slippage, or market impact, which would meaningfully reduce the reported financial
+> metrics in a live deployment. Third, the labeling procedure pre-selects for high-quality
+> setups, limiting the applicability of the accuracy estimates to conditions resembling
+> those in the training and test data. Future work should: (1) replace hindsight-derived
+> TP/SL with forward-looking ATR-based exit rules, (2) incorporate transaction costs into
+> the simulation, and (3) apply walk-forward backtesting over a longer evaluation horizon.

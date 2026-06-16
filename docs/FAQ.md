@@ -759,3 +759,71 @@ This does not affect model quality — only training speed.
 | **Throughput** | How many requests the model can serve per minute |
 | **vLLM** | Library that batches multiple requests on a single GPU |
 | **Continuous batching** | Processing new requests without waiting for current ones to finish |
+
+---
+
+## ¿Qué es la circularidad en las métricas financieras?
+
+### El problema en una oración
+
+El profit factor (12.92) y el win rate (61.67%) son artificialmente altos porque el modelo aprendió a predecir niveles de TP/SL que **fueron calculados mirando al futuro** — y luego el simulador verifica si el precio "llegó" a esos niveles que ya se sabía que iban a llegar.
+
+### Paso a paso
+
+1. **El etiquetador mira 24 velas al futuro** y ve que BTC subió máximo +3.2%. Calcula:
+   - `TP = entry × (1 + 3.2% × 0.7) = entry + 2.24%` (70% del máximo real)
+   - `SL = entry - 1×ATR`
+
+2. **El modelo aprende** de 39,312 ejemplos como este. Después de entrenar, cuando le das indicadores, predice un TP que es ~0.74% diferente del TP de la etiqueta (casi idéntico).
+
+3. **El simulador pregunta**: "¿el precio alcanzó el TP predicho por el modelo?" → Casi siempre SÍ, porque ese TP fue derivado del hecho de que el precio SÍ llegó ahí.
+
+### Qué SÍ es válido
+
+La **dirección** (LONG/SHORT) no es circular. El modelo tiene que decidir si el precio sube o baja — eso no está "regalado" por el TP/SL. El 88% de precisión direccional es una métrica limpia.
+
+### Qué NO es válido como claim
+
+- Profit factor 12.92 → no es tradeable
+- Win rate 61.67% → inflado por TP calibrado a hindsight
+- Sharpe ratio 15.79 → imposible en trading real
+
+### La solución
+
+`simulate_trade_atr()` ignora el TP/SL del modelo y usa solo ATR (disponible al momento del trade): `TP = entry ± 1.5×ATR`, `SL = entry ∓ 1.0×ATR`. Esto produce métricas financieras honestas (PF esperado: 1.5-3.0).
+
+### Analogía
+
+Es como hacer un examen de opción múltiple donde:
+- **Pregunta**: "¿BTC va a subir o bajar?" → el estudiante tiene que pensar (no circular, puede fallar)
+- **Pregunta bonus**: "¿A qué precio exacto llegará?" → la respuesta correcta fue calculada viendo el resultado → el estudiante la memoriza → siempre "acierta" → calificación inflada
+
+---
+
+## ¿Se pueden correr las validaciones de manera local (sin RunPod)?
+
+### Sí, pero es lento
+
+La **evaluación** (no el entrenamiento) puede correr en la RTX 5070 Ti local:
+- Requiere cargar el modelo (~4.4GB VRAM) + generar ~1024 tokens por muestra
+- Velocidad local: ~2-3 samples/min (sin FA2, batch=1)
+- 3,000 muestras: ~17-25 horas
+- 8,425 muestras: ~47-70 horas
+
+En RunPod con eval_batch=32: ~20 min para 3,000, ~56 min para 8,425.
+
+### Alternativa: Ollama local
+
+Si el modelo ya está exportado a GGUF y cargado en Ollama:
+```bash
+ollama create trading-qwen-ft -f backtest/data/models/qlora_cloud/Modelfile
+```
+Entonces puedes usar el `LLMBacktestRunner` con `--provider ollama` para evaluar localmente. Ollama maneja la cuantización y puede correr a ~5-10 samples/min en la 5070 Ti.
+
+### Qué NO se puede hacer local
+
+El **entrenamiento** (fine-tuning) necesita VRAM para gradientes + activaciones:
+- Local (16GB): batch=1, ~28s/step, ~23h para 3,000 pasos
+- RunPod A100 (80GB): batch=8, ~3.4s/step, ~3.5h
+
+La evaluación es factible local; el entrenamiento es donde RunPod vale la pena.

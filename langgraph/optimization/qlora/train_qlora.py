@@ -18,6 +18,7 @@ import argparse
 import json
 import logging
 import os
+import random
 import sys
 import time
 from datetime import datetime
@@ -34,7 +35,7 @@ sys.path.insert(0, str(LANGGRAPH_ROOT))
 from agent.prompts import build_system_prompt, build_user_prompt
 from backtest.evaluation.metrics import compute_all_metrics, direction_accuracy
 from backtest.evaluation.runner import CANDLES_DIR, _load_candles_map
-from backtest.evaluation.simulate import _parse_prediction, simulate_trade
+from backtest.evaluation.simulate import _parse_prediction, simulate_trade, simulate_trade_atr
 from backtest.export import export_training_data
 from backtest.models.features import _load_dataset, _temporal_split
 from optimization.io.plots import save_loss_curve_plot
@@ -386,6 +387,7 @@ class QLoRATrainer:
         predictions: list[dict[str, Any]] = []
         actuals: list[dict[str, Any]] = []
         trade_results: list[dict[str, Any]] = []
+        atr_trade_results: list[dict[str, Any]] = []
         sample_keys: list[str] = []
         parse_errors = 0
 
@@ -463,12 +465,15 @@ class QLoRATrainer:
                 sample_keys.append(f"{symbol}@{sample['timestamp']}")
 
                 if simulate:
+                    atr_raw = sample.get("atr_raw", 0)
                     candle_idx = ts_idx_map.get(symbol, {}).get(sample["timestamp"])
                     if candle_idx is not None and candle_idx + 1 < len(candles_map.get(symbol, [])):
                         future = candles_map[symbol][candle_idx + 1 : candle_idx + 25]
                         trade_results.append(simulate_trade(prediction, future))
+                        atr_trade_results.append(simulate_trade_atr(prediction, atr_raw, future))
                     else:
                         trade_results.append({"outcome": "ERROR", "pnl_pct": 0, "hold_bars": 0})
+                        atr_trade_results.append({"outcome": "ERROR", "pnl_pct": 0, "hold_bars": 0})
 
             if (b + 1) % log_every == 0 or (b + 1) == n_batches:
                 done = b_end
@@ -483,6 +488,7 @@ class QLoRATrainer:
             "predictions": predictions,
             "actuals": actuals,
             "trade_results": trade_results,
+            "atr_trade_results": atr_trade_results,
             "sample_keys": sample_keys,
             "parse_errors": parse_errors,
         }
@@ -581,11 +587,13 @@ class QLoRATrainer:
         empty = {
             "accuracy": 0,
             "metrics": {},
+            "metrics_atr": {},
             "total_evaluated": 0,
             "errors": 0,
             "predictions": [],
             "actuals": [],
             "trade_results": [],
+            "atr_trade_results": [],
             "sample_keys": [],
             "train_acc": None,
             "val_acc": None,
@@ -622,17 +630,23 @@ class QLoRATrainer:
         predictions = test_out["predictions"]
         actuals = test_out["actuals"]
         trade_results = test_out["trade_results"]
+        atr_trade_results = test_out["atr_trade_results"]
         sample_keys = test_out["sample_keys"]
         parse_errors = test_out["parse_errors"]
 
         metrics = compute_all_metrics(predictions, actuals, trade_results) if predictions else {}
+        atr_metrics = compute_all_metrics(predictions, actuals, atr_trade_results) if predictions else {}
         test_acc = metrics.get("direction_accuracy", 0.0)
 
         # --- Overfitting gap: TRAIN/VAL direction accuracy on capped subsets ---
         n_diag = self.cfg.get("diagnostic_samples") or 0
         train_acc = val_acc = gap = None
         if n_diag > 0:
-            train_sub, val_sub = train[:n_diag], val[:n_diag]
+            # Sample randomly from across the full training period (not just oldest).
+            # train[:n_diag] would bias toward the earliest market regime (2023).
+            rng = random.Random(42)
+            train_sub = rng.sample(train, min(n_diag, len(train)))
+            val_sub = val[:n_diag]
             log.info(f"  Gap diagnostics: train subset={len(train_sub)}, val subset={len(val_sub)}")
             if train_sub:
                 t = self._predict_split(
@@ -654,6 +668,10 @@ class QLoRATrainer:
             f"  Test accuracy: {test_acc:.4f}  win_rate={metrics.get('win_rate', 0):.4f}  "
             f"profit_factor={metrics.get('profit_factor', 0):.3f}"
         )
+        log.info(
+            f"  ATR sim: win_rate={atr_metrics.get('win_rate', 0):.4f}  "
+            f"profit_factor={atr_metrics.get('profit_factor', 0):.3f}"
+        )
         if gap is not None:
             log.info(f"  Train acc: {train_acc:.4f}  Val acc: {val_acc:.4f}  Gap(train-test): {gap:+.4f}")
         log.info(f"  Heuristic baseline accuracy: {baseline_acc:.4f}")
@@ -662,19 +680,18 @@ class QLoRATrainer:
         return {
             "accuracy": test_acc,
             "metrics": metrics,
+            "metrics_atr": atr_metrics,
             "total_evaluated": len(predictions),
             "errors": parse_errors,
-            # Overfitting diagnostics (None when --diagnostic-samples 0).
             "train_acc": train_acc,
             "val_acc": val_acc,
             "test_acc": test_acc,
             "gap": gap,
             "baseline_metrics": baseline_metrics,
-            # Per-sample arrays — required for the paired McNemar + t-test.
-            # Same schema as LLMBacktestRunner (predictions are dicts with bias).
             "predictions": predictions,
             "actuals": actuals,
             "trade_results": trade_results,
+            "atr_trade_results": atr_trade_results,
             "sample_keys": sample_keys,
         }
 
@@ -723,6 +740,77 @@ class QLoRATrainer:
             return "SHORT"
 
         return None
+
+    def load_for_inference(self, adapters_dir: str) -> None:
+        """Load saved LoRA adapters directly — no training scaffolding."""
+        from unsloth import FastLanguageModel
+
+        log.info(f"Loading saved adapters for inference: {adapters_dir}")
+        self.model, self.tokenizer = FastLanguageModel.from_pretrained(
+            model_name=str(adapters_dir),
+            max_seq_length=self.cfg["max_seq_length"],
+            dtype=None,
+            load_in_4bit=True,
+        )
+        log.info("  Adapters loaded (inference mode set inside evaluate())")
+
+    def run_eval_only(self, adapters_dir: str) -> dict[str, Any]:
+        """Skip training — load saved adapters and evaluate on the test set."""
+        log.info("=" * 60)
+        log.info("  QLoRA Eval-Only — loading saved adapters")
+        log.info(f"  Adapters: {adapters_dir}")
+        log.info("=" * 60)
+
+        t0 = time.time()
+        self.load_for_inference(adapters_dir)
+        test_metrics = self.evaluate()
+        elapsed = time.time() - t0
+
+        tag = self.cfg["tag"]
+        result = {
+            "model": tag,
+            "tag": tag,
+            "ensemble_type": "single",
+            "strategy": "fine_tuning_eval_only",
+            "eval_only": True,
+            "adapters_dir": str(adapters_dir),
+            "best_score": test_metrics["accuracy"],
+            "best_params": {"adapters_dir": str(adapters_dir)},
+            "val_metrics": {},
+            "test_metrics": {
+                "accuracy": test_metrics["accuracy"],
+                "total_evaluated": test_metrics["total_evaluated"],
+                "errors": test_metrics["errors"],
+                **test_metrics["metrics"],
+            },
+            "overfitting": {
+                "train_acc": test_metrics["train_acc"],
+                "val_acc": test_metrics["val_acc"],
+                "test_acc": test_metrics["test_acc"],
+                "gap": test_metrics["gap"],
+            },
+            "baseline_metrics": test_metrics["baseline_metrics"],
+            "metrics": test_metrics["metrics"],
+            "metrics_atr": test_metrics.get("metrics_atr", {}),
+            "predictions": test_metrics["predictions"],
+            "actuals": test_metrics["actuals"],
+            "trade_results": test_metrics["trade_results"],
+            "atr_trade_results": test_metrics.get("atr_trade_results", []),
+            "sample_keys": test_metrics["sample_keys"],
+            "elapsed_seconds": round(elapsed, 1),
+            "timestamp": datetime.now().isoformat(),
+        }
+
+        run_dir = RESULTS_DIR / tag
+        run_dir.mkdir(parents=True, exist_ok=True)
+        out_path = run_dir / "result.json"
+        canonical = RESULTS_DIR / "qlora_optimization.json"
+        for path in (out_path, canonical):
+            with open(path, "w") as f:
+                json.dump(result, f, indent=2)
+        log.info(f"\nResult saved: {out_path} (canonical: {canonical})")
+        log.info(f"Total time: {elapsed:.1f}s ({elapsed / 60:.1f} min)")
+        return result
 
     def run(self) -> dict[str, Any]:
         """Execute the full pipeline: prepare → load → train → evaluate → save."""
@@ -797,9 +885,11 @@ class QLoRATrainer:
             },
             "baseline_metrics": test_metrics["baseline_metrics"],
             "metrics": test_metrics["metrics"],
+            "metrics_atr": test_metrics.get("metrics_atr", {}),
             "predictions": test_metrics["predictions"],
             "actuals": test_metrics["actuals"],
             "trade_results": test_metrics["trade_results"],
+            "atr_trade_results": test_metrics.get("atr_trade_results", []),
             "sample_keys": test_metrics["sample_keys"],
             "data_counts": counts,
             "train_info": train_info,
@@ -885,6 +975,12 @@ def parse_args():
         action="store_true",
         help="Skip GGUF export (useful for smoke tests — adapters are always saved regardless)",
     )
+    parser.add_argument(
+        "--eval-only",
+        type=str,
+        metavar="ADAPTERS_DIR",
+        help="Skip training — load saved adapters from this path and run eval only",
+    )
     return parser.parse_args()
 
 
@@ -928,9 +1024,11 @@ def main():
     if args.no_gguf:
         config["skip_gguf"] = True
 
-    # Run training
     trainer = QLoRATrainer(config)
-    result = trainer.run()
+    if args.eval_only:
+        result = trainer.run_eval_only(args.eval_only)
+    else:
+        result = trainer.run()
 
     # Print summary
     m = result["metrics"]
