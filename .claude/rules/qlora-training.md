@@ -4,7 +4,7 @@ Fine-tunes Qwen 2.5 7B (4-bit) with Unsloth for trade-direction prediction.
 Script: `langgraph/optimization/qlora/train_qlora.py`. Venv: `langgraph/.venv-finetuning/`.
 
 > **Status & roadmap** (where we are, the SageMaker plan, what's left) lives in
-> [`docs/QLORA_FINETUNING.md` §0](../../docs/QLORA_FINETUNING.md). This file is the
+> [`docs/qlora/QLORA_FINETUNING.md` §0](../../docs/qlora/QLORA_FINETUNING.md). This file is the
 > commands/constraints reference.
 
 ---

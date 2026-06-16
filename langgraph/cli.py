@@ -131,7 +131,7 @@ def main():
             "Skip the labeler's drawdown-before-profit survivorship filter "
             "(experiment/no-drawdown-filter ablation). Defaults output to "
             "data/labeled/dataset_no_drawdown_filter.jsonl so the production "
-            "dataset is never overwritten. See docs/AUDIT_QLORA_88PCT.md §2."
+            "dataset is never overwritten. See docs/qlora/AUDIT_QLORA_88PCT.md §2."
         ),
     )
 

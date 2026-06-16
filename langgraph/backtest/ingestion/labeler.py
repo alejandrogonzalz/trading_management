@@ -26,7 +26,7 @@ def label_candle(
     Setting it False keeps those "noisy but directionally correct" samples, which
     is the `experiment/no-drawdown-filter` ablation: it measures how much that
     survivorship filter inflates the reported accuracy (see audit §2,
-    docs/AUDIT_QLORA_88PCT.md). ALL OTHER filters (ADX, volume, R:R, directional
+    docs/qlora/AUDIT_QLORA_88PCT.md). ALL OTHER filters (ADX, volume, R:R, directional
     clarity, whipsaw) are unchanged — only the drawdown filter is toggled.
 
     Returns a labeled dict or None if the candle is ambiguous/filtered.

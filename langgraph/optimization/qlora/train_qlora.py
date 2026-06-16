@@ -54,7 +54,7 @@ logging.getLogger("transformers.generation.configuration_utils").setLevel(loggin
 _LABELED_DIR = LANGGRAPH_ROOT / "backtest" / "data" / "labeled"
 DATASET_PATH = str(_LABELED_DIR / "dataset.jsonl")
 # Unfiltered dataset produced by `cli.py prepare-dataset --no-drawdown-filter`
-# (the experiment/no-drawdown-filter ablation — see docs/AUDIT_QLORA_88PCT.md §2).
+# (the experiment/no-drawdown-filter ablation — see docs/qlora/AUDIT_QLORA_88PCT.md §2).
 DATASET_PATH_NO_FILTER = str(_LABELED_DIR / "dataset_no_drawdown_filter.jsonl")
 TRAINING_DATA_DIR = LANGGRAPH_ROOT / "training_data"
 # Separate export dir for the no-filter run so its chat-format train/val/test
@@ -1006,7 +1006,7 @@ def parse_args():
             "Which labeled dataset to train + evaluate on. 'filtered' (default) = "
             "the production dataset.jsonl. 'no_filter' = dataset_no_drawdown_filter.jsonl "
             "(the drawdown-filter ablation; generate it first with "
-            "`cli prepare-dataset --no-drawdown-filter`). See docs/AUDIT_QLORA_88PCT.md §2."
+            "`cli prepare-dataset --no-drawdown-filter`). See docs/qlora/AUDIT_QLORA_88PCT.md §2."
         ),
     )
     parser.add_argument(

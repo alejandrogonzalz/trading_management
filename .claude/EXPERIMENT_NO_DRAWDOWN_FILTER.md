@@ -4,7 +4,7 @@
 > **Branch:** `experiment/no-drawdown-filter`
 > **Model tag:** `qlora_no_drawdown_filter`
 > **Dataset type:** `no_filter`
-> Addresses **Critique #2** of the audit (`docs/AUDIT_QLORA_88PCT.md` §2 — Label Leakage / survivorship bias).
+> Addresses **Critique #2** of the audit (`docs/qlora/AUDIT_QLORA_88PCT.md` §2 — Label Leakage / survivorship bias).
 
 ---
 
@@ -311,9 +311,9 @@ the 3-step test), `--skip-smoke`, `--skip-checks`.
 
 ## 8. References
 
-- `docs/EXPERIMENT_NO_DRAWDOWN_FILTER_GUIDE.md` — the human-facing, copy-paste
+- `docs/qlora/EXPERIMENT_NO_DRAWDOWN_FILTER_GUIDE.md` — the human-facing, copy-paste
   start-to-finish guide (fresh GPU box → result → thesis). Start here to just run it.
-- `docs/AUDIT_QLORA_88PCT.md` — §2 (drawdown filter / survivorship bias), §5
+- `docs/qlora/AUDIT_QLORA_88PCT.md` — §2 (drawdown filter / survivorship bias), §5
   (baseline, "60–70% on unfiltered data"), §9 point 6 (state the filters).
 - `RESULT_INTERPRETATION.md` — outcome → paper-decision table.
 - `SESSION_PERSISTENCE.md` — current state + pending steps.

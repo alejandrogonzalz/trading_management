@@ -2,7 +2,7 @@
 
 A single, linear, copy-paste guide to run the experiment on a fresh GPU box and turn
 the result into thesis text. For the *why* and deeper internals see
-`../.claude/EXPERIMENT_NO_DRAWDOWN_FILTER.md`; for the audit see `AUDIT_QLORA_88PCT.md`.
+`../../.claude/EXPERIMENT_NO_DRAWDOWN_FILTER.md`; for the audit see `AUDIT_QLORA_88PCT.md`.
 
 ---
 
@@ -110,7 +110,7 @@ python3 -m cli compare-stats \
 
 ## Step 6 — Interpret + write it up
 
-Fill this in and apply the decision table in `../.claude/RESULT_INTERPRETATION.md`:
+Fill this in and apply the decision table in `../../.claude/RESULT_INTERPRETATION.md`:
 
 | Metric | Filtered baseline | No-filter (this run) |
 |--------|-------------------|----------------------|
@@ -150,7 +150,7 @@ git commit -m "data(qlora): no-drawdown-filter model + dataset (DVC)"
 | `win_rate = 0` in result | candles missing: `dvc pull backtest/data/candles` |
 | Run died mid-training | `bash run_cloud.sh --tag qlora_no_drawdown_filter --dataset-type no_filter --resume` |
 
-Full failure→fix tree: `../.claude/EXPERIMENT_NO_DRAWDOWN_FILTER.md` §7 (Agent Runbook).
+Full failure→fix tree: `../../.claude/EXPERIMENT_NO_DRAWDOWN_FILTER.md` §7 (Agent Runbook).
 
 ---
 
@@ -164,4 +164,4 @@ Full failure→fix tree: `../.claude/EXPERIMENT_NO_DRAWDOWN_FILTER.md` §7 (Agen
 | `langgraph/cli.py` `prepare-dataset --no-drawdown-filter` | Builds the unfiltered dataset |
 | `.claude/EXPERIMENT_NO_DRAWDOWN_FILTER.md` | Plan, agent runbook, measured numbers |
 | `.claude/RESULT_INTERPRETATION.md` | Outcome → thesis-framing decision table |
-| `docs/AUDIT_QLORA_88PCT.md` | The audit this experiment addresses (§2, §5) |
+| `docs/qlora/AUDIT_QLORA_88PCT.md` | The audit this experiment addresses (§2, §5) |

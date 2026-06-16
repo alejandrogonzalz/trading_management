@@ -6,13 +6,13 @@ the project steering files (`steering-*.md`) and rules (`rules/*.md`) in this
 directory; they document *experiments*, not harness config.
 
 > All experiment docs are in English (per request). The reference audit is
-> `../docs/AUDIT_QLORA_88PCT.md`.
+> `../docs/qlora/AUDIT_QLORA_88PCT.md`.
 
 ---
 
 ## Audit Context
 
-`../docs/AUDIT_QLORA_88PCT.md` is a complete adversarial review of the 88.03% claim.
+`../docs/qlora/AUDIT_QLORA_88PCT.md` is a complete adversarial review of the 88.03% claim.
 Its findings, by section:
 
 | # | Finding | Verdict / Severity | Status |
@@ -50,7 +50,7 @@ the filtered dataset; the **financial metrics are artifacts**.
 ---
 
 > **Just want to run it?** The human-facing, start-to-finish guide is
-> [`../docs/EXPERIMENT_NO_DRAWDOWN_FILTER_GUIDE.md`](../docs/EXPERIMENT_NO_DRAWDOWN_FILTER_GUIDE.md)
+> [`../docs/qlora/EXPERIMENT_NO_DRAWDOWN_FILTER_GUIDE.md`](../docs/qlora/EXPERIMENT_NO_DRAWDOWN_FILTER_GUIDE.md)
 > — one linear, copy-paste path from a fresh GPU box to thesis-ready numbers.
 
 ## How to Use This Documentation
@@ -61,7 +61,7 @@ the filtered dataset; the **financial metrics are artifacts**.
 4. Use `RESULT_INTERPRETATION.md` to turn the numbers into a thesis-framing decision.
 
 ## References
-- Full audit: `../docs/AUDIT_QLORA_88PCT.md`
+- Full audit: `../docs/qlora/AUDIT_QLORA_88PCT.md`
 - QLoRA hyperparameter reference: `./rules/qlora-training.md`
 - ML conventions (temporal split, embargo): `./rules/ml-conventions.md`
 - RunPod GPU setup + cost: `../langgraph/optimization/qlora/RUNPOD_GUIDE.md`
