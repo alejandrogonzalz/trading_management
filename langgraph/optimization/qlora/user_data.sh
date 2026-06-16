@@ -1,62 +1,61 @@
 #!/bin/bash
 # ==============================================================================
-# user_data.sh — GPU instance bootstrap for the no-drawdown-filter experiment.
+# user_data.sh — GPU instance bootstrap for QLoRA training on RunPod/EC2.
 #
-# A cloud-init / EC2 user-data / SageMaker lifecycle-config style script that takes
-# a BARE GPU Linux instance to "experiment running" with health checks at each step:
+# Takes a BARE GPU Linux instance (or the unsloth/unsloth:latest image) to
+# "training running" with health checks at each step.
 #
-#   1. Health checks   — OS, GPU (nvidia-smi), disk, internet
-#   2. AWS credentials — REQUIRED via env vars (see below); verified with STS
+# Steps:
+#   1. Health checks   — OS, GPU, disk, internet
+#   2. AWS credentials — REQUIRED via env vars; verified with STS
 #   3. AWS CLI v2      — installed if missing
-#   4. Base tooling    — git, curl, unzip, python3/pip, Node.js
-#   5. Claude Code     — npm i -g @anthropic-ai/claude-code (for interactive debug)
-#   6. Repo            — clone/update at $WORKDIR
-#   7. Python stack    — delegates to setup_unsloth_pod.sh when present (unsloth
-#                        image); otherwise ensures dvc[s3] is available
-#   8. Data            — dvc pull CANDLES (required) + dataset.jsonl (baseline)
-#   9. Launch          — runs run_experiment_no_drawdown_filter.sh (smoke → full)
+#   4. Base tooling    — git, python3, pip, dvc[s3]
+#   5. Repo            — clone at $WORKDIR
+#   6. Data            — dvc pull candles + dataset
+#   7. Launch          — run_cloud.sh with configured flags
 #
 # ------------------------------------------------------------------------------
-# REQUIRED: export AWS credentials in the environment BEFORE running this script.
-# (DVC's S3 remote and the AWS CLI both read them from the environment — never
-#  hardcode secrets in this file.)
+# REQUIRED env vars (export before running):
 #
 #   export AWS_ACCESS_KEY_ID=AKIA...
 #   export AWS_SECRET_ACCESS_KEY=...
 #   export AWS_DEFAULT_REGION=us-east-1
 #
-# RECOMMENDED (so Claude Code works non-interactively for debugging):
-#   export ANTHROPIC_API_KEY=sk-ant-...
-#
-# OPTIONAL overrides (have sensible defaults):
-#   export REPO_URL=https://github.com/luisaga215/trading_management.git
+# OPTIONAL overrides:
+#   export REPO_URL=https://github.com/alejandrogonzalz/trading_management.git
 #   export REPO_BRANCH=experiment/no-drawdown-filter
-#   export WORKDIR=/workspace/work            # where the repo is cloned
-#   export AUTO_LAUNCH=1                       # 0 = set everything up but don't train
-#   export SMOKE_ONLY=0                        # 1 = stop after the 3-step smoke test
+#   export WORKDIR=/workspace/work
+#   export TAG=qlora_v2_atr          # run tag (names results + model dir)
+#   export EPOCHS=1                   # training epochs
+#   export USE_ATR_TP_SL=1            # 1 = forward-looking TP/SL (default)
+#   export AUTO_LAUNCH=1              # 0 = set up only, don't train
+#   export EXTRA_FLAGS=""             # additional flags for run_cloud.sh
 #
 # Usage:
-#   As EC2 user-data: paste this file (cloud-init runs it as root at first boot;
-#     output lands in /var/log/cloud-init-output.log). Set the env vars via an
-#     instance profile / SSM / a prepended `export` block.
-#   Manually on a running box:
-#     AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... AWS_DEFAULT_REGION=us-east-1 \
-#     ANTHROPIC_API_KEY=... bash user_data.sh
+#   # On a running RunPod/EC2 box:
+#   AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... bash user_data.sh
+#
+#   # With nohup (recommended — survives disconnect):
+#   AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... \
+#     nohup bash user_data.sh > /workspace/bootstrap.log 2>&1 & echo "PID: $!"
 # ==============================================================================
 
 set -uo pipefail
 
-# ----------------------------------------------------------------- config + logging
-REPO_URL="${REPO_URL:-https://github.com/luisaga215/trading_management.git}"
+# ----------------------------------------------------------------- config
+REPO_URL="${REPO_URL:-https://github.com/alejandrogonzalz/trading_management.git}"
 REPO_BRANCH="${REPO_BRANCH:-experiment/no-drawdown-filter}"
 WORKDIR="${WORKDIR:-/workspace/work}"
 AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION:-us-east-1}"
 export AWS_DEFAULT_REGION
+TAG="${TAG:-qlora_v2_atr}"
+EPOCHS="${EPOCHS:-1}"
+USE_ATR_TP_SL="${USE_ATR_TP_SL:-1}"
 AUTO_LAUNCH="${AUTO_LAUNCH:-1}"
-SMOKE_ONLY="${SMOKE_ONLY:-0}"
-LOG="/var/log/user_data_experiment.log"
-touch "$LOG" 2>/dev/null || LOG="$HOME/user_data_experiment.log"
-# Mirror everything to the log file as well as the console.
+EXTRA_FLAGS="${EXTRA_FLAGS:-}"
+
+LOG="/var/log/user_data.log"
+touch "$LOG" 2>/dev/null || LOG="$HOME/user_data.log"
 exec > >(tee -a "$LOG") 2>&1
 
 step() { echo; echo "============================================================"; echo "  $*"; echo "============================================================"; }
@@ -64,157 +63,134 @@ ok()   { echo "  OK   — $*"; }
 warn() { echo "  WARN — $*"; }
 fail() { echo; echo "  FAIL — $*" >&2; exit 1; }
 
-# sudo only when not already root (containers usually run as root / a sudo-less user).
 SUDO=""
-if [ "$(id -u)" -ne 0 ]; then command -v sudo >/dev/null 2>&1 && SUDO="sudo" || warn "not root and no sudo — package installs may fail"; fi
+if [ "$(id -u)" -ne 0 ]; then command -v sudo >/dev/null 2>&1 && SUDO="sudo" || true; fi
 
-# Package-manager abstraction (Ubuntu/Debian apt vs Amazon Linux/RHEL yum/dnf).
-if command -v apt-get >/dev/null 2>&1; then PKG="apt"; elif command -v dnf >/dev/null 2>&1; then PKG="dnf"; elif command -v yum >/dev/null 2>&1; then PKG="yum"; else PKG=""; fi
 pkg_install() {
-    case "$PKG" in
-        apt) $SUDO apt-get update -qq && $SUDO apt-get install -y -qq "$@" ;;
-        dnf) $SUDO dnf install -y -q "$@" ;;
-        yum) $SUDO yum install -y -q "$@" ;;
-        *)   warn "no known package manager — assuming $* already present" ;;
-    esac
+    if command -v apt-get >/dev/null 2>&1; then
+        $SUDO apt-get update -qq && $SUDO apt-get install -y -qq "$@"
+    elif command -v dnf >/dev/null 2>&1; then
+        $SUDO dnf install -y -q "$@"
+    elif command -v yum >/dev/null 2>&1; then
+        $SUDO yum install -y -q "$@"
+    else
+        warn "no package manager — assuming $* already present"
+    fi
 }
 
-echo "user_data.sh starting at $(date) — log: $LOG"
+echo "user_data.sh starting at $(date)"
+echo "  TAG=$TAG  EPOCHS=$EPOCHS  USE_ATR_TP_SL=$USE_ATR_TP_SL  BRANCH=$REPO_BRANCH"
 
 # ----------------------------------------------------------------- 1. health checks
-step "[1/9] Health checks"
-[ "$(uname -s)" = "Linux" ] || fail "this bootstrap targets Linux GPU instances"
+step "[1/7] Health checks"
+[ "$(uname -s)" = "Linux" ] || fail "this script targets Linux GPU instances"
 ok "OS: $(uname -srm)"
 
 if command -v nvidia-smi >/dev/null 2>&1; then
-    ok "GPU: $(nvidia-smi --query-gpu=name,memory.total --format=csv,noheader 2>/dev/null | head -1)"
+    GPU_INFO=$(nvidia-smi --query-gpu=name,memory.total --format=csv,noheader 2>/dev/null | head -1)
+    ok "GPU: $GPU_INFO"
+    # Check no zombie processes holding VRAM
+    VRAM_USED=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits 2>/dev/null | head -1 | tr -d ' ')
+    [ "${VRAM_USED:-0}" -gt 5000 ] && warn "GPU already using ${VRAM_USED}MB VRAM — zombie process? Check: nvidia-smi"
 else
-    fail "nvidia-smi not found — this needs a GPU instance with NVIDIA drivers"
+    fail "nvidia-smi not found — needs a GPU instance with NVIDIA drivers"
 fi
 
 AVAIL_GB=$(df -BG --output=avail / 2>/dev/null | tail -1 | tr -dc '0-9')
-AVAIL_GB="${AVAIL_GB:-0}"
-[ "$AVAIL_GB" -ge 40 ] && ok "disk: ${AVAIL_GB}GB free on /" || warn "only ${AVAIL_GB}GB free on / — model + candles + checkpoints want ~40GB+"
+[ "${AVAIL_GB:-0}" -ge 30 ] && ok "disk: ${AVAIL_GB}GB free" || warn "only ${AVAIL_GB}GB free — need ~30GB for model + candles + checkpoints"
 
-curl -fsS --max-time 10 https://api.github.com >/dev/null 2>&1 && ok "internet reachable" || fail "no internet — cannot clone/install"
+curl -fsS --max-time 10 https://api.github.com >/dev/null 2>&1 && ok "internet reachable" || fail "no internet"
 
 # ----------------------------------------------------------------- 2. AWS credentials
-step "[2/9] AWS credentials (from env vars)"
+step "[2/7] AWS credentials"
 if [ -z "${AWS_ACCESS_KEY_ID:-}" ] || [ -z "${AWS_SECRET_ACCESS_KEY:-}" ]; then
-    fail "AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY not set. Export them first:
-    export AWS_ACCESS_KEY_ID=AKIA...
-    export AWS_SECRET_ACCESS_KEY=...
-    export AWS_DEFAULT_REGION=$AWS_DEFAULT_REGION
-  (DVC's S3 remote reads these from the environment.)"
+    fail "AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY not set. Export them first."
 fi
-ok "credentials present in env (region=$AWS_DEFAULT_REGION)"
+ok "credentials present (region=$AWS_DEFAULT_REGION)"
 
-# ----------------------------------------------------------------- 3. AWS CLI v2
-step "[3/9] AWS CLI"
+# ----------------------------------------------------------------- 3. AWS CLI
+step "[3/7] AWS CLI"
 if command -v aws >/dev/null 2>&1; then
-    ok "already installed: $(aws --version 2>&1)"
+    ok "already installed: $(aws --version 2>&1 | awk '{print $1}')"
 else
     echo "  installing AWS CLI v2..."
     command -v unzip >/dev/null 2>&1 || pkg_install unzip
     ARCH="$(uname -m)"; [ "$ARCH" = "arm64" ] && ARCH="aarch64"
-    curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-${ARCH}.zip" -o /tmp/awscliv2.zip || fail "AWS CLI download failed"
-    (cd /tmp && unzip -q -o awscliv2.zip && $SUDO ./aws/install --update) || fail "AWS CLI install failed"
-    command -v aws >/dev/null 2>&1 || fail "aws still not on PATH after install"
-    ok "installed: $(aws --version 2>&1)"
+    curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-${ARCH}.zip" -o /tmp/awscliv2.zip || fail "download failed"
+    (cd /tmp && unzip -q -o awscliv2.zip && $SUDO ./aws/install --update) || fail "install failed"
+    ok "installed: $(aws --version 2>&1 | awk '{print $1}')"
 fi
-# Verify the credentials actually work BEFORE we depend on them for dvc pull.
-aws sts get-caller-identity >/dev/null 2>&1 || fail "aws sts get-caller-identity failed — bad/expired credentials or wrong region"
-ok "credentials verified: $(aws sts get-caller-identity --query Arn --output text 2>/dev/null)"
+aws sts get-caller-identity >/dev/null 2>&1 || fail "credentials invalid — check key/secret/region"
+ok "verified: $(aws sts get-caller-identity --query Arn --output text 2>/dev/null)"
 
 # ----------------------------------------------------------------- 4. base tooling
-step "[4/9] Base tooling (git, python3, node)"
-command -v git    >/dev/null 2>&1 || pkg_install git
-command -v curl   >/dev/null 2>&1 || pkg_install curl
+step "[4/7] Base tooling"
+command -v git >/dev/null 2>&1 || pkg_install git
 command -v python3 >/dev/null 2>&1 || pkg_install python3
-command -v pip3   >/dev/null 2>&1 || pkg_install python3-pip
-ok "git=$(git --version 2>&1 | awk '{print $3}')  python3=$(python3 --version 2>&1 | awk '{print $2}')"
+command -v pip3 >/dev/null 2>&1 || pkg_install python3-pip
+ok "git=$(git --version 2>&1 | awk '{print $3}')  python=$(python3 --version 2>&1 | awk '{print $2}')"
 
-if command -v node >/dev/null 2>&1; then
-    ok "node: $(node --version)"
-else
-    echo "  installing Node.js 20 (for Claude Code)..."
-    if [ "$PKG" = "apt" ]; then
-        curl -fsSL https://deb.nodesource.com/setup_20.x | $SUDO -E bash - && pkg_install nodejs
-    else
-        curl -fsSL https://rpm.nodesource.com/setup_20.x | $SUDO -E bash - && pkg_install nodejs
-    fi
-    command -v node >/dev/null 2>&1 && ok "node: $(node --version)" || warn "Node install failed — Claude Code step will be skipped"
-fi
+# DVC for S3 data pulls
+python3 -c "import dvc" 2>/dev/null || pip3 install --quiet "dvc[s3]" || fail "dvc[s3] install failed"
+ok "dvc=$(python3 -c 'import dvc; print(dvc.__version__)' 2>/dev/null)"
 
-# ----------------------------------------------------------------- 5. Claude Code
-step "[5/9] Claude Code CLI"
-if command -v claude >/dev/null 2>&1; then
-    ok "already installed: $(claude --version 2>&1 | head -1)"
-elif command -v npm >/dev/null 2>&1; then
-    $SUDO npm install -g @anthropic-ai/claude-code >/dev/null 2>&1 \
-        && ok "installed: $(claude --version 2>&1 | head -1)" \
-        || warn "Claude Code install failed (non-fatal — the experiment script runs without it)"
-else
-    warn "npm unavailable — skipping Claude Code (experiment still runs)"
-fi
-[ -n "${ANTHROPIC_API_KEY:-}" ] && ok "ANTHROPIC_API_KEY set (claude works non-interactively)" \
-    || warn "ANTHROPIC_API_KEY not set — run 'claude' interactively to log in if you want agent debugging"
-
-# ----------------------------------------------------------------- 6. repo
-step "[6/9] Repository"
-mkdir -p "$WORKDIR" || fail "cannot create $WORKDIR"
+# ----------------------------------------------------------------- 5. repo
+step "[5/7] Repository"
+mkdir -p "$WORKDIR"
 REPO_DIR="$WORKDIR/trading_management"
 if [ -d "$REPO_DIR/.git" ]; then
-    echo "  repo present — fetching $REPO_BRANCH..."
-    git -C "$REPO_DIR" fetch --quiet origin "$REPO_BRANCH" && git -C "$REPO_DIR" checkout --quiet "$REPO_BRANCH" && git -C "$REPO_DIR" pull --quiet || warn "git update had issues; continuing with current checkout"
+    echo "  repo exists — pulling latest..."
+    git -C "$REPO_DIR" fetch --quiet origin "$REPO_BRANCH"
+    git -C "$REPO_DIR" checkout --quiet "$REPO_BRANCH"
+    git -C "$REPO_DIR" pull --quiet
 else
-    git clone --quiet --branch "$REPO_BRANCH" "$REPO_URL" "$REPO_DIR" || fail "git clone failed ($REPO_URL @ $REPO_BRANCH)"
+    git clone --quiet --branch "$REPO_BRANCH" "$REPO_URL" "$REPO_DIR" || fail "git clone failed"
 fi
 LANGGRAPH="$REPO_DIR/langgraph"
-[ -d "$LANGGRAPH" ] || fail "langgraph/ not found in repo — wrong REPO_URL/branch?"
+[ -d "$LANGGRAPH" ] || fail "langgraph/ not found — wrong branch?"
 cd "$LANGGRAPH"
-ok "repo ready: $REPO_DIR @ $(git -C "$REPO_DIR" rev-parse --short HEAD) ($REPO_BRANCH)"
+ok "$(git -C "$REPO_DIR" rev-parse --short HEAD) on $REPO_BRANCH"
 
-# ----------------------------------------------------------------- 7. python stack
-step "[7/9] Python stack"
-if [ -f optimization/qlora/setup_unsloth_pod.sh ] && python3 -c "import unsloth" 2>/dev/null; then
-    echo "  unsloth image detected — running setup_unsloth_pod.sh (validates stack, installs dvc/xgboost)..."
-    bash optimization/qlora/setup_unsloth_pod.sh || warn "setup_unsloth_pod.sh reported issues — check the log above"
-else
-    warn "not on a preconfigured unsloth image — ensuring DVC only (the training stack must come from the GPU image)."
-    python3 -c "import dvc" 2>/dev/null || pip3 install --quiet "dvc[s3]" || fail "failed to install dvc[s3]"
-fi
-python3 -c "import dvc" 2>/dev/null && ok "dvc: $(python3 -c 'import dvc; print(dvc.__version__)' 2>/dev/null)" || fail "dvc not importable"
+# ----------------------------------------------------------------- 6. data
+step "[6/7] DVC pull (candles + dataset)"
+cd "$REPO_DIR"
+dvc pull langgraph/backtest/data/candles || fail "dvc pull candles failed — check AWS creds"
+N_CANDLES=$(ls langgraph/backtest/data/candles/*_1h.json 2>/dev/null | wc -l | tr -d ' ')
+ok "candles: $N_CANDLES symbols"
+[ "$N_CANDLES" -ge 10 ] || fail "only $N_CANDLES candle files — expected 12"
 
-# ----------------------------------------------------------------- 8. data (dvc pull)
-step "[8/9] Data — dvc pull (candles required, dataset for the baseline)"
-# Candles are MANDATORY: labeling + trade simulation both read them. The labeled
-# dataset.jsonl is the filtered baseline; the unfiltered set is generated locally.
-dvc pull backtest/data/candles || fail "dvc pull candles failed — check AWS creds/region and 'dvc remote list'"
-ok "candles pulled ($(ls backtest/data/candles/*_1h.json 2>/dev/null | wc -l | tr -d ' ') symbols with 1h data)"
-dvc pull backtest/data/labeled/dataset.jsonl 2>/dev/null && ok "filtered baseline dataset pulled" || warn "baseline dataset.jsonl not pulled (only needed for side-by-side comparison)"
+dvc pull langgraph/backtest/data/labeled/dataset.jsonl || fail "dvc pull dataset failed"
+N_SAMPLES=$(wc -l < langgraph/backtest/data/labeled/dataset.jsonl | tr -d ' ')
+ok "dataset: $N_SAMPLES samples"
+[ "$N_SAMPLES" -ge 50000 ] || warn "expected ~56K samples, got $N_SAMPLES"
 
-# ----------------------------------------------------------------- 9. launch
-step "[9/9] Launch experiment"
-LAUNCHER="optimization/qlora/run_experiment_no_drawdown_filter.sh"
-[ -f "$LAUNCHER" ] || fail "launcher missing: $LAUNCHER (wrong branch?)"
-mkdir -p optimization/qlora/logs
-RUN_LOG="optimization/qlora/logs/qlora_no_drawdown_filter.log"
+# ----------------------------------------------------------------- 7. launch
+step "[7/7] Launch training"
+cd "$LANGGRAPH"
+
+CLOUD_FLAGS="--tag $TAG --epochs $EPOCHS"
+[ "$USE_ATR_TP_SL" = "1" ] && CLOUD_FLAGS="$CLOUD_FLAGS --use-atr-tp-sl"
+[ -n "$EXTRA_FLAGS" ] && CLOUD_FLAGS="$CLOUD_FLAGS $EXTRA_FLAGS"
 
 if [ "$AUTO_LAUNCH" != "1" ]; then
-    step "READY (AUTO_LAUNCH=0) — start it yourself with:"
-    echo "    cd $LANGGRAPH && nohup bash $LAUNCHER > $RUN_LOG 2>&1 & echo \"PID: \$!\""
+    echo "  AUTO_LAUNCH=0 — setup complete. Run manually:"
+    echo "    cd $LANGGRAPH"
+    echo "    MAX_EVAL=\"\" bash optimization/qlora/run_cloud.sh $CLOUD_FLAGS"
     exit 0
 fi
 
-LAUNCH_FLAGS=""; [ "$SMOKE_ONLY" = "1" ] && LAUNCH_FLAGS="--smoke-only"
-echo "  launching: bash $LAUNCHER $LAUNCH_FLAGS  (log → $RUN_LOG)"
-nohup bash "$LAUNCHER" $LAUNCH_FLAGS > "$RUN_LOG" 2>&1 &
-PID=$!
-ok "experiment started (PID $PID)"
+mkdir -p optimization/qlora/logs
+RUN_LOG="optimization/qlora/logs/${TAG}.log"
+echo "  Command: MAX_EVAL=\"\" bash optimization/qlora/run_cloud.sh $CLOUD_FLAGS"
+echo "  Log: $RUN_LOG"
 echo
-echo "  Monitor:   tail -f $LANGGRAPH/$RUN_LOG"
-echo "  GPU:       watch -n 10 nvidia-smi"
-echo "  Debug:     run 'claude' in $LANGGRAPH and point it at"
-echo "             .claude/EXPERIMENT_NO_DRAWDOWN_FILTER.md (§7 Agent Runbook)"
-echo "  user_data log: $LOG"
+
+MAX_EVAL="" bash optimization/qlora/run_cloud.sh $CLOUD_FLAGS 2>&1 | tee "$RUN_LOG"
+EXIT_CODE=$?
+
+echo
+if [ $EXIT_CODE -eq 0 ]; then
+    ok "Training complete! Result: optimization/qlora/results/$TAG/result.json"
+else
+    fail "Training failed (exit $EXIT_CODE) — check $RUN_LOG"
+fi
