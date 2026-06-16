@@ -26,7 +26,7 @@ The model learns to output structured JSON: `{"bias", "entry", "tp", "sl", "reas
 | ML models re-measured on fixed split | RF 64.24%, XGB 63.60%, Blending 63.59%, LSTM 50.21% | `optimization/results/*_v2_optimization.json` |
 | McNemar test | chi²=557, p≈0 — fine-tuning is statistically significant | `optimization/stats_tests.py` |
 | Analysis notebook | Parts 1–6 (loss curves, accuracy, McNemar, trade metrics, equity curves) | `langgraph/optimization-results.ipynb` |
-| Ollama deployment guide | Local inference walkthrough (dvc pull → ollama create) | `docs/OLLAMA_DEPLOYMENT.md` |
+| Ollama deployment guide | Local inference walkthrough (dvc pull → ollama create) | `docs/ops/OLLAMA_DEPLOYMENT.md` |
 | DVC tracking | Dataset, candles, QLoRA models in S3 | Remote: `s3://trading-management-dvc/` |
 | ~~Config 1 training (92%)~~ | **INVALID** — contaminated split + partial eval | `optimization/qlora/results/archive/` |
 

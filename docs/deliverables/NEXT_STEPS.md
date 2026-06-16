@@ -37,8 +37,8 @@ All measurement work is complete. The remaining steps are presentation and integ
 | ML models (all) | XGB 63.6%, RF 64.24%, Blending 63.59% (best ML) | `optimization/results/*_v2_optimization.json` |
 | McNemar test | chi²=557, p≈0 — fine-tuning effect is real | `optimization/stats_tests.py` |
 | `optimization-results.ipynb` | Parts 1–5: loss curves, bar charts, McNemar, trade metrics | `langgraph/optimization-results.ipynb` |
-| Discussion document | Full analysis + zero-shot explanation + config3 section | `docs/DISCUSSION_RESULTS.md` |
-| Ollama deployment guide | Local inference walkthrough | `docs/OLLAMA_DEPLOYMENT.md` |
+| Discussion document | Full analysis + zero-shot explanation + config3 section | `docs/deliverables/DISCUSSION_RESULTS.md` |
+| Ollama deployment guide | Local inference walkthrough | `docs/ops/OLLAMA_DEPLOYMENT.md` |
 | DVC tracking | Dataset, candles, QLoRA models in S3 | Remote: `s3://trading-management-dvc/` |
 
 ---
@@ -166,5 +166,5 @@ curl -s -X POST http://localhost:2024/analyze \
 | `optimization/results/random_forest_v2_optimization.json` | Best ML individual (64.24%) |
 | `optimization/stats_tests.py` | McNemar + paired t-test |
 | `langgraph/optimization-results.ipynb` | Analysis notebook (Parts 1–5 done, Part 6 pending) |
-| `docs/DISCUSSION_RESULTS.md` | Full written analysis |
-| `docs/OLLAMA_DEPLOYMENT.md` | Local inference guide |
+| `docs/deliverables/DISCUSSION_RESULTS.md` | Full written analysis |
+| `docs/ops/OLLAMA_DEPLOYMENT.md` | Local inference guide |

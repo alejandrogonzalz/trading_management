@@ -21,7 +21,7 @@ The prior config-1 result (92% accuracy) is **invalid** and archived:
 Invalid results archived at: `optimization/qlora/results/archive/`
 
 **What is fixed now:**
-- `_temporal_split` sorts all samples globally by timestamp and applies a 24h embargo at each boundary (see `DATA_PIPELINE.md §4`)
+- `_temporal_split` sorts all samples globally by timestamp and applies a 24h embargo at each boundary (see `../ml/DATA_PIPELINE.md §4`)
 - `train_qlora.py` emits: real `EarlyStoppingCallback` (patience=3), train/val/test accuracy + gap, heuristic baseline, and a persisted loss curve (`<tag>_loss_curve.{json,png}`)
 - `run_cloud.sh` uses no `--max-eval`, so evaluation covers the full temporal test split
 

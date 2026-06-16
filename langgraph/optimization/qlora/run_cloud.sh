@@ -105,7 +105,7 @@ else
     GRAD_ACCUM="${GRAD_ACCUM:-$((16 / BATCH))}"
     EVAL_BATCH="${EVAL_BATCH:-16}"
 fi
-MAX_EVAL="${MAX_EVAL:-3000}"
+MAX_EVAL="${MAX_EVAL:-}"
 echo "============================================================"
 echo "  QLoRA — cloud run: $TAG"
 echo "  Started: $(date)"

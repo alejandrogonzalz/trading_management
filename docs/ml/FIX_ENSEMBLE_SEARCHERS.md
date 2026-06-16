@@ -580,7 +580,7 @@ OMP_NUM_THREADS=1 python optimization/run_ensembles.py \
   2>&1 | tee logs/ensembles_fixed.log
 ```
 
-Then update `NEXT_STEPS.md` Step 3 ("Re-train ML/ensembles") with the new result JSON tags,
+Then update `../deliverables/NEXT_STEPS.md` Step 3 ("Re-train ML/ensembles") with the new result JSON tags,
 and run the comparison:
 ```bash
 python -m cli compare-stats \

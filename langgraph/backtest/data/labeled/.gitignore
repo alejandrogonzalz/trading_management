@@ -1,0 +1,5 @@
+# Labeled datasets are data, not source — track them with DVC, never git.
+# dataset.jsonl is DVC-tracked via dataset.jsonl.dvc. The unfiltered ablation
+# dataset is generated locally (cli prepare-dataset --no-drawdown-filter) and
+# should be `dvc add`ed before sharing.
+dataset_no_drawdown_filter.jsonl

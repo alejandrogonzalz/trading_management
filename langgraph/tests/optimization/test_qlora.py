@@ -9,7 +9,12 @@ here; they need a real Unsloth + CUDA environment.
 import json
 from unittest.mock import MagicMock, patch
 
-from optimization.qlora.train_qlora import QLoRATrainer
+from optimization.qlora.train_qlora import (
+    DATASET_PATH,
+    DATASET_PATH_NO_FILTER,
+    DATASET_TYPES,
+    QLoRATrainer,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -163,6 +168,8 @@ class TestConfig:
         "mode",
         "tag",
         "output_dir",
+        "dataset_path",
+        "training_data_dir",
     ]
 
     def test_all_required_keys_present(self):
@@ -187,6 +194,46 @@ class TestConfig:
     def test_lora_alpha_double_rank_by_default(self):
         cfg = QLoRATrainer.DEFAULT_CONFIG
         assert cfg["lora_alpha"] == cfg["lora_rank"] * 2
+
+    def test_default_dataset_is_filtered(self):
+        # Default config must point at the production (filtered) dataset so the
+        # original run reproduces byte-for-byte.
+        cfg = QLoRATrainer.DEFAULT_CONFIG
+        assert cfg["dataset_path"] == DATASET_PATH
+        assert cfg["dataset_path"].endswith("dataset.jsonl")
+
+
+# ---------------------------------------------------------------------------
+# Dataset selection — filtered vs no_filter (experiment/no-drawdown-filter)
+# ---------------------------------------------------------------------------
+
+
+class TestDatasetType:
+    def test_dataset_types_keys(self):
+        assert set(DATASET_TYPES) == {"filtered", "no_filter"}
+
+    def test_filtered_maps_to_production_dataset(self):
+        ds_path, export_dir = DATASET_TYPES["filtered"]
+        assert ds_path == DATASET_PATH
+        assert ds_path.endswith("dataset.jsonl")
+        assert export_dir.endswith("training_data")
+
+    def test_no_filter_maps_to_separate_dataset_and_export_dir(self):
+        ds_path, export_dir = DATASET_TYPES["no_filter"]
+        assert ds_path == DATASET_PATH_NO_FILTER
+        assert ds_path.endswith("dataset_no_drawdown_filter.jsonl")
+        # Separate export dir so it never clobbers the filtered chat splits.
+        assert export_dir.endswith("training_data_no_filter")
+
+    def test_no_filter_paths_distinct_from_filtered(self):
+        assert DATASET_TYPES["filtered"][0] != DATASET_TYPES["no_filter"][0]
+        assert DATASET_TYPES["filtered"][1] != DATASET_TYPES["no_filter"][1]
+
+    def test_trainer_accepts_no_filter_config(self):
+        no_filter_path, no_filter_dir = DATASET_TYPES["no_filter"]
+        t = QLoRATrainer({"dataset_path": no_filter_path, "training_data_dir": no_filter_dir})
+        assert t.cfg["dataset_path"] == no_filter_path
+        assert t.cfg["training_data_dir"] == no_filter_dir
 
 
 # ---------------------------------------------------------------------------

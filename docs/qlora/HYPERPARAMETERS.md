@@ -480,5 +480,5 @@ than generalizable ones.
 | `optimization/qlora/train_qlora.py` | Script where all hyperparameters are applied |
 | `optimization/qlora/run_cloud.sh` | Cloud run wrapper — sets cloud hyperparameter values |
 | `optimization/qlora/run_local.sh` | Local run wrapper — sets local hyperparameter values |
-| `docs/QLORA_FINETUNING.md` | Status, config decisions, pipeline diagrams, runbook |
-| `docs/DATA_PIPELINE.md` | How the training data (the input to fine-tuning) is built |
+| `docs/qlora/QLORA_FINETUNING.md` | Status, config decisions, pipeline diagrams, runbook |
+| `docs/ml/DATA_PIPELINE.md` | How the training data (the input to fine-tuning) is built |
