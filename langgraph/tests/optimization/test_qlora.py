@@ -15,6 +15,7 @@ from optimization.qlora.train_qlora import QLoRATrainer
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_trainer(tag: str = "test_run") -> QLoRATrainer:
     return QLoRATrainer({"tag": tag, "mode": "FUTURES"})
 
@@ -34,6 +35,7 @@ def _make_indicators(heatmap: str = "BULLISH", macd_hist: float = 0.1) -> dict:
 # ---------------------------------------------------------------------------
 # _parse_bias — JSON path
 # ---------------------------------------------------------------------------
+
 
 class TestParseBias:
     def test_json_long(self):
@@ -80,12 +82,13 @@ class TestParseBias:
 
     def test_malformed_json_falls_back_to_keyword(self):
         t = _make_trainer()
-        assert t._parse_bias('{broken json LONG') == "LONG"
+        assert t._parse_bias("{broken json LONG") == "LONG"
 
 
 # ---------------------------------------------------------------------------
 # _heuristic_bias — indicator-based majority vote
 # ---------------------------------------------------------------------------
+
 
 class TestHeuristicBaseline:
     def test_majority_bullish_returns_long(self):
@@ -142,12 +145,24 @@ class TestHeuristicBaseline:
 # Config defaults and merging
 # ---------------------------------------------------------------------------
 
+
 class TestConfig:
     REQUIRED_KEYS = [
-        "model_name", "max_seq_length", "learning_rate", "lora_rank",
-        "lora_alpha", "lora_dropout", "epochs", "batch_size",
-        "gradient_accumulation_steps", "warmup_steps", "weight_decay",
-        "seed", "mode", "tag", "output_dir",
+        "model_name",
+        "max_seq_length",
+        "learning_rate",
+        "lora_rank",
+        "lora_alpha",
+        "lora_dropout",
+        "epochs",
+        "batch_size",
+        "gradient_accumulation_steps",
+        "warmup_steps",
+        "weight_decay",
+        "seed",
+        "mode",
+        "tag",
+        "output_dir",
     ]
 
     def test_all_required_keys_present(self):
@@ -178,6 +193,7 @@ class TestConfig:
 # File paths — per-run folder structure
 # ---------------------------------------------------------------------------
 
+
 class TestResultPaths:
     def test_save_loss_curve_writes_to_tag_subfolder(self, tmp_path):
         t = _make_trainer(tag="qlora_cloud")
@@ -187,8 +203,10 @@ class TestResultPaths:
             {"eval_loss": 1.0, "step": 10},
         ]
 
-        with patch("optimization.qlora.train_qlora.RESULTS_DIR", tmp_path), \
-             patch("optimization.qlora.train_qlora.save_loss_curve_plot"):
+        with (
+            patch("optimization.qlora.train_qlora.RESULTS_DIR", tmp_path),
+            patch("optimization.qlora.train_qlora.save_loss_curve_plot"),
+        ):
             t.save_loss_curve()
 
         assert (tmp_path / "qlora_cloud" / "loss_curve.json").exists()
@@ -199,8 +217,10 @@ class TestResultPaths:
         t.trainer = MagicMock()
         t.trainer.state.log_history = history
 
-        with patch("optimization.qlora.train_qlora.RESULTS_DIR", tmp_path), \
-             patch("optimization.qlora.train_qlora.save_loss_curve_plot"):
+        with (
+            patch("optimization.qlora.train_qlora.RESULTS_DIR", tmp_path),
+            patch("optimization.qlora.train_qlora.save_loss_curve_plot"),
+        ):
             t.save_loss_curve()
 
         saved = json.loads((tmp_path / "myrun" / "loss_curve.json").read_text())

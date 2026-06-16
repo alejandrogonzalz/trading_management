@@ -109,7 +109,11 @@ def _plot_baseline(ax, result: dict):
     if test_acc is None:
         test_acc = result.get("test_metrics", {}).get("accuracy", result.get("best_score", 0.0))
     baseline = result.get("baseline_metrics", {}).get("direction_accuracy")
-    rows = [("fine-tuned", test_acc, "#2ecc71"), ("heuristic", baseline, "#9b59b6"), ("majority", MAJORITY_CLASS, "#95a5a6")]
+    rows = [
+        ("fine-tuned", test_acc, "#2ecc71"),
+        ("heuristic", baseline, "#9b59b6"),
+        ("majority", MAJORITY_CLASS, "#95a5a6"),
+    ]
     rows = [(n, v, c) for n, v, c in rows if v is not None]
     names = [n for n, _, _ in rows]
     vals = [v for _, v, _ in rows]

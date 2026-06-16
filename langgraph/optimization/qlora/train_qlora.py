@@ -246,6 +246,7 @@ class QLoRATrainer:
         if trl_major >= 12:
             # TRL >= 0.12: SFTConfig replaces TrainingArguments, params moved into config
             from trl import SFTConfig
+
             sft_config = SFTConfig(
                 output_dir=output_dir,
                 num_train_epochs=self.cfg["epochs"],
@@ -285,6 +286,7 @@ class QLoRATrainer:
         else:
             # TRL < 0.12: legacy API with TrainingArguments + params in SFTTrainer
             from transformers import TrainingArguments
+
             training_args = TrainingArguments(
                 output_dir=output_dir,
                 num_train_epochs=self.cfg["epochs"],
@@ -421,8 +423,7 @@ class QLoRATrainer:
         log_every = 1 if n_batches <= 20 else min(50, max(1, n_batches // 20))
         start_t = time.time()
         log.info(
-            f"  [{label}] generating predictions for {total} samples "
-            f"(batch_size={batch_size}, {n_batches} batches)"
+            f"  [{label}] generating predictions for {total} samples (batch_size={batch_size}, {n_batches} batches)"
         )
 
         for b in range(n_batches):
@@ -475,8 +476,7 @@ class QLoRATrainer:
                 rate = done / elapsed if elapsed > 0 else 0.0
                 eta = (total - done) / rate if rate > 0 else 0.0
                 log.info(
-                    f"  [{label}] {done}/{total} "
-                    f"({parse_errors} parse errors, {rate:.2f} samples/s, ETA {eta:.0f}s)"
+                    f"  [{label}] {done}/{total} ({parse_errors} parse errors, {rate:.2f} samples/s, ETA {eta:.0f}s)"
                 )
 
         return {
@@ -498,9 +498,7 @@ class QLoRATrainer:
         inputs = self.tokenizer(input_text, return_tensors="pt").to(self.model.device)
         with torch.no_grad():
             output_ids = self.model.generate(**inputs, max_new_tokens=256, do_sample=False)
-        return self.tokenizer.decode(
-            output_ids[0][inputs["input_ids"].shape[1] :], skip_special_tokens=True
-        )
+        return self.tokenizer.decode(output_ids[0][inputs["input_ids"].shape[1] :], skip_special_tokens=True)
 
     def _generate_batch(self, input_texts: list[str]) -> list[str]:
         """Greedy-decode a batch of prompts with LEFT padding.
@@ -547,10 +545,8 @@ class QLoRATrainer:
         """
         if indicators and not isinstance(next(iter(indicators.values())), dict):
             indicators = {"1h": indicators}
-        bullish = sum(1 for v in indicators.values()
-                      if isinstance(v, dict) and "BULLISH" in v.get("heatmap", ""))
-        bearish = sum(1 for v in indicators.values()
-                      if isinstance(v, dict) and "BEARISH" in v.get("heatmap", ""))
+        bullish = sum(1 for v in indicators.values() if isinstance(v, dict) and "BULLISH" in v.get("heatmap", ""))
+        bearish = sum(1 for v in indicators.values() if isinstance(v, dict) and "BEARISH" in v.get("heatmap", ""))
         if bullish > bearish:
             return "LONG"
         if bearish > bullish:
@@ -583,9 +579,18 @@ class QLoRATrainer:
         train, val, test = _temporal_split(all_samples)
 
         empty = {
-            "accuracy": 0, "metrics": {}, "total_evaluated": 0, "errors": 0,
-            "predictions": [], "actuals": [], "trade_results": [], "sample_keys": [],
-            "train_acc": None, "val_acc": None, "test_acc": 0, "gap": None,
+            "accuracy": 0,
+            "metrics": {},
+            "total_evaluated": 0,
+            "errors": 0,
+            "predictions": [],
+            "actuals": [],
+            "trade_results": [],
+            "sample_keys": [],
+            "train_acc": None,
+            "val_acc": None,
+            "test_acc": 0,
+            "gap": None,
             "baseline_metrics": {},
         }
         max_samples = self.cfg.get("max_eval_samples")
@@ -630,7 +635,9 @@ class QLoRATrainer:
             train_sub, val_sub = train[:n_diag], val[:n_diag]
             log.info(f"  Gap diagnostics: train subset={len(train_sub)}, val subset={len(val_sub)}")
             if train_sub:
-                t = self._predict_split(train_sub, candles_map, ts_idx_map, system_prompt, simulate=False, label="train")
+                t = self._predict_split(
+                    train_sub, candles_map, ts_idx_map, system_prompt, simulate=False, label="train"
+                )
                 train_acc = direction_accuracy(t["predictions"], t["actuals"])
             if val_sub:
                 v = self._predict_split(val_sub, candles_map, ts_idx_map, system_prompt, simulate=False, label="val")
@@ -874,7 +881,8 @@ def parse_args():
     )
     parser.add_argument("--model", type=str, help="Model name/path (default: Qwen2.5-7B-Instruct-bnb-4bit)")
     parser.add_argument(
-        "--no-gguf", action="store_true",
+        "--no-gguf",
+        action="store_true",
         help="Skip GGUF export (useful for smoke tests — adapters are always saved regardless)",
     )
     return parser.parse_args()

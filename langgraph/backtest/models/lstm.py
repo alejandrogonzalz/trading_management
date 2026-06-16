@@ -10,8 +10,15 @@ from backtest.models.features import _infer_timeframes, _load_dataset, _temporal
 class LSTMPredictor:
     """LSTM model that uses sequences of indicator vectors."""
 
-    def __init__(self, sequence_length: int = 10, hidden_size: int = 64, num_layers: int = 2,
-                 learning_rate: float = 0.001, dropout: float = 0.2, batch_size: int = 32):
+    def __init__(
+        self,
+        sequence_length: int = 10,
+        hidden_size: int = 64,
+        num_layers: int = 2,
+        learning_rate: float = 0.001,
+        dropout: float = 0.2,
+        batch_size: int = 32,
+    ):
         try:
             import torch  # noqa: F401
         except ImportError:
@@ -151,7 +158,7 @@ class LSTMPredictor:
             epoch_loss = 0.0
             n_batches = 0
             for i in range(0, len(X_train_seq), self.batch_size):
-                idx = perm[i: i + self.batch_size]
+                idx = perm[i : i + self.batch_size]
                 optimizer.zero_grad()
                 out = self.model(X_train_seq[idx])
                 loss = criterion(out, y_train[idx])

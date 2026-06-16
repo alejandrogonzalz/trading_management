@@ -55,7 +55,7 @@ class _DataMixin:
 
         n_total = len(sorted_samples)
         return {
-            "samples": sorted_samples,            # temporal order — X_all built here aligns with n_train_raw/n_val_raw
+            "samples": sorted_samples,  # temporal order — X_all built here aligns with n_train_raw/n_val_raw
             "timeframes": timeframes,
             "X_train": X_train,
             "y_train": y_train,
@@ -72,8 +72,8 @@ class _DataMixin:
             "scaler": scaler,
             "n_train": len(train_s),
             "n_val": len(val_s),
-            "n_train_raw": int(n_total * 0.70),   # val region start index in sorted_samples
-            "n_val_raw": int(n_total * 0.85),     # test region start index in sorted_samples
+            "n_train_raw": int(n_total * 0.70),  # val region start index in sorted_samples
+            "n_val_raw": int(n_total * 0.85),  # test region start index in sorted_samples
         }
 
     def _evaluate(self, y_true, y_pred, y_proba=None):
@@ -139,7 +139,7 @@ class BaggingLSTMSearcher(BaseSearcher, _DataMixin):
         y_val_t = torch.tensor(data["y_val"], dtype=torch.long)
 
         X_test_norm = data["X_test_s"]
-        X_context = np.vstack([X_tv_norm[-(sl - 1):], X_test_norm]) if sl > 1 else X_test_norm
+        X_context = np.vstack([X_tv_norm[-(sl - 1) :], X_test_norm]) if sl > 1 else X_test_norm
         X_test_seqs = self._build_lstm_sequences(X_context, sl, sl - 1 if sl > 1 else 0, len(X_context))
         X_test_seqs = X_test_seqs[: len(data["y_test"])]
 
@@ -165,12 +165,8 @@ class BaggingLSTMSearcher(BaseSearcher, _DataMixin):
 
             predictor.model.eval()
             with torch.no_grad():
-                bag_preds_val.append(
-                    torch.softmax(predictor.model(X_val_seqs), dim=1)[:, 1].numpy()
-                )
-                bag_preds_test.append(
-                    torch.softmax(predictor.model(X_test_seqs), dim=1)[:, 1].numpy()
-                )
+                bag_preds_val.append(torch.softmax(predictor.model(X_val_seqs), dim=1)[:, 1].numpy())
+                bag_preds_test.append(torch.softmax(predictor.model(X_test_seqs), dim=1)[:, 1].numpy())
             del predictor
 
         ensemble_val = np.mean(bag_preds_val, axis=0)
@@ -301,9 +297,9 @@ class VotingSearcher(BaseSearcher, _DataMixin):
 
         lstm.model.eval()
         with torch.no_grad():
-            lstm_val = torch.softmax(
-                lstm.model(self._build_lstm_sequences(X_norm, sl, n_train_raw, n_val_raw)), dim=1
-            )[:, 1].numpy()[:n_val]
+            lstm_val = torch.softmax(lstm.model(self._build_lstm_sequences(X_norm, sl, n_train_raw, n_val_raw)), dim=1)[
+                :, 1
+            ].numpy()[:n_val]
             lstm_test = torch.softmax(
                 lstm.model(self._build_lstm_sequences(X_norm, sl, n_val_raw, len(data["samples"]))), dim=1
             )[:, 1].numpy()
@@ -612,9 +608,7 @@ class BlendingSearcher(BaseSearcher, _DataMixin):
 
         # Blend set meta-features
         with torch.no_grad():
-            lstm_blend = torch.softmax(
-                lstm_model.model(X_blend_seqs), dim=1
-            )[:, 1].numpy()
+            lstm_blend = torch.softmax(lstm_model.model(X_blend_seqs), dim=1)[:, 1].numpy()
 
         blend_meta = np.column_stack(
             [

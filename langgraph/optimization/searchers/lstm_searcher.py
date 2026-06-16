@@ -18,6 +18,7 @@ class LSTMSearcher(BaseSearcher):
 
     def search(self, cfg: dict, dataset_path: str) -> dict:
         import torch
+
         # cuDNN version mismatch on RunPod unsloth image (system 9.8.0 vs PyTorch bundled 9.10.2).
         # Disabling cuDNN falls back to native CUDA kernels — negligible impact on hidden=32 LSTMs.
         torch.backends.cudnn.enabled = False

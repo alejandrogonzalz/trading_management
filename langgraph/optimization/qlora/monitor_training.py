@@ -20,14 +20,14 @@ from pathlib import Path
 from statistics import median
 
 DEFAULT_LOG = Path(__file__).parent / "logs" / "run_cloud.log"
-DEFAULT_TZ_OFFSET = -6   # UTC-6
-GGUF_MINUTES = 30        # estimated post-training export time
+DEFAULT_TZ_OFFSET = -6  # UTC-6
+GGUF_MINUTES = 30  # estimated post-training export time
 
 # Warning thresholds
-SPEED_SLOWDOWN_FACTOR = 1.5   # warn if speed > 1.5× median
-STALL_MINUTES = 45            # warn if no new checkpoint in N minutes
-LOSS_STAGNATION_ROUNDS = 3    # warn if loss didn't drop in last N checkpoints
-ETA_DRIFT_MINUTES = 45        # warn if ETA grew > N min vs first estimate
+SPEED_SLOWDOWN_FACTOR = 1.5  # warn if speed > 1.5× median
+STALL_MINUTES = 45  # warn if no new checkpoint in N minutes
+LOSS_STAGNATION_ROUNDS = 3  # warn if loss didn't drop in last N checkpoints
+ETA_DRIFT_MINUTES = 45  # warn if ETA grew > N min vs first estimate
 
 # tqdm progress bar: "25%|███| 1250/4904 [1:26:30<3:42:49, 3.66s/it]"
 _STEP_RE = re.compile(
@@ -94,10 +94,14 @@ def parse_log(log_path: Path):
         total = int(m.group(3))
         if step == 0:
             continue
-        best[step] = (ts, int(m.group(1)), total,
-                      _parse_duration(m.group(4)),
-                      _parse_duration(m.group(5)),
-                      float(m.group(6)))
+        best[step] = (
+            ts,
+            int(m.group(1)),
+            total,
+            _parse_duration(m.group(4)),
+            _parse_duration(m.group(5)),
+            float(m.group(6)),
+        )
 
     if not best:
         return [], {}
@@ -105,7 +109,7 @@ def parse_log(log_path: Path):
     # Infer checkpoint interval from gaps between seen steps
     sorted_steps = sorted(best)
     if len(sorted_steps) >= 2:
-        gaps = [sorted_steps[i+1] - sorted_steps[i] for i in range(len(sorted_steps)-1)]
+        gaps = [sorted_steps[i + 1] - sorted_steps[i] for i in range(len(sorted_steps) - 1)]
         ckpt_interval = int(median(gaps))
     else:
         ckpt_interval = sorted_steps[0]  # first checkpoint = interval
@@ -125,11 +129,19 @@ def parse_log(log_path: Path):
         loss = f"{nearest[1]:.4f}" if nearest else "—"
         grad = f"{nearest[2]:.3f}" if nearest else "—"
 
-        rows.append({
-            "ts": ts, "step": step, "total": total, "pct": pct,
-            "elapsed": elapsed, "eta": eta, "speed": speed,
-            "loss": loss, "grad": grad,
-        })
+        rows.append(
+            {
+                "ts": ts,
+                "step": step,
+                "total": total,
+                "pct": pct,
+                "elapsed": elapsed,
+                "eta": eta,
+                "speed": speed,
+                "loss": loss,
+                "grad": grad,
+            }
+        )
 
     meta = {
         "ckpt_interval": ckpt_interval,
@@ -152,7 +164,7 @@ def _build_warnings(rows, meta, num_epochs, now_utc):
     if last["speed"] > med_speed * SPEED_SLOWDOWN_FACTOR:
         warnings.append(
             f"SLOW  Current speed {last['speed']:.1f}s/it is "
-            f"{last['speed']/med_speed:.1f}× slower than median ({med_speed:.1f}s/it) "
+            f"{last['speed'] / med_speed:.1f}× slower than median ({med_speed:.1f}s/it) "
             f"— GPU may be throttling or OOM swapping"
         )
 
@@ -166,7 +178,7 @@ def _build_warnings(rows, meta, num_epochs, now_utc):
 
     # 3. Loss stagnation
     if len(rows) >= LOSS_STAGNATION_ROUNDS + 1:
-        recent_losses = [r["loss"] for r in rows[-LOSS_STAGNATION_ROUNDS - 1:]]
+        recent_losses = [r["loss"] for r in rows[-LOSS_STAGNATION_ROUNDS - 1 :]]
         numeric = [float(loss) for loss in recent_losses if loss != "—"]
         if len(numeric) == LOSS_STAGNATION_ROUNDS + 1 and numeric[-1] >= numeric[0] - 0.001:
             warnings.append(
@@ -178,12 +190,11 @@ def _build_warnings(rows, meta, num_epochs, now_utc):
     if len(rows) >= 2:
         first = rows[0]
         first_eta_abs = first["ts"] + first["eta"]
-        last_eta_abs  = last["ts"]  + last["eta"]
+        last_eta_abs = last["ts"] + last["eta"]
         drift = (last_eta_abs - first_eta_abs).total_seconds() / 60
         if drift > ETA_DRIFT_MINUTES:
             warnings.append(
-                f"DRIFT  ETA drifted +{drift:.0f} min vs first estimate "
-                f"— training is slower than initially projected"
+                f"DRIFT  ETA drifted +{drift:.0f} min vs first estimate — training is slower than initially projected"
             )
 
     return warnings
@@ -210,7 +221,7 @@ def print_table(rows, meta, log_path: Path, num_epochs: int, tz_offset: int):
         secs = (ep_step - last["step"]) * last["speed"]
         epoch_etas.append(last["ts"] + timedelta(seconds=secs) + TZ)
 
-    remaining_full  = epoch_etas[-1] + timedelta(minutes=GGUF_MINUTES) - now_local
+    remaining_full = epoch_etas[-1] + timedelta(minutes=GGUF_MINUTES) - now_local
 
     # Warnings
     warnings = _build_warnings(rows, meta, num_epochs, now_utc)
@@ -224,8 +235,10 @@ def print_table(rows, meta, log_path: Path, num_epochs: int, tz_offset: int):
     sep = "─" * len(header)
 
     print(f"\n  QLoRA Training — {log_path.name}")
-    print(f"  Checkpoint interval: every {meta['ckpt_interval']} steps  |  "
-          f"Epochs: {num_epochs}  |  Steps/epoch: ~{steps_per_epoch}")
+    print(
+        f"  Checkpoint interval: every {meta['ckpt_interval']} steps  |  "
+        f"Epochs: {num_epochs}  |  Steps/epoch: ~{steps_per_epoch}"
+    )
     print(f"  {'─' * (len(header) - 2)}")
     print(f"  {header}")
     print(f"  {sep}")
@@ -250,7 +263,9 @@ def print_table(rows, meta, log_path: Path, num_epochs: int, tz_offset: int):
         secs_left = (ep * steps_per_epoch - last["step"]) * last["speed"]
         label = "training ends" if ep == num_epochs else f"epoch {ep} ends"
         suffix = f"  ← {_fmt_td(eta - now_local)} left" if ep == num_epochs else ""
-        print(f"  Epoch {ep} done  : ~{eta.strftime('%H:%M')} ({_fmt_td(timedelta(seconds=secs_left))} from now)  [{label}]{suffix}")
+        print(
+            f"  Epoch {ep} done  : ~{eta.strftime('%H:%M')} ({_fmt_td(timedelta(seconds=secs_left))} from now)  [{label}]{suffix}"
+        )
 
     print(
         f"  + GGUF/eval   : ~{GGUF_MINUTES} min after → done "

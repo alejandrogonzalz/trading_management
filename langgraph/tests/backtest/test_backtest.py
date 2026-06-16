@@ -222,6 +222,7 @@ class TestTemporalSplit:
 
         def keys(part):
             return {(s["symbol"], s["timestamp"]) for s in part}
+
         ktrain, kval, ktest = keys(train), keys(val), keys(test)
         assert ktrain.isdisjoint(kval)
         assert ktrain.isdisjoint(ktest)
