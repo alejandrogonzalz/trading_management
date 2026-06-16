@@ -7,13 +7,9 @@ here; they need a real Unsloth + CUDA environment.
 """
 
 import json
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from optimization.qlora.train_qlora import QLoRATrainer
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -219,7 +215,7 @@ class TestResultPaths:
 
     def test_result_json_written_to_tag_subfolder(self, tmp_path):
         """The run-specific result.json goes to results/<tag>/result.json."""
-        t = _make_trainer(tag="qlora_v2")
+        _make_trainer(tag="qlora_v2")
         fake_result = {"tag": "qlora_v2", "metrics": {"direction_accuracy": 0.88}}
 
         with patch("optimization.qlora.train_qlora.RESULTS_DIR", tmp_path):

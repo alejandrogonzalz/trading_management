@@ -372,32 +372,26 @@ Run: `cd langgraph && source .venv/bin/activate && python -m pytest tests/backte
 
 ---
 
-## Current Status (2026-06-13)
+## Current Status (2026-06-16)
 
 ### Completed ✅
 - LangGraph agent (3 nodes) — production-ready, running on port 2024
 - Backtest framework — full CLI with 6 commands, refactored into clean subpackages
 - Shared prompts (`agent/prompts.py`) — single source used by graph, backtest, and fine-tuning export
 - Dataset: 56,161 samples (18 months, 12 symbols, 3 TFs)
-- ML optimization complete (Avance 4 + 5):
-  - **Bagging-LSTM: 83.37% test acc** (5 bags, hidden=32, layers=3, seq=5) — Avance 5 winner
-  - LSTM individual: 81.5% test acc (hidden=32, layers=3, seq_len=5, dropout=0.1, lr=0.001)
-  - Blending: 81.89% test acc (heterogeneous ensemble)
-  - SVM (RBF): 70.8% val acc
-  - XGBoost: 66.6% test acc (tuned with L1/L2 regularization)
-- DVC initialized — dataset, candles, models tracked in S3 (`s3://trading-management-dvc/`)
-- ⚠️ QLoRA config 1 (92%) — **INVALID** (leakage: positional split + 2000 single-symbol
-  eval, financial metrics 0). Archived under `optimization/qlora/results/archive/`.
-  `_temporal_split` is now a strict temporal holdout; re-train ONE model on the fix.
+- **All models measured on fixed temporal split**:
+  - QLoRA cloud: **88.03%** test acc, profit_factor=12.92 (primary result)
+  - QLoRA config3: **87.87%** test acc (robustness confirmation)
+  - Zero-shot Qwen 7B: 58.49% acc, 28.42% win rate, 98.47% drawdown
+  - Random Forest v2: 64.24% | XGBoost v2: 63.60% | Blending v2: 63.59% | LSTM v2: 51.51%
+- McNemar test: chi²=557, p≈0 — statistically significant
+- `optimization-results.ipynb` — Parts 1–6 complete (loss curves, bar charts, McNemar, trade metrics, equity curves)
+- DVC — dataset, candles, QLoRA models tracked in S3 (`s3://trading-management-dvc/`)
 
 ### Pending ⏳
-1. `dvc pull` dataset + candles, then re-train ONE QLoRA on the fixed split (`run_cloud.sh`)
-2. Re-train ML/ensembles + re-run `Avance5.ipynb` on the fixed split (Tarea 7 — all prior numbers stale)
-3. Zero-shot LLM backtest (Groq or Ollama) on the fixed test
-4. Statistical comparison: McNemar test + paired t-test across all models (paired by `sample_keys`)
-5. Integrate best fine-tuned model into LangGraph (GGUF → Ollama)
-6. Ensemble LSTM+LLM (if time permits)
-7. Thesis presentation + video demo (deadline ~2026-06-26)
+1. `Avance6.ipynb` — clean thesis deliverable notebook
+2. LangGraph integration: `dvc pull qlora_cloud.dvc` → `ollama create trading-qwen-ft` → set `LLM_MODEL` env var
+3. Thesis write-up + presentation + defense (~Jun 26)
 
 ### Research Context (Master's Thesis)
 

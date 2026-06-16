@@ -48,17 +48,26 @@ Full-stack crypto trading platform with GPU-accelerated AI, LangGraph agents, ba
 - **Backtest**: Historical evaluation of LLM vs ML predictions (56,161 labeled samples)
 - **Research**: Master's thesis comparing zero-shot LLM, fine-tuned LLM, XGB, RF, LSTM
 
-## Current Status (2026-06-13)
+## Current Status (2026-06-16)
 - **Production**: Backend + Frontend + Ollama running via Docker Compose
 - **LangGraph**: Agent running, 3-node graph tested
-- **Backtest**: Refactored into clean subpackages (`ingestion/`, `models/`, `evaluation/`)
-- **ML Results (Avance5)**: Bagging-LSTM 83.37% test (winner), LSTM 81.5%, Blending 81.89%, XGBoost 66.6% — ⚠️ re-measure on the fixed split (Tarea 7)
-- **Bagging-LSTM Best**: 5 bags, hidden=32, layers=3, seq=5, AUC-ROC=0.9157
-- **Leakage fix (2026-06-13)**: `_temporal_split` now a strict temporal holdout (global timestamp sort + embargo); prior per-symbol split leaked → all model numbers above need re-measuring. See `docs/AUDITORIA_QLORA_LEAKAGE_OVERFITTING.md` + `docs/GUIA_IMPLEMENTACION_FIX_QLORA.md`
-- **QLoRA Fine-tuning**: ~~config 1 92%~~ INVALID (leakage, archived). Re-train ONE model on the fix (`run_cloud.sh`); diagnostics now emit train/val/test gap + baseline + loss curve
-- **DVC**: Initialized, dataset + candles + models tracked in S3 (`s3://trading-management-dvc/`)
-- **Next**: `dvc pull`; re-train QLoRA + ML/ensembles on fixed split; zero-shot backtest; McNemar/t-test comparisons
-- **Pending**: LangGraph integration of fine-tuned model, ensemble LSTM+LLM, thesis presentation
+- **All measurements complete** — all models evaluated on the same strict temporal test split
+
+| Model | Test Acc | Win Rate | Profit Factor |
+|-------|----------|----------|---------------|
+| QLoRA cloud (lr=2e-5, rank=16) | **88.03%** | 61.67% | 12.92 |
+| QLoRA config3 (lr=1e-5, rank=32) | **87.87%** | 60.30% | 11.96 |
+| Random Forest v2 | 64.24% | 56.40% | 2.23 |
+| XGBoost v2 | 63.60% | 57.47% | 2.34 |
+| Blending ensemble v2 | 63.59% | — | — |
+| Zero-shot Qwen 7B | 58.49% | 28.42% | 1.35 |
+| LSTM v2 | 51.51% | 46.74% | 1.49 |
+
+- **McNemar test** (QLoRA vs zero-shot): chi²=557, p≈0 — statistically significant
+- **Leakage fix**: `_temporal_split` is a strict temporal holdout (global sort + embargo). Pre-fix numbers (Avance 4–5) are invalid and archived.
+- **DVC**: Dataset, candles, QLoRA models tracked in S3 (`s3://trading-management-dvc/`)
+- **Analysis notebook**: `langgraph/optimization-results.ipynb` — Parts 1–6 complete (loss curves, accuracy bar, McNemar, trade metrics, equity curves)
+- **Remaining**: `Avance6.ipynb` (thesis deliverable), LangGraph integration (GGUF → Ollama → agent), thesis write-up + defense (~Jun 26)
 
 ---
 

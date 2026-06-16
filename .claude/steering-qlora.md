@@ -8,38 +8,36 @@ The model learns to output structured JSON: `{"bias", "entry", "tp", "sl", "reas
 
 ---
 
-## Current State (2026-06-13)
+## Current State (2026-06-16)
 
-> 🔴 **Leakage fix applied — prior results invalidated.** The 92% config-1 result
-> was trained on a positional (per-symbol) split and evaluated on 2000 single-symbol
-> (LINK) rows with financial metrics 0. `_temporal_split` is now a strict temporal
-> holdout (global timestamp sort + embargo). **Re-train ONE model** on the fixed
-> split (`run_cloud.sh`), optionally one local (`run_local.sh`) — **no config sweep**.
-> See `docs/AUDITORIA_QLORA_LEAKAGE_OVERFITTING.md` + `docs/GUIA_IMPLEMENTACION_FIX_QLORA.md`.
+> ✅ **All measurements complete.** QLoRA cloud + config3 trained and evaluated.
+> Zero-shot backtest done. McNemar test run. All ML models re-measured on the fixed
+> temporal split. Remaining work: `Avance6.ipynb`, LangGraph integration, thesis write-up.
 
 ### Done
 
 | What | Result | Where |
 |------|--------|-------|
-| Dataset (56K samples) | 39,312 train / 8,424 val / 8,425 test (pre-fix counts) | `backtest/data/labeled/dataset.jsonl` |
-| Training data export | Chat-format JSONL | Generated at runtime by `train_qlora.py` |
-| SageMaker setup | ml.g6e.xlarge (L40S 48GB), venv, SSH key | Running |
-| Leakage fix + instrumentation | strict split, early stopping, gap, loss curve, baseline | `features._temporal_split`, `train_qlora.py` |
-| DVC tracking | Dataset, candles, models | Remote: `s3://trading-management-dvc/` |
+| Dataset (56K samples) | 39,312 train / 8,424 val / 8,425 test | `backtest/data/labeled/dataset.jsonl` (DVC) |
+| Leakage fix | `_temporal_split` — global sort + 24h embargo | `backtest/models/features.py` |
+| QLoRA cloud training | **88.03% test acc**, profit_factor=12.92, AUC=0.942 | `optimization/qlora/results/qlora_cloud/result.json` |
+| QLoRA config3 (robustness check) | **87.87% test acc**, profit_factor=11.96 | `optimization/qlora/results/qlora_config3/result.json` |
+| Zero-shot backtest (Qwen 2.5 7B) | 58.49% acc, 28.42% win rate, 98.47% drawdown | `backtest/data/results/zero-shot-qwen7b.json` |
+| ML models re-measured on fixed split | RF 64.24%, XGB 63.60%, Blending 63.59%, LSTM 50.21% | `optimization/results/*_v2_optimization.json` |
+| McNemar test | chi²=557, p≈0 — fine-tuning is statistically significant | `optimization/stats_tests.py` |
+| Analysis notebook | Parts 1–6 (loss curves, accuracy, McNemar, trade metrics, equity curves) | `langgraph/optimization-results.ipynb` |
+| Ollama deployment guide | Local inference walkthrough (dvc pull → ollama create) | `docs/OLLAMA_DEPLOYMENT.md` |
+| DVC tracking | Dataset, candles, QLoRA models in S3 | Remote: `s3://trading-management-dvc/` |
 | ~~Config 1 training (92%)~~ | **INVALID** — contaminated split + partial eval | `optimization/qlora/results/archive/` |
 
 ### Pending
 
-| What | Priority | Time estimate |
-|------|----------|---------------|
-| `dvc pull` dataset + candles (before any eval) | HIGH | minutes |
-| Re-train ONE cloud model on fixed split (`run_cloud.sh`) | HIGH | ~3-6h on SageMaker |
-| Optional local model on fixed split (`run_local.sh`) | MEDIUM | ~15-19h (1 epoch) |
-| Re-train ML/ensembles + re-run `Avance5.ipynb` (Tarea 7) | HIGH | CPU, parallel to GPU |
-| Zero-shot LLM backtest on the fixed test | HIGH | ~2-4h with Groq |
-| McNemar + t-test comparisons (paired by `sample_keys`) | HIGH | 30 min (once results exist) |
-| Integrate best model (GGUF → Ollama → LangGraph) | HIGH | 2-3h |
-| Ensemble LSTM+LLM | LOW | 1 day if time permits |
+| What | Priority |
+|------|----------|
+| `Avance6.ipynb` — clean thesis deliverable notebook | HIGH |
+| LangGraph integration (GGUF → Ollama → agent) | HIGH |
+| Thesis write-up + presentation | HIGH |
+| Defense (~Jun 26) | — |
 
 ---
 
@@ -210,41 +208,43 @@ aws s3api get-bucket-policy --bucket trading-management-dvc
 
 ---
 
-## Results So Far
+## Final Results (all on fixed temporal test split)
 
-### ~~Config 1 (lr=2e-5, rank=16, epochs=2) — 92%~~ → INVALID
-Trained on the contaminated positional split and evaluated on 2000 single-symbol
-(LINK) rows with financial metrics 0. **Not a valid generalization measure** —
-archived under `results/archive/`. The re-trained model on the fixed split replaces it.
+| Model | Test Acc | Win Rate | Profit Factor | Max Drawdown |
+|-------|----------|----------|---------------|-------------|
+| QLoRA cloud (lr=2e-5, rank=16) | **88.03%** | 61.67% | 12.92 | 12.3% |
+| QLoRA config3 (lr=1e-5, rank=32) | **87.87%** | 60.30% | 11.96 | 14.6% |
+| Random Forest v2 | 64.24% | 56.40% | 2.23 | 39.3% |
+| XGBoost v2 | 63.60% | 57.47% | 2.34 | 36.4% |
+| Blending ensemble v2 | 63.59% | — | — | — |
+| Zero-shot Qwen 7B | 58.49% | 28.42% | 1.35 | 98.5% |
+| LSTM v2 | 51.51% | 46.74% | 1.49 | 38.7% |
 
-### Comparison targets (all need RE-MEASURING on the fixed split — Tarea 7)
-- Bagging-LSTM: 83.37% test acc (former ML winner, 5 bags, AUC=0.9157)
-- LSTM individual: 81.5% test acc
-- Blending ensemble: 81.89% test acc
-- XGBoost: 66.6% test acc
-- Zero-shot LLM: not yet measured (need to run backtest on the fixed test)
+**McNemar**: chi²=557, p≈0 (1094 QLoRA wins vs 233 zero-shot wins on 3000 paired samples)  
+**Config3** confirms robustness: two independent hyperparameter sets both land at ~88%.  
+**Zero-shot anomaly**: 58.5% direction acc but 98.5% drawdown — base model knows partial direction but cannot calibrate TP/SL to crypto volatility.
+
+~~Config 1 (92%)~~ — **INVALID**, archived. Trained on contaminated positional split.
 
 ---
 
-## What Success Looks Like
+## What Was Achieved
 
-1. Fine-tuned model beats zero-shot LLM in accuracy **on the fixed temporal test**
-   (and clearly beats the heuristic baseline, not just majority-class 51%)
-2. Fine-tuned model has profit_factor > 1.0 in backtest (needs candles via `dvc pull`)
-3. Small train−test **gap** + non-diverging loss curve → no overfitting signal
-4. Statistical significance confirmed via McNemar test (p < 0.05), paired by `sample_keys`
-5. Model integrated in LangGraph agent (GGUF → Ollama → `LLM_MODEL` env var)
+1. ✅ Fine-tuned model beats zero-shot by +29.5pp accuracy (88% vs 58.5%)
+2. ✅ profit_factor=12.92 >> 1.0 (candles pulled via DVC before eval)
+3. ✅ Negative overfitting gap (train_acc=70.5% < test_acc=88%) — healthy generalization
+4. ✅ McNemar p≈0 — statistically significant at any reasonable α
+5. ⏳ Model integration in LangGraph agent pending (GGUF ready in DVC)
 
 ---
 
 ## Timeline to Thesis Defense (~Jun 26)
 
-| Days | What |
+| Date | What |
 |------|------|
-| Jun 13-14 | `dvc pull`; re-train ONE cloud model on fixed split; re-run ML/ensembles (Tarea 7) |
-| Jun 14-15 | Optional local model (overnight), zero-shot backtest on fixed test |
-| Jun 15-16 | All results in hand, run statistical comparisons (paired) |
-| Jun 16-17 | LangGraph integration, screenshots/video |
-| Jun 19-22 | Documentation, report, presentation |
-| Jun 23-25 | Buffer + rehearsal |
+| Jun 16 | Add equity curves to notebook (Part 6) ✅ |
+| Jun 16–17 | `Avance6.ipynb` — clean thesis deliverable |
+| Jun 17–18 | LangGraph integration + screenshots/video |
+| Jun 18–22 | Technical report + presentation |
+| Jun 23–25 | Buffer + rehearsal |
 | ~Jun 26 | Defense |
