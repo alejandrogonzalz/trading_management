@@ -37,8 +37,40 @@ Any machine with 8 GB of system RAM can run it — GPU just makes it faster.
 2. **DVC installed** (to pull the model from S3) → `pip install dvc[s3]`  
    Verify: `dvc --version`
 
-3. **AWS credentials configured** (to pull from `s3://trading-management-dvc/`)  
-   Verify: `aws s3 ls s3://trading-management-dvc/`
+3. **AWS credentials configured** (to pull from `s3://trading-management-dvc/`)
+
+   You need an AWS IAM user with **read access to the S3 bucket**.
+   Ask the repo owner (Alex) for an Access Key ID + Secret Access Key.
+
+   Once you have them, configure the AWS CLI:
+
+   ```bash
+   # Install AWS CLI if needed: https://aws.amazon.com/cli/
+   aws configure
+   ```
+
+   It will prompt for:
+   ```
+   AWS Access Key ID:     <your-key-id>
+   AWS Secret Access Key: <your-secret-key>
+   Default region name:   us-east-2        ← must match the bucket region
+   Default output format: json
+   ```
+
+   This writes credentials to `~/.aws/credentials`, which DVC reads automatically.
+
+   Verify access:
+   ```bash
+   aws s3 ls s3://trading-management-dvc/
+   # Should list files without an error
+   ```
+
+   > **Alternative — environment variables** (CI / Docker):
+   > ```bash
+   > export AWS_ACCESS_KEY_ID=your-key-id
+   > export AWS_SECRET_ACCESS_KEY=your-secret-key
+   > export AWS_DEFAULT_REGION=us-east-2
+   > ```
 
 ---
 
