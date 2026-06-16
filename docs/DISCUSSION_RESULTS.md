@@ -251,14 +251,27 @@ The chi² statistic of 557 with 3,000 paired samples is overwhelming. 1,094 samp
 
 ### Config3 confirms robustness
 
-Two independent QLoRA configurations were trained:
+After the first training run (cloud config), a natural question is: is 88% real, or did we
+get lucky with those specific hyperparameters? To answer this, a second independent training
+run was launched with deliberately different settings — this is **config3**.
+
+Config3 is not a different model or a different idea. It is the same Qwen 2.5 7B base,
+the same dataset, the same task — only the training hyperparameters differ:
+- Lower learning rate (1e-5 vs 2e-5): more conservative weight updates
+- Higher LoRA rank (32 vs 16): more trainable parameters in the adapter
+- Higher alpha (64 vs 32): stronger adapter scaling
+
+If 88% were a hyperparameter fluke, config3 would land somewhere meaningfully different.
+Instead:
 
 | Config | LR | Rank | Alpha | Test acc | Val acc | Train acc | Gap |
 |--------|-----|------|-------|----------|---------|-----------|-----|
 | cloud | 2e-5 | 16 | 32 | **88.03%** | 86.50% | 70.50% | −17.5pp |
 | config3 | 1e-5 | 32 | 64 | **87.87%** | 89.00% | 70.50% | −17.4pp |
 
-Both converge to ~88% with nearly identical overfitting diagnostics. The result is **robust to hyperparameter choice** — it is not a lucky run on one specific configuration.
+Both converge to ~88% with nearly identical overfitting diagnostics (same train_acc,
+same gap magnitude). The result is **robust to hyperparameter choice** — it reflects
+what the fine-tuned model genuinely learned from the data, not a lucky training run.
 
 ---
 
