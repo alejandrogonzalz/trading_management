@@ -164,9 +164,19 @@ N_SAMPLES=$(wc -l < langgraph/backtest/data/labeled/dataset.jsonl | tr -d ' ')
 ok "dataset: $N_SAMPLES samples"
 [ "$N_SAMPLES" -ge 50000 ] || warn "expected ~56K samples, got $N_SAMPLES"
 
-# ----------------------------------------------------------------- 7. launch
-step "[7/7] Launch training"
+# ----------------------------------------------------------------- 7. smoke test
+step "[7/8] Smoke test (3 steps — catches OOM/import errors in ~1 min)"
 cd "$LANGGRAPH"
+
+SMOKE_FLAGS="--max-steps 3 --max-eval 4 --no-gguf --tag ${TAG}_smoke --epochs 1"
+[ "$USE_ATR_TP_SL" = "1" ] && SMOKE_FLAGS="$SMOKE_FLAGS --use-atr-tp-sl"
+
+python3 optimization/qlora/train_qlora.py $SMOKE_FLAGS \
+    || fail "Smoke test failed — likely OOM or missing dependency. Check nvidia-smi."
+ok "smoke test passed — training loop is healthy"
+
+# ----------------------------------------------------------------- 8. launch
+step "[8/8] Full training"
 
 CLOUD_FLAGS="--tag $TAG --epochs $EPOCHS"
 [ "$USE_ATR_TP_SL" = "1" ] && CLOUD_FLAGS="$CLOUD_FLAGS --use-atr-tp-sl"
