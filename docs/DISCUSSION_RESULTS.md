@@ -6,6 +6,34 @@ This document covers the honest evaluation of all models **after the leakage fix
 
 ---
 
+## Key Trading Terms
+
+**TP — Take Profit**: the price level at which a trade automatically closes as a winner.
+When price reaches TP, the position exits and books the gain.
+_Example: buy BTC at $67,000, TP at $69,000 → trade wins if BTC reaches $69,000 first._
+
+**SL — Stop Loss**: the price level at which a trade automatically closes as a loser
+to cap the downside. Without an SL, a losing trade can wipe out the entire account.
+_Example: same trade, SL at $66,000 → trade loses if BTC drops to $66,000 before hitting TP._
+
+**Win rate**: the fraction of trades that reach TP before SL. A model can predict
+direction correctly but still have a low win rate if it places TP too close or SL
+too wide — the trade gets stopped out by normal noise before the expected move happens.
+This is exactly what happens with the zero-shot model (58.5% direction accuracy but only 28.4% win rate).
+
+**Profit factor**: total gross profit ÷ total gross loss across all trades.
+A value > 1.0 means the strategy is profitable overall.
+_Example: profit factor 12.9 means for every $1 lost, $12.90 was gained._
+
+**ATR — Average True Range**: a measure of how much a symbol typically moves per candle
+(e.g. BTC swings ~$1,200 per hour on average). Used to calibrate TP and SL to the
+asset's actual volatility instead of arbitrary price levels:
+`TP = entry + 1.5 × ATR`, `SL = entry − 1.0 × ATR`.
+A model that understands ATR-based sizing will set TP/SL that survive normal noise
+but still capture the expected directional move.
+
+---
+
 ## 1. The Leakage Fix and Its Impact
 
 ### What was wrong
@@ -299,7 +327,7 @@ QLoRA at 88.03% (McNemar chi²=557, p≈0) demonstrates that pre-trained world k
 
 ---
 
-## 7. Open Questions for Thesis Defense
+## 7. FAQ
 
 1. **Why does QLoRA val_acc (86.5%) ≈ test_acc (88.0%) but train_acc (70.5%) is much lower?**  
    *Answer: the train diagnostic samples the 200 oldest examples from the earliest, most chaotic market period (early 2023 — FTX aftermath, thin liquidity, extreme volatility). Those are genuinely harder to predict. The test set (2025, more recent, clearer patterns) happened to be easier. This is the opposite of memorization.*
