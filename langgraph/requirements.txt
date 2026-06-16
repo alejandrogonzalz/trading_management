@@ -22,3 +22,5 @@ pytest-asyncio
 xgboost
 scikit-learn
 torch
+matplotlib
+ipykernel

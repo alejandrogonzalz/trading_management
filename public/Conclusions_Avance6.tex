@@ -585,6 +585,13 @@ Privacidad datos & 5 & 4 & 4 & 5 \\
 \label{fig:confusion}
 \end{figure}
 
+\begin{figure*}[ht]
+\centering
+\includegraphics[width=0.88\textwidth]{figures/fig8_roc_pr_reliability.png}
+\caption{Curva ROC (AUC$\approx$0.67), Precision-Recall y Reliability Diagram para los modelos ML. La calibraci\'on muestra que confidence=8 corresponde a $\sim$93\% de accuracy real. El modelo QLoRA no produce probabilidades variadas (confidence fija), por lo que estas curvas aplican solo a RF y XGBoost.}
+\label{fig:roc}
+\end{figure*}
+
 % ── 13. Trabajo futuro ───────────────────────────────────────────────────────
 \section{Trabajo futuro}
 
