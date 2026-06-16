@@ -397,6 +397,35 @@ El resultado principal de este trabajo \textbf{no es ``88\% de precisi\'on''} co
 
 La cifra absoluta depende del rigor del filtrado: con filtros m\'as laxos, el dataset ser\'ia m\'as grande pero la precisi\'on caer\'ia. Con filtros m\'as estrictos, subir\'ia. Lo importante es que \textit{bajo las mismas condiciones y el mismo dataset}, el fine-tuning produce una mejora sustancial y reproducible.
 
+\subsection{Precisi\'on por s\'imbolo}
+
+\begin{table}[H]
+\centering
+\caption{Precisi\'on direccional del modelo QLoRA cloud desglosada por criptomoneda}
+\label{tab:persymbol}
+\footnotesize
+\begin{tabularx}{\columnwidth}{Xccr}
+\toprule
+\textbf{S\'imbolo} & \textbf{Aciertos} & \textbf{Muestras} & \textbf{Accuracy} \\
+\midrule
+SOLUSDT & 243 & 265 & 91.7\% \\
+ETHUSDT & 233 & 257 & 90.7\% \\
+LINKUSDT & 279 & 313 & 89.1\% \\
+XRPUSDT & 242 & 272 & 89.0\% \\
+NEARUSDT & 237 & 267 & 88.8\% \\
+DOTUSDT & 283 & 321 & 88.2\% \\
+BNBUSDT & 240 & 274 & 87.6\% \\
+BTCUSDT & 239 & 276 & 86.6\% \\
+ADAUSDT & 210 & 244 & 86.1\% \\
+AVAXUSDT & 245 & 285 & 86.0\% \\
+DOGEUSDT & 190 & 226 & 84.1\% \\
+\midrule
+\textbf{Total} & \textbf{2,641} & \textbf{3,000} & \textbf{88.0\%} \\
+\bottomrule
+\end{tabularx}
+{\scriptsize Spread: 7.6pp entre el mejor (SOL, 91.7\%) y el peor (DOGE, 84.1\%). Los 11 s\'imbolos superan el 84\%, confirmando generalizaci\'on cross-activo.}
+\end{table}
+
 \subsection{Contexto en la literatura}
 
 \begin{table}[H]
@@ -445,11 +474,24 @@ Pindza 2026 & Gradient-boosted, purged WF & Falla \\
 \section{Limitaciones metodol\'ogicas}
 
 \begin{enumerate}
-\item \textbf{Sesgo de supervivencia} (media): solo muestras ``exitosas'' pasan los filtros.
-\item \textbf{Circularidad TP/SL} (alta --- solo m\'etricas financieras): PF=12.92 es artefacto.
-\item \textbf{Asimetr\'ia de informaci\'on} (media): el LLM ve m\'as informaci\'on que los modelos ML.
-\item \textbf{Ventana de prueba \'unica} (baja): IC 95\% = $\pm$1.2pp (86.8\%--89.2\%).
+\item \textbf{Sesgo de supervivencia} (media): el filtro de \textit{drawdown} del etiquetador descarta muestras donde el precio activa SL antes de TP --- reteniendo solo trayectorias ``limpias''. Esto hace que la tarea de clasificaci\'on sea estructuralmente m\'as f\'acil que la predicci\'on de direcci\'on sobre datos crudos. El 88\% debe interpretarse como precisi\'on sobre \textit{setups operables}, no sobre condiciones arbitrarias.
+\item \textbf{Circularidad TP/SL} (alta --- solo m\'etricas financieras): PF=12.92 es artefacto de la metodolog\'ia de simulaci\'on. No afecta la precisi\'on direccional.
+\item \textbf{Asimetr\'ia de informaci\'on} (media): el LLM recibe descriptores sem\'anticos, nombre del s\'imbolo y precios exactos; los modelos ML reciben 30 floats. Sin una ablaci\'on (LLM con solo datos num\'ericos), no es posible separar la contribuci\'on del fine-tuning de la contribuci\'on de la representaci\'on m\'as rica. Se propone como trabajo futuro.
+\item \textbf{Ventana de prueba \'unica} (baja): 81~d\'ias en per\'iodo predominantemente alcista (Abr--Jun 2025). El modelo no ha sido evaluado en mercado bajista ni en eventos de cisne negro. IC~95\% = $\pm$1.2pp (86.8\%--89.2\%).
+\item \textbf{Sub-muestreo en evaluaci\'on}: se evaluaron 3,000 de 8,425 muestras de prueba. Aunque el IC es estrecho, el stride uniforme podr\'ia sub-representar per\'iodos con menor densidad de setups filtrados.
 \end{enumerate}
+
+\subsection{Validaciones en curso (semana del 16--20 de junio)}
+
+Posteriormente a la entrega de este documento, se ejecutar\'an las siguientes validaciones para fortalecer la defensa de los resultados:
+
+\begin{enumerate}
+\item \textbf{Evaluaci\'on completa} de las 8,425 muestras de prueba (eliminando el sub-muestreo por stride). Reduce el IC de $\pm$1.2pp a $\pm$0.7pp.
+\item \textbf{Diagn\'ostico de entrenamiento corregido}: muestreo aleatorio de 500 ejemplos del per\'iodo completo de entrenamiento (no solo los m\'as antiguos) para obtener una estimaci\'on representativa de train accuracy y resolver la brecha invertida.
+\item \textbf{Desglose de precisi\'on por s\'imbolo}: tabla con accuracy individual para cada una de las 12 criptomonedas, confirmando que la generalizaci\'on no depende de un solo activo.
+\end{enumerate}
+
+Estos resultados se incorporar\'an al documento final de la tesis antes de la defensa.
 
 % ── 9. Viabilidad ────────────────────────────────────────────────────────────
 \section{Viabilidad de implementaci\'on}
