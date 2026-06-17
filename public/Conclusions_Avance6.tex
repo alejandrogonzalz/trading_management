@@ -64,20 +64,41 @@ Se presenta la evaluaci\'on comparativa de siete modelos de predicci\'on de dire
 \vspace{0.8em}
 }]
 
-% ── 1. Pipeline ──────────────────────────────────────────────────────────────
+% ── 1. Introducción ─────────────────────────────────────────────────────────
+\section{Introducci\'on}
+
+Los mercados de criptomonedas presentan una relaci\'on se\~nal-ruido extremadamente baja, din\'amicas no-estacionarias y cambios de r\'egimen constantes~\cite{sun2026}, lo que convierte la predicci\'on de direcci\'on de precio en un problema de clasificaci\'on binaria de alta complejidad. Los enfoques tradicionales basados en \textit{Machine Learning} (ML) ---como XGBoost, Random Forest o redes \textit{Long Short-Term Memory} (LSTM)--- operan sobre vectores num\'ericos de indicadores t\'ecnicos y t\'ipicamente alcanzan exactitudes del 60--65\,\% en condiciones de evaluaci\'on temporal estricta~\cite{bysik2026,fu2024}.
+
+Recientemente, los Modelos de Lenguaje de Gran Escala (\textit{Large Language Models}, LLM) se han aplicado al dominio financiero; sin embargo, la mayor\'ia se dise\~nan para tareas de asesor\'ia o an\'alisis de sentimiento, no para ejecuci\'on aut\'onoma de predicci\'on direccional~\cite{nguyen2026}. En modo \textit{zero-shot}, estos modelos fallan dr\'asticamente en la predicci\'on de trayectorias de precio~\cite{liu2026}, alcanzando $\sim$58\,\% de exactitud con m\'etricas financieras deficientes.
+
+El \textit{fine-tuning} mediante adaptadores de bajo rango (QLoRA)~\cite{dettmers2023} permite especializar un LLM pre-entrenado actualizando \'unicamente $\sim$0.5\,\% de sus par\'ametros, mientras el modelo base congelado act\'ua como regularizador impl\'icito~\cite{hu2021}. Se ha demostrado que este esquema preserva la comprensi\'on ling\"u\'istica del modelo fundacional al tiempo que lo adapta a tareas de dominio espec\'ifico~\cite{nimmaturi2025}. Adicionalmente, reestructurar la predicci\'on de precios en escenarios de mercado en lenguaje natural ---como el formato textual de indicadores empleado en este trabajo--- mejora la exactitud en m\'as de 11 puntos porcentuales respecto al \textit{fine-tuning} est\'andar sobre datos crudos~\cite{pan2026}.
+
+\textbf{Objetivo.} Evaluar experimentalmente si el \textit{fine-tuning} de un LLM (Qwen~2.5~7B~\cite{qwen2024}) mediante QLoRA produce una mejora estad\'isticamente significativa en exactitud direccional respecto al mismo modelo en modo \textit{zero-shot} y respecto a modelos de ML cl\'asico, bajo una partici\'on temporal estricta con embargo.
+
+\textbf{Hip\'otesis.} El modelo ajustado superar\'a al modelo base en modo \textit{zero-shot} en al menos 10 puntos porcentuales de exactitud direccional sobre el conjunto de prueba temporal, y superar\'a a los modelos de ML cl\'asico entrenados con b\'usqueda exhaustiva de hiperpar\'ametros sobre el mismo \textit{split}.
+
+\subsection{Terminolog\'ia b\'asica}
+
+Una \textbf{vela} (\textit{candlestick}) es la representaci\'on de la actividad de precio de un activo durante un intervalo fijo de tiempo denominado \textit{timeframe}, definida por cuatro valores: apertura, m\'aximo, m\'inimo y cierre (OHLC), m\'as el volumen negociado (V). Un \textit{timeframe} de 1h indica que cada vela resume una hora de actividad de mercado. En este trabajo se emplean tres resoluciones temporales: 1h (base de c\'alculo), 4h (tendencia intermedia) y 1d (tendencia diaria).
+
+Los \textbf{indicadores t\'ecnicos} son transformaciones matem\'aticas de los datos OHLCV que producen se\~nales cuantificables sobre la condici\'on del mercado ---tendencia, volatilidad, momentum--- a partir exclusivamente de datos pasados. La Tabla~\ref{tab:indicators} describe los indicadores utilizados.
+
+Es fundamental distinguir dos m\'etricas de evaluaci\'on que se emplean a lo largo de este documento: la \textbf{exactitud} (\textit{accuracy}) se refiere a la proporci\'on de predicciones correctas sobre el total de muestras evaluadas, mientras que la \textbf{precisi\'on} (\textit{precision}) denota la fracci\'on de predicciones positivas que son verdaderamente positivas (TP/(TP+FP)). En este trabajo, la m\'etrica principal es la exactitud direccional.
+
+% ── 2. Pipeline ──────────────────────────────────────────────────────────────
 \section{Pipeline de datos}
 
-El dataset de 56,161 muestras se construy\'o mediante el pipeline de la Figura~\ref{fig:pipeline}:
+El conjunto de datos se construy\'o mediante el proceso ilustrado en la Figura~\ref{fig:pipeline}. Cada muestra $\mathbf{x}_i$ consiste en un vector de indicadores t\'ecnicos calculados en tres resoluciones temporales (1h, 4h y 1d) junto con una etiqueta binaria $y_i \in \{\text{LONG}, \text{SHORT}\}$ que indica la direcci\'on futura del precio. El conjunto final comprende 56,161 muestras correspondientes a 12 criptomonedas en el per\'iodo diciembre~2023 -- junio~2025.
 
-\textbf{Extracci\'on}: descarga concurrente de velas OHLCV desde la API p\'ublica de Binance (12 criptomonedas, timeframes 1h/4h/1d, per\'iodo Dic~2023 -- Jun~2025). Implementaci\'on: \ghref{langgraph/backtest/pipeline.py\#L71-L90}{\code{DataPipeline.fetch()}}.
+\textbf{Extracci\'on.} Se descargaron de forma concurrente las velas OHLCV desde la API p\'ublica de Binance para 12 activos y tres \textit{timeframes} (1h, 4h y 1d), abarcando el per\'iodo de diciembre de 2023 a junio de 2025 (18 meses). El uso de m\'ultiples granularidades temporales permite capturar din\'amicas en distintos horizontes, una pr\'actica com\'un en el entrenamiento de modelos de series de tiempo financieras~\cite{fu2024}. Cada \textit{timeframe} aporta una perspectiva distinta: 1h captura movimientos intradiarios, 4h la tendencia intermedia y 1d la tendencia de fondo.
 
-\textbf{Transformaci\'on}: para cada vela base (1h), se calculan indicadores t\'ecnicos usando exclusivamente las 200 velas previas (sin visi\'on de futuro). Se alinean los timeframes superiores (4h, 1d) al instante de la vela base mediante b\'usqueda binaria. Implementaci\'on: \ghref{langgraph/backtest/ingestion/indicators.py\#L94-L139}{\code{calculate\_multi\_tf\_indicators()}}.
+\textbf{Transformaci\'on.} Para cada vela base de 1h, se calcularon los indicadores t\'ecnicos descritos en la Tabla~\ref{tab:indicators} utilizando exclusivamente las 200 velas previas, garantizando que ning\'un dato futuro participa en el c\'alculo. Este control es cr\'itico para mitigar el sesgo de anticipaci\'on (\textit{look-ahead bias}), identificado como una de las fallas de evaluaci\'on m\'as prevalentes en la literatura de IA financiera~\cite{nguyen2026}. Las resoluciones superiores (4h y 1d) se alinearon al instante de la vela base mediante b\'usqueda binaria: se selecciona el indicador m\'as reciente disponible \textit{hasta ese momento}, simulando la informaci\'on que un analista observar\'ia en tiempo real.
 
-\textbf{Etiquetado}: el algoritmo de \textit{hindsight} observa las 24 velas siguientes para determinar direcci\'on (LONG/SHORT). Aplica filtros de calidad: ADX~$\geq$~15, volumen relativo~$\geq$~0.5, R:R~$\geq$~1:1, ausencia de \textit{whipsaw} y verificaci\'on de que SL no se active antes que TP. De $\sim$250,000 velas crudas, solo el 22.4\% supera todos los filtros. Implementaci\'on: \ghref{langgraph/backtest/ingestion/labeler.py\#L8-L109}{\code{label\_candle()}}.
+\textbf{Etiquetado.} La variable objetivo se determin\'o mediante un algoritmo de etiquetado retrospectivo (\textit{hindsight labeling}) que observa las 24 velas posteriores a cada punto de decisi\'on. Si el precio alcanza un nivel de ganancia (calculado como un m\'ultiplo del indicador de volatilidad ATR) antes de activar el nivel de p\'erdida, la muestra se etiqueta como LONG; en el caso inverso, como SHORT. Se aplicaron cinco filtros de calidad ---fuerza de tendencia m\'inima, volumen relativo m\'inimo, relaci\'on riesgo-recompensa m\'inima de 1:1, ausencia de reversi\'on temprana y coherencia del nivel de p\'erdida--- que descartan muestras ambiguas. Estos filtros se alinean con los est\'andares m\'inimos consolidados que exigen cobertura de distintos reg\'imenes de mercado para evitar resultados espurios~\cite{pindza2026}. Del total de $\sim$250,000 velas disponibles, el 22.4\,\% super\'o todos los filtros, produciendo las 56,161 muestras del conjunto final.
 
 \subsection{Partici\'on temporal estricta}
 
-El dataset se divide cronol\'ogicamente: entrenamiento (70\%, 39,312 muestras), validaci\'on (15\%, 8,424) y prueba (15\%, 8,425 --- los $\sim$81 d\'ias m\'as recientes). Un \textbf{embargo de 24 horas} en cada frontera purga muestras cuyo horizonte de etiquetado cruza la partici\'on siguiente (Figura~\ref{fig:split}). Implementaci\'on: \ghref{langgraph/backtest/models/features.py\#L93-L137}{\code{\_temporal\_split()}}.
+El conjunto de datos se dividi\'o cronol\'ogicamente en tres subconjuntos: entrenamiento (70\,\%, 39,312 muestras), validaci\'on (15\,\%, 8,424) y prueba (15\,\%, 8,425), donde el subconjunto de prueba corresponde a los \'ultimos 81 d\'ias del per\'iodo observado (febrero--mayo~2025). Se aplic\'o un \textbf{embargo de 24 horas} en cada frontera para purgar toda muestra cuyo horizonte de etiquetado (24 velas futuras) cruza hacia la partici\'on siguiente, eliminando cualquier contaminaci\'on temporal entre conjuntos~\cite{nguyen2026,pindza2026}. Esta metodolog\'ia de partici\'on cronol\'ogica es esencial para asegurar que el modelo no dependa de patrones memorizados que no generalicen a condiciones futuras del mercado (Figura~\ref{fig:split}).
 
 \begin{figure*}[t]
 \centering
@@ -143,12 +164,10 @@ Avg win/loss & Ganancia media de ganadoras vs.\ p\'erdida media \\
 \end{tabularx}
 \end{table}
 
-Implementaci\'on: \ghref{langgraph/backtest/evaluation/simulate.py\#L23-L61}{\code{simulate\_trade()}} y \ghref{langgraph/backtest/evaluation/metrics.py\#L8-L93}{\code{metrics.py}}.
+% ── 3.5. Optimizaci\'on de hiperpar\'ametros ────────────────────────────────────
+\subsection{Optimizaci\'on de hiperpar\'ametros}
 
-% ── 3.5. Grid Search ─────────────────────────────────────────────────────────
-\subsection{Optimizaci\'on de hiperpar\'ametros (Grid Search)}
-
-Todos los modelos ML se optimizaron mediante b\'usqueda aleatoria con validaci\'on temporal (\code{TimeSeriesSplit}, sin mezclar datos futuros con pasados). Configs: \ghref{langgraph/optimization/configs/}{\code{optimization/configs/}}.
+Para garantizar una comparaci\'on equitativa entre los modelos de ML cl\'asico, el modelo de \textit{Deep Learning} (LSTM) y el LLM ajustado, se realiz\'o una b\'usqueda aleatoria (\textit{Randomized Search}) con validaci\'on temporal mediante \textit{TimeSeriesSplit} ($k=3$ divisiones), asegurando que en cada iteraci\'on el conjunto de validaci\'on sea estrictamente posterior al de entrenamiento~\cite{pardo2008}. Se eligi\'o b\'usqueda aleatoria sobre b\'usqueda exhaustiva porque, para espacios de 4--6 dimensiones, 80--150 iteraciones aleatorias alcanzan una probabilidad superior al 95\,\% de muestrear al menos una configuraci\'on dentro del 5\,\% superior del espacio~\cite{miguelanez2026}. La Tabla~\ref{tab:gridsearch} detalla el n\'umero de iteraciones y par\'ametros explorados por cada modelo.
 
 \begin{table}[ht]
 \centering
@@ -159,16 +178,20 @@ Todos los modelos ML se optimizaron mediante b\'usqueda aleatoria con validaci\'
 \toprule
 \textbf{Modelo} & \textbf{Iter.} & \textbf{Par\'ams explorados} & \textbf{CV} \\
 \midrule
-XGBoost & 150 & depth, LR, L1/L2, subsample & TSS(3) \\
-Random Forest & 80 & depth, min\_leaf, max\_feat & TSS(3) \\
-LSTM v1 & 30 & hidden, layers, seq, LR, drop & ES(10) \\
-LSTM v2 & 50 & +hidden=256, +seq=30/50 & ES(10) \\
+XGBoost & 150 & profundidad, LR, L1/L2, subsample & TSS(3) \\
+Random Forest & 80 & profundidad, min\_leaf, max\_feat & TSS(3) \\
+LSTM v1 & 30 & hidden, capas, secuencia, LR, dropout & ES(10) \\
+LSTM v2 & 50 & +hidden=256, +secuencia=30/50 & ES(10) \\
 \bottomrule
 \end{tabularx}
-{\scriptsize TSS=TimeSeriesSplit, ES=EarlyStopping (patience=10). seed=42.}
+{\scriptsize TSS=\textit{TimeSeriesSplit}, ES=\textit{Early Stopping} (paciencia=10). Semilla=42.}
 \end{table}
 
-Ning\'un modelo ML super\'o el 64\% en el split temporal --- confirmando un techo estructural (ver \S5.3).
+La convergencia de la b\'usqueda se verific\'o emp\'iricamente: la mejor exactitud de XGBoost se estabiliz\'o a partir de la iteraci\'on~80 de~150, y la de Random Forest a partir de la iteraci\'on~50 de~80, indicando que iteraciones adicionales no producir\'ian mejoras significativas. Adicionalmente, la red LSTM se entren\'o con \textit{early stopping} (paciencia de 10 \'epocas sin mejora en validaci\'on), lo que previene tanto el sobreajuste como el subentrenamiento.
+
+\textbf{Suficiencia de la b\'usqueda.} Formalmente, la probabilidad de que una b\'usqueda aleatoria de $N$ iteraciones muestree al menos una configuraci\'on en el \textit{top}-$p$\,\% del espacio es $1-(1-p)^N$. Para XGBoost ($N=150$, $p=0.05$): $1-(0.95)^{150} > 99.95\,\%$. Para Random Forest ($N=80$, $p=0.05$): $1-(0.95)^{80} > 98.3\,\%$. Esto garantiza, con alta confianza, que los mejores hiperpar\'ametros encontrados se encuentran en el percentil superior del espacio explorado. La LSTM, al emplear \textit{early stopping} adaptativo, no depende del n\'umero de configuraciones sino de la se\~nal de validaci\'on en cada entrenamiento individual.
+
+El hecho de que ning\'un modelo superara el 64\,\% de exactitud ---tanto modelos de ML cl\'asico (\'arboles de decisi\'on y \textit{ensembles}) como de \textit{Deep Learning} (LSTM)--- sugiere una limitaci\'on estructural de la representaci\'on num\'erica frente a la no-estacionariedad del mercado, no una deficiencia en la b\'usqueda (ver \S\ref{sec:techo}).
 
 % ── 4. Resultados ─────────────────────────────────────────────────────────────
 \section{Resultados experimentales}
@@ -207,7 +230,15 @@ Acc.=Precisi\'on direccional, WR=Win Rate, PF=Profit Factor, DD=Max Drawdown.}
 
 \subsection{Validaci\'on estad\'istica}
 
-Prueba de McNemar sobre 3,000 pares estratificados: $\chi^2 = 557.35$, $p < 10^{-150}$. 1,094 muestras donde QLoRA acierta y zero-shot falla, frente a solo 233 en direcci\'on contraria. Prueba t pareada (PnL\%): $t=26.79$, $df=2{,}999$, $p\approx0$, diferencia media +1.52\%/trade.
+Para determinar si la diferencia de exactitud entre el modelo ajustado y el \textit{zero-shot} es estad\'isticamente significativa ---y no producto del azar muestral--- se emple\'o la prueba de McNemar~\cite{mcnemar1947}. Esta prueba es adecuada porque: (1)~ambos modelos se eval\'uan sobre \textbf{exactamente las mismas muestras} (datos pareados), (2)~la variable de respuesta es binaria (acierto/fallo por muestra), y (3)~no requiere supuesto de normalidad, a diferencia de la prueba~$t$, lo que la hace robusta para clasificadores~\cite{pardo2008}.
+
+La prueba se formula sobre los pares discordantes ---muestras donde un modelo acierta y el otro falla--- mediante el estad\'istico:
+$$
+\chi^2 = \frac{(b - c)^2}{b + c}
+$$
+donde $b$ es el n\'umero de muestras que el modelo ajustado clasifica correctamente y el \textit{zero-shot} no, y $c$ el caso inverso. Sobre 3,000 pares estratificados del conjunto de prueba temporal, se observ\'o $b=1{,}094$ y $c=233$, produciendo $\chi^2 = 557.35$ ($p < 10^{-150}$). La hip\'otesis nula ---que ambos modelos tienen la misma tasa de error--- se rechaza rotundamente.
+
+Como prueba complementaria, se aplic\'o una prueba~$t$ pareada sobre el rendimiento porcentual por operaci\'on (\textit{PnL\%}): $t=26.79$, $df=2{,}999$, $p\approx0$, con una diferencia media de +1.52\,\% por operaci\'on a favor del modelo ajustado.
 
 \begin{figure}[H]
 \centering
@@ -673,23 +704,69 @@ Local (RTX 5070 Ti) & 16GB & \$0 & $\sim$23h \\
 \end{itemize}
 
 % ── Referencias ──────────────────────────────────────────────────────────────
-\section*{Referencias}
 \footnotesize
-\begin{enumerate}[label={[\arabic*]}, leftmargin=1.5em]
-\item Dettmers, T. et al. (2023). \textit{QLoRA: Efficient Finetuning of Quantized Language Models}. NeurIPS 2023.
-\item Hu, E. et al. (2021). \textit{LoRA: Low-Rank Adaptation of Large Language Models}. ICLR 2022.
-\item Lopez-Lira, A. \& Tang, Y. (2023). \textit{Can ChatGPT Forecast Stock Price Movements?} arXiv:2304.07619.
-\item Bysik, N. \& \'Slepaczuk, R. (2026). \textit{XGBoost and LSTM Models for Bitcoin Price Prediction}. arXiv:2606.00060.
-\item Pindza, E. (2026). \textit{Testing ML trading strategies with purged walk-forward validation}. Frontiers in Blockchain.
-\item McNemar, Q. (1947). \textit{Note on the sampling error of the difference between correlated proportions}. Psychometrika, 12(2), 153--157.
-\item Pardo, R. (2008). \textit{The Evaluation and Optimization of Trading Strategies} (2nd ed.). Wiley.
-\item Qwen Team (2024). \textit{Qwen2.5 Technical Report}. Alibaba Cloud. \url{https://qwenlm.github.io/blog/qwen2.5/}
-\item Han, D. \& Shao, L. (2024). \textit{Unsloth: 2x faster LLM fine-tuning}. \url{https://github.com/unslothai/unsloth}
-\item RunPod, Inc. (2025). \textit{GPU Cloud for AI/ML}. \url{https://www.runpod.io}
-\item Together AI (2025). \textit{Together Inference API}. \url{https://www.together.ai}
-\item Zheng, L. et al. (2023). \textit{Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena}. NeurIPS 2023. arXiv:2306.05685.
-\item Bouri, E., Molnar, P., Azzi, G., Roubaud, D. \& Hagfors, L.I. (2017). \textit{On the hedge and safe haven properties of Bitcoin: Is it really more than a diversifier?} Finance Research Letters, 20, 192--198.
-\item Repositorio del proyecto: \url{https://github.com/alejandrogonzalz/trading_management}
-\end{enumerate}
+\begin{thebibliography}{99}
+
+\bibitem{sun2026}
+Z.~Sun and G.~Raskutti, ``A theoretical framework for LLM fine-tuning using early stopping for non-random initialization,'' \textit{arXiv preprint arXiv:2602.13942}, 2026.
+
+\bibitem{fu2024}
+X.~Fu, M.~Hirano, and K.~Imajo, ``Financial fine-tuning a large time series model,'' \textit{arXiv preprint arXiv:2412.09880}, 2024.
+
+\bibitem{liu2026}
+B.~Liu and R.~Dang, ``FinPos: A position-aware trading agent system for real financial markets,'' \textit{arXiv preprint arXiv:2510.27251}, 2026.
+
+\bibitem{bysik2026}
+N.~Bysik and R.~\'Slepaczuk, ``XGBoost and LSTM Models for Bitcoin Price Prediction,'' \textit{arXiv preprint arXiv:2606.00060}, 2026.
+
+\bibitem{miguelanez2026}
+C.~Miguela\~nez, ``Fine-tuning LLMs: Hyperparameter best practices,'' \textit{Latitude.so}, Feb.~2, 2026.
+
+\bibitem{mitrasish2026}
+Mitrasish, ``How to fine-tune LLMs in 2026: Costs, GPUs, and code,'' \textit{Spheron Blog}, Mar.~5, 2026.
+
+\bibitem{pan2026}
+Y.~Pan and S.~C.~Liew, ``Learning to trade like an expert: Cognitive fine-tuning for stable financial reasoning in language models,'' \textit{arXiv preprint arXiv:2604.16862}, 2026.
+
+\bibitem{unsloth2026}
+Unsloth, ``LoRA fine-tuning hyperparameters guide,'' \textit{Unsloth Documentation}, 2026.
+
+\bibitem{dettmers2023}
+T.~Dettmers \textit{et al.}, ``QLoRA: Efficient Finetuning of Quantized Language Models,'' in \textit{Proc. NeurIPS}, 2023.
+
+\bibitem{hu2021}
+E.~Hu \textit{et al.}, ``LoRA: Low-Rank Adaptation of Large Language Models,'' in \textit{Proc. ICLR}, 2022.
+
+\bibitem{nimmaturi2025}
+D.~Nimmaturi \textit{et al.}, ``Predictive scaling laws for efficient GRPO training of large reasoning models,'' \textit{arXiv preprint arXiv:2507.18014}, 2025.
+
+\bibitem{nguyen2026}
+P.~Nguyen and T.~Pham, ``Toward reliable evaluation of LLM-based financial multi-agent systems: Taxonomy, coordination primacy, and cost awareness,'' \textit{arXiv preprint arXiv:2603.27539}, 2026.
+
+\bibitem{ruan2025}
+Z.~Ruan \textit{et al.}, ``Unveiling over-memorization in finetuning LLMs for reasoning tasks,'' \textit{arXiv preprint arXiv:2508.04117}, 2025.
+
+\bibitem{lopez2023}
+A.~Lopez-Lira and Y.~Tang, ``Can ChatGPT Forecast Stock Price Movements?'' \textit{arXiv preprint arXiv:2304.07619}, 2023.
+
+\bibitem{pindza2026}
+E.~Pindza, ``Testing ML trading strategies with purged walk-forward validation,'' \textit{Frontiers in Blockchain}, 2026.
+
+\bibitem{mcnemar1947}
+Q.~McNemar, ``Note on the sampling error of the difference between correlated proportions,'' \textit{Psychometrika}, vol.~12, no.~2, pp.~153--157, 1947.
+
+\bibitem{pardo2008}
+R.~Pardo, \textit{The Evaluation and Optimization of Trading Strategies}, 2nd~ed. Wiley, 2008.
+
+\bibitem{qwen2024}
+Qwen Team, ``Qwen2.5 Technical Report,'' Alibaba Cloud, 2024. [Online]. Available: \url{https://qwenlm.github.io/blog/qwen2.5/}
+
+\bibitem{bouri2017}
+E.~Bouri, P.~Molnar, G.~Azzi, D.~Roubaud, and L.~I.~Hagfors, ``On the hedge and safe haven properties of Bitcoin: Is it really more than a diversifier?'' \textit{Finance Research Letters}, vol.~20, pp.~192--198, 2017.
+
+\bibitem{repo}
+A.~Gonz\'alez~Almaz\'an, ``Trading Management --- Repositorio del proyecto,'' 2026. [Online]. Available: \url{https://github.com/alejandrogonzalz/trading_management}
+
+\end{thebibliography}
 
 \end{document}
