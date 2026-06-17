@@ -82,6 +82,7 @@ class LLMBacktestRunner:
         mode: str = "FUTURES",
         verbose: bool = False,
         split: str | None = "test",
+        concurrency: int = 1,
     ):
         self.dataset_path = dataset_path
         self.tag = tag
@@ -92,6 +93,11 @@ class LLMBacktestRunner:
         self.mode = mode
         self.verbose = verbose
         self.split = split
+        # 1 = original sequential behavior. >1 issues that many concurrent LLM
+        # calls via an asyncio.Semaphore — safe for hosted APIs (Together, Groq,
+        # etc.) with real rate limits; keep at 1 for local Ollama unless its
+        # server is configured for parallel requests.
+        self.concurrency = max(1, concurrency)
 
     async def run(self) -> dict[str, Any]:
         if self.provider:
@@ -120,13 +126,17 @@ class LLMBacktestRunner:
         candles_map, ts_idx_map = _load_candles_map(self.candles_dir)
         system_prompt = build_system_prompt(self.mode)
 
-        print(f"LLM backtest: {len(samples)} samples | provider={os.getenv('LLM_PROVIDER')} | mode={self.mode}")
+        print(
+            f"LLM backtest: {len(samples)} samples | provider={os.getenv('LLM_PROVIDER')} | "
+            f"mode={self.mode} | concurrency={self.concurrency}"
+        )
 
-        predictions, actuals, trade_results, atr_trade_results, sample_keys = [], [], [], [], []
-        errors = 0
         start = time.time()
+        semaphore = asyncio.Semaphore(self.concurrency)
+        done_count = 0
 
-        for i, sample in enumerate(samples):
+        async def _process_one(i: int, sample: dict) -> dict[str, Any] | None:
+            nonlocal done_count
             symbol = sample.get("symbol", "BTCUSDT")
             label = sample["label"]
             indicators = sample["indicators"]
@@ -137,24 +147,29 @@ class LLMBacktestRunner:
             user_prompt = build_user_prompt(symbol, indicators)
 
             prediction = None
-            for attempt in range(2):
-                try:
-                    response = await llm.generate_setup(system_prompt, user_prompt)
-                    prediction = _parse_prediction(response)
-                    if prediction:
-                        break
-                except Exception as exc:
-                    print(f"  [{i + 1}] LLM error (attempt {attempt + 1}): {exc}")
-                    await asyncio.sleep(1)
+            async with semaphore:
+                for attempt in range(2):
+                    try:
+                        response = await llm.generate_setup(system_prompt, user_prompt)
+                        prediction = _parse_prediction(response)
+                        if prediction:
+                            break
+                    except Exception as exc:
+                        print(f"  [{i + 1}] LLM error (attempt {attempt + 1}): {exc}")
+                        await asyncio.sleep(1)
+
+            done_count += 1
+            if done_count % 50 == 0:
+                elapsed = time.time() - start
+                rate = done_count / elapsed if elapsed > 0 else 0
+                eta = (len(samples) - done_count) / rate if rate > 0 else 0
+                print(f"  Progress: {done_count}/{len(samples)} ({elapsed:.0f}s, {rate:.2f} samples/s, ETA {eta:.0f}s)")
 
             if not prediction:
-                errors += 1
-                continue
+                return None
 
             prediction.setdefault("confidence", 5)
-            predictions.append(prediction)
-            actuals.append(label)
-            sample_keys.append(f"{symbol}@{sample['timestamp']}")
+            sample_key = f"{symbol}@{sample['timestamp']}"
 
             candle_idx = ts_idx_map.get(symbol, {}).get(sample["timestamp"])
             if candle_idx is not None and candle_idx + 1 < len(candles_map.get(symbol, [])):
@@ -164,8 +179,6 @@ class LLMBacktestRunner:
             else:
                 trade_result = {"outcome": "ERROR", "pnl_pct": 0, "hold_bars": 0}
                 atr_result = {"outcome": "ERROR", "pnl_pct": 0, "hold_bars": 0}
-            trade_results.append(trade_result)
-            atr_trade_results.append(atr_result)
 
             if self.verbose:
                 ts = sample.get("timestamp", "")
@@ -175,8 +188,29 @@ class LLMBacktestRunner:
                     f"[{i + 1}/{len(samples)}] {symbol}{ts_str} pred={prediction.get('bias')} actual={label['bias']} {icon} {trade_result['pnl_pct']:+.2f}%"
                 )
 
-            if (i + 1) % 50 == 0:
-                print(f"  Progress: {i + 1}/{len(samples)} ({time.time() - start:.0f}s, {errors} errors)")
+            return {
+                "prediction": prediction,
+                "actual": label,
+                "trade_result": trade_result,
+                "atr_result": atr_result,
+                "sample_key": sample_key,
+            }
+
+        # gather preserves input order in the results list regardless of
+        # completion order, so predictions/actuals/sample_keys stay aligned.
+        raw_results = await asyncio.gather(*[_process_one(i, sample) for i, sample in enumerate(samples)])
+
+        predictions, actuals, trade_results, atr_trade_results, sample_keys = [], [], [], [], []
+        errors = 0
+        for r in raw_results:
+            if r is None:
+                errors += 1
+                continue
+            predictions.append(r["prediction"])
+            actuals.append(r["actual"])
+            trade_results.append(r["trade_result"])
+            atr_trade_results.append(r["atr_result"])
+            sample_keys.append(r["sample_key"])
 
         metrics = compute_all_metrics(predictions, actuals, trade_results) if predictions else {}
         atr_metrics = compute_all_metrics(predictions, actuals, atr_trade_results) if predictions else {}

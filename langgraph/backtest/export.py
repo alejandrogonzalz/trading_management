@@ -75,6 +75,8 @@ def build_training_example(
     sample: dict[str, Any],
     mode: Literal["SPOT", "FUTURES"] = "FUTURES",
     use_atr_tp_sl: bool = False,
+    anonymize_symbol: bool = False,
+    strip_fields: list[str] | None = None,
 ) -> dict[str, Any]:
     """Convert one labeled sample to chat-format training example.
 
@@ -82,6 +84,11 @@ def build_training_example(
     the label with ATR-based forward-looking values. This breaks the circular
     dependency documented in AUDIT_QLORA_88PCT.md §6: the model no longer
     learns to replicate price targets derived from future data.
+
+    ``anonymize_symbol``/``strip_fields`` mirror train_qlora.py's eval-time
+    feature-occlusion probe (AUDIT_QLORA_88PCT.md §10) but applied to the
+    TRAINING data too, so a retrain with these set is actually trained without
+    seeing the occluded info, not just evaluated without it.
     """
     symbol = sample.get("symbol", "BTCUSDT")
     indicators = sample["indicators"]
@@ -93,6 +100,13 @@ def build_training_example(
     else:
         multi_tf_indicators = {"1h": indicators}
         base_ind = indicators
+
+    if strip_fields:
+        multi_tf_indicators = {
+            tf: {k: v for k, v in tf_ind.items() if k not in strip_fields} for tf, tf_ind in multi_tf_indicators.items()
+        }
+    if anonymize_symbol:
+        symbol = "ASSET"
 
     system_prompt = build_system_prompt(mode)
     user_prompt = build_user_prompt(symbol, multi_tf_indicators)
@@ -145,6 +159,8 @@ def export_training_data(
     output_dir: str,
     mode: Literal["SPOT", "FUTURES"] = "FUTURES",
     use_atr_tp_sl: bool = False,
+    anonymize_symbol: bool = False,
+    strip_fields: list[str] | None = None,
 ) -> dict[str, int]:
     """Read labeled JSONL, build chat examples, split, write files.
 
@@ -182,7 +198,13 @@ def export_training_data(
         path = out / f"{split_name}.jsonl"
         with open(path, "w") as f:
             for sample in split_data:
-                example = build_training_example(sample, mode=mode, use_atr_tp_sl=use_atr_tp_sl)
+                example = build_training_example(
+                    sample,
+                    mode=mode,
+                    use_atr_tp_sl=use_atr_tp_sl,
+                    anonymize_symbol=anonymize_symbol,
+                    strip_fields=strip_fields,
+                )
                 f.write(json.dumps(example) + "\n")
         counts[split_name] = len(split_data)
 

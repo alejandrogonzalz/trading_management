@@ -414,6 +414,49 @@ The financial metrics imply impossible returns. They are artifacts of the simula
 
 ---
 
+## 10. Addendum (2026-06-17) — Pretraining Memorization Check
+
+**Context**: while investigating whether the 88.03% direction accuracy might hide a
+missed methodology issue (prompted by the drawdown-filter ablation result — removing
+the filter only dropped accuracy to 84.13%, not the 60-70% the original audit
+predicted in §5/§2 — see `qlora_no_drawdown` result and the updated
+`optimization-results.ipynb` Part 8), one remaining hypothesis was checked: **could
+Qwen2.5 be recalling memorized historical price action from its pretraining corpus,
+rather than reasoning from the indicators in the prompt?** This would be a leakage
+vector entirely outside the dataset/split/labeler pipeline already audited above —
+the model's weights themselves "remembering" what actually happened on a given date
+for a given symbol.
+
+**Check**: pulled the actual candle timestamps in `dataset.jsonl` (not the sandbox's
+displayed "current date") — the dataset spans **2024-11-23 to 2026-05-08**. The
+temporal test split (most recent 15%) falls in roughly **Feb-May 2026**. Real Qwen2.5
+models (the base model under both the zero-shot baseline and the QLoRA fine-tune)
+were released ~September 2024 with a pretraining cutoff before that date.
+
+**Verdict: PASS (confound ruled out for the test set).** The test period is
+chronologically *after* Qwen2.5's knowledge cutoff, so the base model cannot have
+memorized the specific price action being evaluated — it did not exist yet when the
+model was pretrained. This rules out exact-memorization leakage as an explanation for
+the high test accuracy.
+
+**Caveat — not fully closed**: this only rules out *exact* memorization of
+this-period outcomes. It does not rule out a more diffuse prior — e.g. general
+pretrained associations like "BTC is a large-cap, comparatively lower-volatility
+asset" or familiarity with technical-analysis terminology itself (heatmap/structure
+category names, RSI/ADX conventions) — which could still contribute to the LLM's edge
+over tree-based ML models in a way that isn't a leak, just a richer starting prior.
+This is the same "information asymmetry" explanation already raised in §7, now
+narrowed: it's pretrained *concept* familiarity, not pretrained *outcome* memorization.
+
+**Remaining open test** (not yet run): a feature-occlusion experiment — strip
+`heatmap`/`structure` (the categorical fields trees see only as lossy ordinal ints)
+and/or anonymize the symbol name from the prompt, first as a cheap `--eval-only` probe
+on the existing `qlora_cloud` adapter, then (if that signal is large) as a full retrain
+with the same fields stripped from training too — to isolate how much of the 24pp gap
+vs XGBoost/RF is the categorical-text encoding vs genuine reasoning capability.
+
+---
+
 ## Summary Table
 
 | Section | Verdict | Severity |
@@ -427,6 +470,8 @@ The financial metrics imply impossible returns. They are artifacts of the simula
 | 7. ML Model Gap | CONCERN | Low (explainable) |
 | 8. Literature Comparison | CONCERN | Medium (PF unprecedented) |
 | 9. Billionaire Test | **FAIL** | **HIGH** (impossible returns) |
+| 10. Pretraining Memorization (addendum) | PASS | — (test period post-dates Qwen2.5's cutoff) |
 
 **The 88% direction accuracy is likely REAL but applies only to filtered, high-quality setups.**
 **The financial metrics (PF=12.92, win_rate=61.67%) are ARTIFACTS and should not be cited as evidence of trading viability.**
+**Update (2026-06-17): the drawdown-filter ablation (`qlora_no_drawdown`, 84.13% vs 88.03%) shows the filter is NOT the primary driver of the headline number — see `optimization-results.ipynb` Part 8. The pretraining-memorization confound is ruled out (§10). The remaining open question is how much of the 24pp gap vs ML models is categorical-text encoding (testable, not yet run) vs genuine LLM reasoning capability.**
