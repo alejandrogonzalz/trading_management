@@ -17,6 +17,7 @@ optimization/qlora/logs/
 
 # Fine-tuning generated artifacts
 training_data/
+training_data_no_filter/
 unsloth_compiled_cache/
 logs/
 backtest/data/models/qlora_qwen25_7b/
