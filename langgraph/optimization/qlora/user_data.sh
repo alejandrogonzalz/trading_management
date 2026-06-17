@@ -217,6 +217,14 @@ python3 -c "import unsloth" 2>/dev/null \
     && ok "unsloth importable" \
     || fail "unsloth not importable — this script must run on a GPU image with the QLoRA training stack pre-installed (e.g. unsloth/unsloth:latest)"
 
+# TA-Lib is needed by backtest/ingestion/indicators.py for `cli prepare-dataset`
+# (e.g. the no-drawdown-filter ablation, generated fresh on the GPU box). The
+# unsloth training image doesn't ship it. PyPI's TA-Lib>=0.6 has a manylinux
+# wheel with the C library bundled, so this is a normal pip install — no
+# compiling, no sudo.
+python3 -c "import talib" 2>/dev/null || pip3 install --quiet "TA-Lib" || fail "failed to install TA-Lib"
+python3 -c "import talib" 2>/dev/null && ok "talib: $(python3 -c 'import talib; print(talib.__version__)' 2>/dev/null)" || fail "talib not importable after install attempt"
+
 python3 -c "import torch, sys; sys.exit(0 if torch.cuda.is_available() else 1)" 2>/dev/null \
     && ok "torch.cuda.is_available(): True ($(python3 -c 'import torch; print(torch.cuda.get_device_name(0))' 2>/dev/null))" \
     || fail "torch.cuda.is_available() is False — no GPU visible to PyTorch"
@@ -244,7 +252,7 @@ CANONICAL_BACKUP="$CANONICAL_RESULT.user_data_bak"
 [ -f "$CANONICAL_RESULT" ] && cp "$CANONICAL_RESULT" "$CANONICAL_BACKUP"
 
 python3 "$SCRIPT_DIR/train_qlora.py" \
-    --max-steps 3 --max-eval 10 --tag smoke_test \
+    --max-steps 3 --max-eval 10 --diagnostic-samples 0 --tag smoke_test \
     --output-dir "backtest/data/models/smoke_test" --no-gguf \
     > "$SMOKE_LOG" 2>&1
 SMOKE_STATUS=$?
