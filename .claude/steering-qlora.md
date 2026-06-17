@@ -8,11 +8,14 @@ The model learns to output structured JSON: `{"bias", "entry", "tp", "sl", "reas
 
 ---
 
-## Current State (2026-06-16)
+## Current State (2026-06-17)
 
-> ✅ **All measurements complete.** QLoRA cloud + config3 trained and evaluated.
-> Zero-shot backtest done. McNemar test run. All ML models re-measured on the fixed
-> temporal split. Remaining work: `Avance6.ipynb`, LangGraph integration, thesis write-up.
+> ✅ **All core measurements + 3 follow-up ablations complete.** QLoRA cloud + config3
+> trained and evaluated. Zero-shot backtest done (filtered + no-filter). McNemar test
+> run. All ML models re-measured on the fixed temporal split. Three robustness/audit
+> follow-up experiments completed (drawdown-filter ablation, symbol anonymization) plus
+> one in progress (feature occlusion). Remaining work: `Avance6.ipynb`, LangGraph
+> integration, thesis write-up.
 
 ### Done
 
@@ -22,10 +25,14 @@ The model learns to output structured JSON: `{"bias", "entry", "tp", "sl", "reas
 | Leakage fix | `_temporal_split` — global sort + 24h embargo | `backtest/models/features.py` |
 | QLoRA cloud training | **88.03% test acc**, profit_factor=12.92, AUC=0.942 | `optimization/qlora/results/qlora_cloud/result.json` |
 | QLoRA config3 (robustness check) | **87.87% test acc**, profit_factor=11.96 | `optimization/qlora/results/qlora_config3/result.json` |
-| Zero-shot backtest (Qwen 2.5 7B) | 58.49% acc, 28.42% win rate, 98.47% drawdown | `backtest/data/results/zero-shot-qwen7b.json` |
+| Zero-shot backtest (Qwen 2.5 7B, filtered) | 58.49% acc, 28.42% win rate, 98.47% drawdown | `backtest/data/results/zero-shot-qwen7b.json` |
+| Zero-shot backtest (Qwen 2.5 7B, no-filter) | 56.49% acc (via Together AI, concurrency=8) | `backtest/data/results/zero-shot-qwen7b-no-drawdown.json` |
 | ML models re-measured on fixed split | RF 64.24%, XGB 63.60%, Blending 63.59%, LSTM 50.21% | `optimization/results/*_v2_optimization.json` |
 | McNemar test | chi²=557, p≈0 — fine-tuning is statistically significant | `optimization/stats_tests.py` |
-| Analysis notebook | Parts 1–6 (loss curves, accuracy, McNemar, trade metrics, equity curves) | `langgraph/optimization-results.ipynb` |
+| **Drawdown-filter ablation** (`qlora_no_drawdown`) | **84.13%** (-3.90pp vs cloud) — filter is NOT the inflation source; overfitting gap flips sign (-17.5pp→+4.4pp) | `optimization/qlora/results/qlora_no_drawdown/result.json`; `.claude/RESULT_INTERPRETATION.md` |
+| **Symbol-anonymization ablation** (`qlora_anon_symbol`) | **88.66%** (full 8,425 test) vs cloud's 88.03% (3,000 subset) — no drop, rules out symbol-identity memorization | `optimization/qlora/results/qlora_anon_symbol/result.json` |
+| Pretraining-memorization check | Test period (Feb-May 2026) postdates Qwen2.5's real pretraining cutoff (~Sept 2024) — ruled out | `docs/qlora/AUDIT_QLORA_88PCT.md` §10 |
+| Analysis notebook | Parts 1–9 (loss curves ×3 runs, accuracy, McNemar, trade metrics, equity curves, drawdown ablation, symbol-anon ablation) | `langgraph/optimization-results.ipynb` |
 | Ollama deployment guide | Local inference walkthrough (dvc pull → ollama create) | `docs/ops/OLLAMA_DEPLOYMENT.md` |
 | DVC tracking | Dataset, candles, QLoRA models in S3 | Remote: `s3://trading-management-dvc/` |
 | ~~Config 1 training (92%)~~ | **INVALID** — contaminated split + partial eval | `optimization/qlora/results/archive/` |
@@ -34,6 +41,10 @@ The model learns to output structured JSON: `{"bias", "entry", "tp", "sl", "reas
 
 | What | Priority |
 |------|----------|
+| Feature-occlusion probe (`--strip-fields heatmap,structure`, eval-only, no retrain) | IN PROGRESS — isolates categorical-text-encoding vs tree-model ordinal-int hypothesis (audit §7) |
+| Paired McNemar/t-test for the no-filter comparison (`compare-stats`) | MEDIUM — raw accuracy gap already confirmed, formal significance test not run |
+| Per-symbol accuracy breakdown for `qlora_no_drawdown` | LOW |
+| `--use-atr-tp-sl` retrain (de-circularizes financial metrics, audit §6) | MEDIUM — flag exists, never actually run |
 | `Avance6.ipynb` — clean thesis deliverable notebook | HIGH |
 | LangGraph integration (GGUF → Ollama → agent) | HIGH |
 | Thesis write-up + presentation | HIGH |

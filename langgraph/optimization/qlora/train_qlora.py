@@ -120,6 +120,16 @@ class QLoRATrainer:
         "dataset_path": DATASET_PATH,
         "training_data_dir": str(TRAINING_DATA_DIR),
         "use_atr_tp_sl": False,
+        # Feature-occlusion probe (AUDIT_QLORA_88PCT.md §10): drop these keys from
+        # every timeframe's indicator dict before building the prompt. Applied at
+        # BOTH train-data export (prepare_data()) and eval (_predict_split()), so
+        # a retrain with this set actually never sees the field, not just the eval
+        # pass. With --eval-only, only eval is affected (no retrain happens).
+        "strip_fields": [],
+        # Replace the symbol name with a generic placeholder ("ASSET") in the
+        # prompt — same dual train+eval scope as strip_fields. Tests reliance on
+        # symbol-specific pretrained associations (e.g. "BTC").
+        "anonymize_symbol": False,
     }
 
     def __init__(self, config: dict[str, Any] | None = None):
@@ -132,6 +142,18 @@ class QLoRATrainer:
         """Export labeled dataset to chat-format JSONL splits for SFT."""
         dataset_path = self.cfg["dataset_path"]
         training_data_dir = self.cfg["training_data_dir"]
+        strip_fields = self.cfg.get("strip_fields") or []
+        anonymize_symbol = self.cfg.get("anonymize_symbol", False)
+        if strip_fields or anonymize_symbol:
+            # Separate export dir — export_training_data() always overwrites
+            # train/val/test.jsonl unconditionally, so an occluded export must
+            # not land in the shared dir other (non-occluded) runs read from.
+            # Written back into self.cfg so _load_chat_dataset() (called later,
+            # from train()) reads the occluded files too, not the defaults.
+            training_data_dir = str(
+                Path(training_data_dir).parent / f"{Path(training_data_dir).name}_{self.cfg['tag']}"
+            )
+            self.cfg["training_data_dir"] = training_data_dir
         log.info(f"Exporting training data from {dataset_path}")
         log.info(f"  Output: {training_data_dir}/")
 
@@ -148,6 +170,8 @@ class QLoRATrainer:
             output_dir=training_data_dir,
             mode=self.cfg["mode"],
             use_atr_tp_sl=self.cfg.get("use_atr_tp_sl", False),
+            anonymize_symbol=anonymize_symbol,
+            strip_fields=strip_fields,
         )
         log.info(f"  Train: {counts['train']}, Val: {counts['val']}, Test: {counts['test']}")
         return counts
@@ -397,6 +421,20 @@ class QLoRATrainer:
             log.warning(f"  GGUF export failed (non-fatal): {e}")
             log.warning("  Adapters are saved — convert to GGUF manually later if needed.")
 
+    def _occlude(self, symbol: str, indicators: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+        """Feature-occlusion probe: optionally strip fields / anonymize the symbol
+        before the prompt is built. No-op unless cfg['strip_fields'] or
+        cfg['anonymize_symbol'] is set — default behavior is unchanged.
+        """
+        strip_fields = self.cfg.get("strip_fields") or []
+        if strip_fields:
+            indicators = {
+                tf: {k: v for k, v in tf_ind.items() if k not in strip_fields} for tf, tf_ind in indicators.items()
+            }
+        if self.cfg.get("anonymize_symbol"):
+            symbol = "ASSET"
+        return symbol, indicators
+
     def _predict_split(
         self,
         samples: list[dict[str, Any]],
@@ -434,6 +472,7 @@ class QLoRATrainer:
             indicators = sample["indicators"]
             if indicators and not isinstance(next(iter(indicators.values())), dict):
                 indicators = {"1h": indicators}
+            symbol, indicators = self._occlude(symbol, indicators)
             user_prompt = build_user_prompt(symbol, indicators)
             prompts.append(
                 self.tokenizer.apply_chat_template(
@@ -1033,6 +1072,18 @@ def parse_args():
         metavar="ADAPTERS_DIR",
         help="Skip training — load saved adapters from this path and run eval only",
     )
+    parser.add_argument(
+        "--strip-fields",
+        type=str,
+        help="Comma-separated indicator field names to drop from the prompt (e.g. 'heatmap,structure'). "
+        "Feature-occlusion probe — applied to training data export AND eval. With --eval-only, only eval is affected.",
+    )
+    parser.add_argument(
+        "--anonymize-symbol",
+        action="store_true",
+        help="Replace the symbol name with a generic placeholder ('ASSET') in the prompt. "
+        "Feature-occlusion probe — applied to training data export AND eval. With --eval-only, only eval is affected.",
+    )
     return parser.parse_args()
 
 
@@ -1086,6 +1137,12 @@ def main():
 
     if args.no_gguf:
         config["skip_gguf"] = True
+
+    if args.strip_fields:
+        config["strip_fields"] = [f.strip() for f in args.strip_fields.split(",") if f.strip()]
+
+    if args.anonymize_symbol:
+        config["anonymize_symbol"] = True
 
     trainer = QLoRATrainer(config)
     if args.eval_only:
