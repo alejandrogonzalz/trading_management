@@ -1,5 +1,8 @@
 # Result Interpretation — No-Drawdown-Filter Experiment
 
+> **RESOLVED (2026-06-17).** Result: **84.13%** (vs 88.03% filtered, -3.90pp). This is a
+> null-ish result in the most useful sense — see "Decision Applied" below.
+
 > Success here is **not** "high accuracy." Success is **understanding how much the
 > drawdown filter inflates the headline 88%**. Even a null result (no change) is a
 > valuable, publishable finding about the robustness of the result.
@@ -59,6 +62,36 @@ temporal test split. Compare the two.
 
 ---
 
+## Decision Applied (2026-06-17)
+
+**Measured: 84.13%** (-3.90pp from 88.03%). This falls **between Scenario B and C** —
+just under the >85% cutoff, well above the 70-75% "major confounder" zone, and well
+above the auditor's predicted 60-70% (audit §5). Reading both scenario writeups
+together is more accurate than forcing it into one bucket:
+
+- Like **Scenario C**: the drop is small enough that the filter is clearly **not** the
+  primary driver of the 88.03% headline. The auditor's "pre-filtered easy samples"
+  concern, as applied to *direction accuracy specifically*, is not borne out — strong
+  evidence for the robustness/generalization argument.
+- Like **Scenario B**: the drop isn't zero either — there's a real, if modest, +34%
+  more (noisier) training data costing -3.9pp. Worth reporting both numbers rather than
+  only the filtered one.
+- **New signal not anticipated by the original scenario table**: the overfitting gap
+  flips sign (-17.5pp → **+4.4pp**, the normal/expected direction). Removing the filter
+  introduces *real* (if mild) overfitting that wasn't present before. This is itself
+  evidence that the filter is a legitimate quality control, not a number-inflation
+  trick — without it, the model starts memorizing noisier "didn't actually work"
+  trade examples that don't generalize as well.
+
+**Practical decision**: keep `qlora_cloud` (filtered) as the headline result. Report
+`qlora_no_drawdown` as a "sensitivity to filter" section (closest to the Scenario B
+paper guidance) with the gap-sign-flip finding as the most interesting single
+observation — it's the dataset's clearest evidence that the filter helps rather than
+inflates. No Scenario D triggered (no-filter never beat filtered), so no methodology
+change is warranted.
+
+---
+
 ## Two Evaluation Surfaces
 
 The no-filter model can be read two ways — keep them distinct:
@@ -66,9 +99,10 @@ The no-filter model can be read two ways — keep them distinct:
 1. **No-filter model on the unfiltered test set** → the honest, real-world number.
    This is the primary output of `train_qlora.py --dataset-type no_filter`.
 2. **No-filter model on the *filtered* test set** (optional, for Scenario D) → tests
-   whether harder training generalizes back to clean data. To produce it, eval the
-   saved adapters against the filtered dataset:
-   `--eval-only backtest/data/models/qlora_no_drawdown_filter --dataset-type filtered`.
+   whether harder training generalizes back to clean data. **Not run** — moot here
+   since the result landed close to Scenario C, not D. To produce it if needed later:
+   `--eval-only backtest/data/models/qlora_no_drawdown --dataset-type filtered`
+   (note: actual tag is `qlora_no_drawdown`, not `qlora_no_drawdown_filter`).
 
 ---
 
@@ -76,11 +110,14 @@ The no-filter model can be read two ways — keep them distinct:
 
 | Metric | Filtered model | No-filter model | Δ |
 |--------|----------------|-----------------|---|
-| Accuracy (unfiltered test) | — | **[fill]** | — |
-| Accuracy (filtered test) | 88.03% | [optional, Scenario D] | Δ vs 88.03 |
-| Improvement vs zero-shot | +29.5pp | **[fill]** | Δ improvement |
-| Per-class F1 (LONG / SHORT) | 0.876 / 0.884 | [fill] | — |
-| Per-symbol accuracy | (table) | [fill] | which symbols move most? |
+| Accuracy (unfiltered test) | — | **84.13%** | — |
+| Accuracy (filtered test) | 88.03% | not run (no Scenario D trigger, see above) | — |
+| Improvement vs zero-shot | +29.5pp | **+27.64pp** (84.13 − 56.49) | -1.9pp |
+| Per-class F1 (LONG / SHORT) | 0.876 / 0.884 | **0.851 / 0.830** | both ↓ slightly |
+| Per-symbol accuracy | (table, audit §4) | not yet broken out | still pending |
+| N evaluated | 3,000 (strided) | 11,294 (full, no `--max-eval`) | not identical N |
+| Parse errors | 0 / 3,000 | 7 / 11,294 (0.06%) | negligible |
+| Class balance (actuals) | ~50/50 | LONG 52.4% / SHORT 47.6% | still roughly balanced |
 
 ---
 
@@ -92,12 +129,16 @@ The no-filter model can be read two ways — keep them distinct:
   PF/win-rate as trading viability. The non-circular **ATR simulation**
   (`metrics_atr`, `simulate_trade_atr`) is the fairer financial read — compare *that*
   across runs, not the circular PF.
-- **McNemar.** Must be re-run **paired on the unfiltered test set** (re-run zero-shot
-  there first — see EXPERIMENT doc §4 Step 4). A large drop in χ² means the advantage
-  over zero-shot is less robust on real data.
+- **McNemar.** Zero-shot has been re-run paired on the unfiltered test set
+  (`zero-shot-qwen7b-no-drawdown`, 56.49%) — the raw accuracy gap holds (+27.6pp vs
+  +29.5pp filtered), but the actual paired McNemar/t-test (`compare-stats`) has **not**
+  been run yet. Do that before citing significance for the no-filter comparison.
 - **Overfitting gap (`overfitting.gap` = train_acc − test_acc).** On filtered data it
-  was a suspicious −17.5pp (audit §4). Watch whether unfiltered data normalizes it
-  toward a small positive gap — that would itself partly explain the filtered anomaly.
+  was a suspicious −17.5pp (audit §4). **Confirmed**: unfiltered data normalizes it to
+  **+4.4pp** — the normal/expected sign. This is the single most informative
+  observation in this experiment: it suggests the filtered model's inverted gap was
+  itself partly a side-effect of training on cleanly-filtered data (less to overfit
+  to), not an anomaly requiring a separate explanation (audit §4's open question).
 - **Parse errors.** Filtered run had 0. An increase suggests the model struggles to
   emit valid JSON on noisier inputs.
 - **Class balance.** Confirm the unfiltered dataset stays ~49/51 LONG/SHORT; a skew
@@ -108,11 +149,15 @@ The no-filter model can be read two ways — keep them distinct:
 ## Questions the Experiment Should Answer
 
 1. Does the advantage over zero-shot stay statistically significant (paired McNemar
-   on unfiltered data)?
+   on unfiltered data)? — **Raw accuracy advantage holds** (+27.6pp); formal McNemar
+   `compare-stats` not yet run.
 2. Which symbols lose the most accuracy when the filter is removed (e.g. high-vol
-   DOGE vs BTC)?
-3. Does the no-filter model do *relatively* better on volatile symbols?
-4. Is the unfiltered dataset still class-balanced?
+   DOGE vs BTC)? — **Not yet broken out.**
+3. Does the no-filter model do *relatively* better on volatile symbols? — **Not yet
+   answered**, depends on (2).
+4. Is the unfiltered dataset still class-balanced? — **Yes**, LONG 52.4% / SHORT 47.6%
+   on the test split (training-set-wide balance was ~49/51 per the original
+   measurement in `EXPERIMENT_NO_DRAWDOWN_FILTER.md` §5).
 
 ---
 

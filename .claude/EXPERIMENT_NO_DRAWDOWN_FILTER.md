@@ -1,10 +1,23 @@
 # Experiment: Fine-Tuning Without the Drawdown Filter
 
-> **Status:** PREPARED — code + docs ready, **no training has been run.**
-> **Branch:** `experiment/no-drawdown-filter`
-> **Model tag:** `qlora_no_drawdown_filter`
+> **Status:** ✅ **COMPLETED (2026-06-17).** Result: **84.13%** vs 88.03% filtered
+> (-3.90pp) — see `RESULT_INTERPRETATION.md` "Decision Applied" and
+> `docs/qlora/AUDIT_QLORA_88PCT.md` §10. Written up in `optimization-results.ipynb` Part 8.
+> **Branch:** `dev` (merged from `experiment/no-drawdown-filter` via PR #16, then the
+> execution itself happened on `feat/anonymization`)
+> **Model tag (actual):** `qlora_no_drawdown` — **not** `qlora_no_drawdown_filter` as
+> planned below; the rest of this doc's commands use the originally-planned tag, adjust
+> accordingly if copy-pasting.
 > **Dataset type:** `no_filter`
 > Addresses **Critique #2** of the audit (`docs/qlora/AUDIT_QLORA_88PCT.md` §2 — Label Leakage / survivorship bias).
+>
+> **Bottom line**: the auditor's predicted 60-70% (§5) did not materialize. The filter
+> is not the primary driver of the 88.03% headline. The most informative finding was
+> unanticipated: the overfitting gap flips from -17.5pp (healthy) to +4.4pp (normal
+> direction) without the filter — evidence the filter is a legitimate quality control,
+> not an inflation artifact. See the follow-up symbol-anonymization experiment
+> (`SESSION_PERSISTENCE.md`) for a second, independent probe into the same "why is 88%
+> so high" question.
 
 ---
 
