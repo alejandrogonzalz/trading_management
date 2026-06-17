@@ -87,6 +87,7 @@ the filtered dataset; the **financial metrics are artifacts**.
 
 ## References
 - Full audit: `../docs/qlora/AUDIT_QLORA_88PCT.md`
+- LaTeX write-up checklist (what's in `public/*.tex` vs still pending): `./TODO_LATEX_UPDATES.md`
 - QLoRA hyperparameter reference: `./rules/qlora-training.md`
 - ML conventions (temporal split, embargo): `./rules/ml-conventions.md`
 - RunPod GPU setup + cost: `../langgraph/optimization/qlora/RUNPOD_GUIDE.md`
