@@ -15,9 +15,11 @@ backtest/data/labeled/training/
 optimization/logs/
 optimization/qlora/logs/
 
-# Fine-tuning generated artifacts
+# Fine-tuning generated artifacts (training_data/ and any occlusion-experiment
+# variant, e.g. training_data_no_filter/, training_data_qlora_anon_symbol/ —
+# see QLoRATrainer.prepare_data() in train_qlora.py)
 training_data/
-training_data_no_filter/
+training_data_*/
 unsloth_compiled_cache/
 logs/
 backtest/data/models/qlora_qwen25_7b/
