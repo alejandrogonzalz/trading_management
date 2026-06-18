@@ -3,16 +3,16 @@ title Partición temporal del dataset (56,161 muestras)
 printscale monthly
 skinparam shadowing false
 
-Project starts 2023-12-01
+Project starts 2024-11-23
 
-[Train (70%) — 39,312 muestras] lasts 60 weeks
+[Train (70%) — 39,312 muestras] lasts 51 weeks
 [Embargo 24h (frontera train/val)] lasts 1 weeks
 [Embargo 24h (frontera train/val)] starts at [Train (70%) — 39,312 muestras]'s end
-[Validación (15%) — 8,424 muestras] lasts 12 weeks
+[Validación (15%) — 8,424 muestras] lasts 11 weeks
 [Validación (15%) — 8,424 muestras] starts at [Embargo 24h (frontera train/val)]'s end
 [Embargo 24h (frontera val/test)] lasts 1 weeks
 [Embargo 24h (frontera val/test)] starts at [Validación (15%) — 8,424 muestras]'s end
-[Test (15%) — 8,425 muestras] lasts 12 weeks
+[Test (15%) — 8,425 muestras] lasts 11 weeks
 [Test (15%) — 8,425 muestras] starts at [Embargo 24h (frontera val/test)]'s end
 
 [Train (70%) — 39,312 muestras] is colored in LightGray
