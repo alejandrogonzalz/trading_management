@@ -119,7 +119,7 @@ class QLoRATrainer:
         # unfiltered dataset for the drawdown-filter ablation.
         "dataset_path": DATASET_PATH,
         "training_data_dir": str(TRAINING_DATA_DIR),
-        "use_atr_tp_sl": False,
+        "use_atr_tp_sl": True,
         # Feature-occlusion probe (AUDIT_QLORA_88PCT.md §10): drop these keys from
         # every timeframe's indicator dict before building the prompt. Applied at
         # BOTH train-data export (prepare_data()) and eval (_predict_split()), so
@@ -845,6 +845,15 @@ class QLoRATrainer:
             "adapters_dir": str(adapters_dir),
             "best_score": test_metrics["accuracy"],
             "best_params": {"adapters_dir": str(adapters_dir)},
+            "run_config": {
+                "use_atr_tp_sl": self.cfg.get("use_atr_tp_sl", False),
+                "anonymize_symbol": self.cfg.get("anonymize_symbol", False),
+                "strip_fields": self.cfg.get("strip_fields", []),
+                "dataset_path": self.cfg.get("dataset_path", ""),
+                "mode": self.cfg.get("mode", "FUTURES"),
+                "eval_batch_size": self.cfg.get("eval_batch_size", 1),
+                "max_eval_samples": self.cfg.get("max_eval_samples"),
+            },
             "val_metrics": {},
             "test_metrics": {
                 "accuracy": test_metrics["accuracy"],
@@ -934,6 +943,21 @@ class QLoRATrainer:
                 "batch_size": self.cfg["batch_size"],
                 "gradient_accumulation_steps": self.cfg["gradient_accumulation_steps"],
                 "max_seq_length": self.cfg["max_seq_length"],
+            },
+            "run_config": {
+                "use_atr_tp_sl": self.cfg.get("use_atr_tp_sl", False),
+                "anonymize_symbol": self.cfg.get("anonymize_symbol", False),
+                "strip_fields": self.cfg.get("strip_fields", []),
+                "dataset_path": self.cfg.get("dataset_path", ""),
+                "training_data_dir": self.cfg.get("training_data_dir", ""),
+                "lora_dropout": self.cfg.get("lora_dropout", 0.05),
+                "warmup_steps": self.cfg.get("warmup_steps", 50),
+                "weight_decay": self.cfg.get("weight_decay", 0.01),
+                "seed": self.cfg.get("seed", 42),
+                "mode": self.cfg.get("mode", "FUTURES"),
+                "eval_batch_size": self.cfg.get("eval_batch_size", 1),
+                "max_eval_samples": self.cfg.get("max_eval_samples"),
+                "diagnostic_samples": self.cfg.get("diagnostic_samples", 500),
             },
             "val_metrics": {
                 "train_loss": train_info["train_loss"],
@@ -1042,12 +1066,12 @@ def parse_args():
     parser.add_argument(
         "--dataset-type",
         choices=["filtered", "no_filter"],
-        default="filtered",
+        default="no_filter",
         help=(
-            "Which labeled dataset to train + evaluate on. 'filtered' (default) = "
-            "the production dataset.jsonl. 'no_filter' = dataset_no_drawdown_filter.jsonl "
-            "(the drawdown-filter ablation; generate it first with "
-            "`cli prepare-dataset --no-drawdown-filter`). See docs/qlora/AUDIT_QLORA_88PCT.md §2."
+            "Which labeled dataset to train + evaluate on. 'no_filter' (default) = "
+            "dataset_no_drawdown_filter.jsonl (no survivorship bias). 'filtered' = "
+            "the production dataset.jsonl (drawdown filter applied, easier task). "
+            "Generate no_filter first with `cli prepare-dataset --no-drawdown-filter`."
         ),
     )
     parser.add_argument(
@@ -1063,8 +1087,14 @@ def parse_args():
     parser.add_argument(
         "--use-atr-tp-sl",
         action="store_true",
-        help="Use ATR-based forward-looking TP/SL in training labels instead of hindsight-derived values. "
+        default=True,
+        help="(Default: enabled) Use ATR-based forward-looking TP/SL in training labels. "
         "Breaks the circular dependency where the model learns to replicate price targets derived from future data.",
+    )
+    parser.add_argument(
+        "--no-atr-tp-sl",
+        action="store_true",
+        help="Disable ATR-based TP/SL — use hindsight-derived labels (circular, for backward-compat experiments only).",
     )
     parser.add_argument(
         "--eval-only",
@@ -1132,8 +1162,8 @@ def main():
     config["dataset_path"] = args.dataset or ds_path
     config["training_data_dir"] = ds_export_dir
 
-    if args.use_atr_tp_sl:
-        config["use_atr_tp_sl"] = True
+    if args.no_atr_tp_sl:
+        config["use_atr_tp_sl"] = False
 
     if args.no_gguf:
         config["skip_gguf"] = True

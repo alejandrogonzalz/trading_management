@@ -1,0 +1,31 @@
+@startuml
+title Arquitectura de despliegue propuesta
+skinparam shadowing false
+skinparam defaultFontSize 11
+skinparam node {
+    BackgroundColor #F5F5F5
+    BorderColor #333333
+}
+skinparam cloud {
+    BackgroundColor #E8F4FD
+    BorderColor #2196F3
+}
+skinparam database {
+    BackgroundColor #FFF3E0
+    BorderColor #FF9800
+}
+
+node "Cliente\n(navegador del usuario)" as cliente
+node "Servidor de aplicación\n(instancia cloud, sin GPU)" as servidor {
+    artifact "Servicio web\n(frontend + backend)" as app
+    artifact "Orquestador de inferencia\n(agente de operación)" as orq
+    artifact "Base de datos\n(persistencia local)" as db
+}
+cloud "API de inferencia LLM externa\n(modelo QLoRA servido)" as llm
+database "Fuente de datos de mercado\n(OHLCV en tiempo real)" as datos
+
+cliente --> servidor : HTTPS
+orq --> llm : solicitud de inferencia (HTTPS)
+orq --> datos : consulta de indicadores
+app --> orq : señal de análisis
+@enduml
