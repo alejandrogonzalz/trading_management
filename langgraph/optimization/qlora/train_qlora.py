@@ -190,6 +190,8 @@ class QLoRATrainer:
             load_in_4bit=True,
         )
 
+        # LoRA (Hu et al., 2021, ICLR): freezes W0, learns a low-rank update BA. Combined
+        # with 4-bit NF4 quantization of the frozen base (Dettmers et al., 2023, QLoRA).
         # Apply LoRA adapters to attention + MLP layers
         self.model = FastLanguageModel.get_peft_model(
             self.model,
@@ -298,6 +300,20 @@ class QLoRATrainer:
         trl_major = int(trl.__version__.split(".")[1]) if trl.__version__.startswith("0.") else 99
         log.info(f"  TRL version: {trl.__version__} (using {'new' if trl_major >= 12 else 'legacy'} API)")
 
+        # Loss: full-sequence causal-LM cross-entropy (next-token prediction over the
+        # whole chat-templated text). packing=False and no completion-only collator
+        # below means the prompt tokens also contribute to the loss, not just the
+        # assistant's reply; see docs/qlora/LOSS_MASKING_ANALYSIS.md for why this was
+        # kept instead of switching to TRL's DataCollatorForCompletionOnlyLM.
+        #
+        # Optimizer: `optim` is not set in SFTConfig/TrainingArguments below, so it
+        # defaults to HuggingFace Trainer's "adamw_torch" (AdamW, Loshchilov & Hutter,
+        # 2019, decoupled weight decay over Kingma & Ba's 2015 Adam). The
+        # lr_scheduler_type="cosine" below is cosine annealing (Loshchilov & Hutter, 2017, SGDR).
+        #
+        # TODO: optim is never pinned explicitly here. Consider "adamw_8bit" / paged
+        # AdamW (bitsandbytes, see Dettmers et al., 2023, QLoRA) to cut optimizer-state
+        # memory now that batch sizes are larger on cloud GPUs.
         if trl_major >= 12:
             # TRL >= 0.12: SFTConfig replaces TrainingArguments, params moved into config
             from trl import SFTConfig
@@ -336,6 +352,14 @@ class QLoRATrainer:
                 train_dataset=train_dataset,
                 eval_dataset=val_dataset,
                 args=sft_config,
+                # TODO: patience=4 here, but the thesis (tab:qlora_configs, tab:hyperparams) and
+                # .claude/steering-qlora.md both document patience=3 for the production runs.
+                # The value used at training time is NOT recoverable from artifacts: result.json
+                # records only epochs=2 (no patience field) and the logs/ never print it. So this
+                # is a genuine code<->docs drift, not something the run output can settle.
+                # Reconcile before citing a specific patience anywhere (was this bumped 3->4 after
+                # qlora_no_drawdown/qlora_anon_symbol trained? then the thesis is stale; if not,
+                # the code is). Until confirmed, the thesis keeps 3 (matches steering-qlora.md).
                 callbacks=[EarlyStoppingCallback(early_stopping_patience=4, early_stopping_threshold=0.001)],
             )
         else:
@@ -376,6 +400,14 @@ class QLoRATrainer:
                 dataset_text_field="text",
                 max_seq_length=self.cfg["max_seq_length"],
                 packing=False,
+                # TODO: patience=4 here, but the thesis (tab:qlora_configs, tab:hyperparams) and
+                # .claude/steering-qlora.md both document patience=3 for the production runs.
+                # The value used at training time is NOT recoverable from artifacts: result.json
+                # records only epochs=2 (no patience field) and the logs/ never print it. So this
+                # is a genuine code<->docs drift, not something the run output can settle.
+                # Reconcile before citing a specific patience anywhere (was this bumped 3->4 after
+                # qlora_no_drawdown/qlora_anon_symbol trained? then the thesis is stale; if not,
+                # the code is). Until confirmed, the thesis keeps 3 (matches steering-qlora.md).
                 callbacks=[EarlyStoppingCallback(early_stopping_patience=4, early_stopping_threshold=0.001)],
             )
 
