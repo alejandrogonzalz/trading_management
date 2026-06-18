@@ -14,3 +14,7 @@
 
 # Compiled PDF (regenerate with pdflatex)
 *.pdf
+
+# Editor / backup files
+*.bak
+*.tex.bak

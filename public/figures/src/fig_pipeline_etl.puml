@@ -1,0 +1,31 @@
+@startuml
+title Pipeline de datos: extracción, transformación y etiquetado
+skinparam shadowing false
+skinparam activity {
+    BackgroundColor #F5F5F5
+    BorderColor #333333
+}
+
+|Extracción|
+start
+:Descargar velas OHLCV\n(12 activos × 3 resoluciones × 18 meses);
+
+|Transformación|
+:Calcular indicadores técnicos\n(solo datos pasados, ventana = 200 velas);
+:Alinear resoluciones superiores\n(4h y 1d al instante de la vela base 1h);
+
+|Etiquetado|
+:Observar 24 velas futuras\n(algoritmo de etiquetado retrospectivo);
+:Aplicar filtros de calidad\n(tendencia, volumen, R:R, anti-whipsaw, drawdown);
+if (¿Supera todos los filtros?) then (sí → 22%)
+    :Etiquetar como LONG o SHORT;
+else (no → 78%)
+    :Descartar muestra;
+endif
+
+|Partición|
+:Ordenar globalmente por timestamp;
+:Dividir 70/15/15 con embargo de 24h;
+:Conjunto final: 56,161 muestras;
+stop
+@enduml
