@@ -1,0 +1,24 @@
+%%{init: {'theme':'neutral', 'flowchart': {'curve':'basis', 'nodeSpacing':50, 'rankSpacing':55}}}%%
+flowchart TB
+    cliente["Cliente<br/>(navegador del usuario)"]
+
+    subgraph servidor["Servidor de aplicacion (sin GPU)"]
+        direction TB
+        app["Servicio web<br/>(frontend + backend)"]
+        orq["Orquestador de inferencia<br/>(agente de operacion)"]
+        db[("Base de datos<br/>(persistencia local)")]
+    end
+
+    llm{{"API de inferencia LLM externa<br/>(modelo QLoRA servido)"}}
+    datos[("Fuente de datos de mercado<br/>OHLCV en tiempo real")]
+
+    cliente -->|HTTPS| app
+    app --> orq
+    orq -->|solicitud de inferencia| llm
+    orq -->|consulta de indicadores| datos
+    app --> db
+
+    classDef ext fill:#E8F4FD,stroke:#2196F3,color:#000;
+    classDef store fill:#FFF3E0,stroke:#FB8C00,color:#000;
+    class llm ext;
+    class datos,db store;

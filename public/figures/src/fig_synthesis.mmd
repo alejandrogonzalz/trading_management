@@ -1,0 +1,18 @@
+%%{init: {'theme':'neutral', 'flowchart': {'curve':'basis', 'nodeSpacing':45, 'rankSpacing':50}}}%%
+flowchart TB
+    problema["Problema: predecir dirección<br/>en mercado no-estacionario<br/>y de baja señal-ruido"]
+
+    ml["Modelos de ML clásico<br/>alcanzan un techo ~64%<br/>(límite de la representación numérica)"]
+
+    zs["LLM zero-shot:<br/>conocimiento parcial (56.5%)<br/>pero PF = 0.70 — pierde capital"]
+
+    ft["LLM fine-tuned (QLoRA):<br/>84.13% exactitud + PF = 2.09<br/>dirección y rentabilidad unificadas"]
+
+    problema --> ml --> zs --> ft
+
+    classDef base fill:#F5F5F5,stroke:#888,color:#000;
+    classDef mid fill:#FFF3E0,stroke:#FB8C00,color:#000;
+    classDef win fill:#E8F5E9,stroke:#2ecc71,color:#000;
+    class problema base;
+    class ml,zs mid;
+    class ft win;

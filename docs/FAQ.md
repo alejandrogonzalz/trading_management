@@ -827,3 +827,71 @@ El **entrenamiento** (fine-tuning) necesita VRAM para gradientes + activaciones:
 - RunPod A100 (80GB): batch=8, ~3.4s/step, ~3.5h
 
 La evaluación es factible local; el entrenamiento es donde RunPod vale la pena.
+
+---
+
+## ¿Por qué no hay curva ROC, Precision-Recall ni reliability diagram para el modelo QLoRA?
+
+### Respuesta corta
+
+Porque el modelo QLoRA **no produce un score de probabilidad continuo**. Estas tres
+curvas requieren una probabilidad variable (entre 0 y 1) que se recorre con un umbral
+móvil; el QLoRA solo emite dos valores discretos de confianza (0 y 5), prácticamente
+constante. Con tan pocos valores, la curva ROC se reduciría a dos puntos unidos por
+rectas y el reliability diagram a uno o dos puntos, sin información útil.
+
+### Por qué los modelos ML sí las tienen
+
+Estas curvas existen solo para Random Forest y XGBoost (que sí dan `predict_proba`
+continuo). El documento ya lo explica en el caption de la figura de ROC/PR/reliability
+("El modelo QLoRA no produce probabilidades variadas... estas curvas aplican
+exclusivamente a Random Forest y XGBoost"). Para QLoRA, el diagnóstico equivalente es
+la **matriz de confusión**, que ya está en el documento, complementada por la precisión
+y el *recall* por clase (LONG y SHORT).
+
+### Nota
+
+Esto es una **limitación de calibración** del modelo, no una carencia del análisis: el
+QLoRA fue entrenado para emitir una decisión direccional estructurada (JSON), no una
+probabilidad calibrada. Dotarlo de una salida de probabilidad bien calibrada —que
+permitiría dimensionar posiciones de forma diferenciada y construir estas curvas— es una
+línea de trabajo futuro (ver la sección de *position sizing* en el documento de la tesis).
+
+---
+
+## ¿Sobre qué conjunto (train/val/test) se corre el backtest financiero?
+
+### Respuesta corta
+
+El **backtest financiero** (simulación de operaciones: win rate, profit factor, equity,
+max drawdown) se computa **exclusivamente sobre el conjunto de test**. Las 11,294
+operaciones reportadas para el modelo final corresponden todas al holdout de prueba.
+
+### ¿Y el conjunto de validación?
+
+El conjunto de **validación NO se somete al backtest financiero**. Su único uso es el
+*early stopping* durante el entrenamiento: tras cada `eval_steps`, el `SFTTrainer` mide
+la `eval_loss` sobre val y detiene el entrenamiento cuando esa pérdida deja de mejorar
+(paciencia configurable). El mejor checkpoint es el de menor `eval_loss` sobre val
+(`load_best_model_at_end=True`).
+
+En el `result.json` esto se ve así:
+- `val_metrics` → solo `train_loss` y `eval_loss` (señales del entrenamiento, no trades).
+- `overfitting` → `train_acc`, `val_acc`, `test_acc` (solo **exactitud direccional**, no
+  métricas financieras).
+- `test_metrics` + `metrics_atr` → aquí vive el backtest completo (TP/SL, WR, PF, DD),
+  solo sobre test.
+
+### Por qué es lo correcto
+
+Reportar profit factor o win rate sobre validación **contaminaría la métrica**: val es
+el conjunto que se usó para seleccionar el checkpoint (early stopping), así que el modelo
+ya está implícitamente optimizado sobre él. El backtest financiero debe medirse sobre un
+conjunto que el modelo nunca tocó durante el entrenamiento ni la selección — el test
+holdout. Resumen del uso por conjunto:
+
+| Conjunto | Exactitud direccional | Backtest financiero (PF/WR/DD) | Rol |
+|----------|----------------------|-------------------------------|-----|
+| Train | sí (diagnóstico) | no | ajustar pesos |
+| Val | sí (`val_acc`) | **no** | *early stopping* / mejor checkpoint |
+| Test | sí | **sí** (único) | evaluación final no contaminada |
