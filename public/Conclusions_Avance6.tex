@@ -239,93 +239,10 @@ La convergencia de la b\'usqueda se verific\'o emp\'iricamente: la mejor exactit
 
 El hecho de que ning\'un modelo superara el 64\,\% de exactitud ---tanto modelos de ML cl\'asico (\'arboles de decisi\'on y \textit{ensembles}) como de \textit{Deep Learning} (LSTM)--- sugiere una limitaci\'on estructural de la representaci\'on num\'erica frente a la no-estacionariedad del mercado, no una deficiencia en la b\'usqueda (ver \S\ref{sec:techo}).
 
-% ── 4. Resultados ─────────────────────────────────────────────────────────────
-\section{Resultados experimentales}
+% ── Entrenamiento del modelo (Método) ───────────────────────────────────────
+\section{Entrenamiento del modelo}
 
-Todos los modelos se evaluaron sobre el mismo \textit{split} temporal (\'ultimos 15\,\%). Las m\'etricas financieras (WR, PF, DD) se calculan mediante la simulaci\'on ATR \textit{forward-looking} descrita en la secci\'on anterior --- sin circularidad. Se reportan tres variantes del modelo ajustado que conforman una progresi\'on metodol\'ogica: el \textbf{modelo base}, entrenado sobre el subconjunto filtrado de alta calidad; el \textbf{modelo anonimizado}, id\'entico al base pero sin acceso al nombre del activo (para descartar memorizaci\'on de s\'imbolos); y el \textbf{modelo final}, entrenado sobre todas las muestras disponibles y con etiquetas de salida basadas en ATR que eliminan la circularidad metodol\'ogica.
-
-\begin{table}[H]
-\centering
-\caption{Comparativa de modelos (split temporal estricto, simulaci\'on ATR)}
-\label{tab:results}
-\footnotesize
-\begin{tabularx}{\columnwidth}{Xcccc}
-\toprule
-\textbf{Modelo} & \textbf{Acc.} & \textbf{WR} & \textbf{PF} & \textbf{DD} \\
-\midrule
-QLoRA base (filtrado) & 87.87\% & ---$\dagger$ & ---$\dagger$ & ---$\dagger$ \\
-QLoRA anonimizado (filtrado) & \textbf{88.66\%} & 81.7\% & 4.63 & 27.0\% \\
-\textbf{QLoRA final (todas las muestras)} & \textbf{84.13\%} & 66.3\% & 2.09 & 49.6\% \\
-\midrule
-XGBoost & 62.7\% & 57.5\% & 1.53 & 46.6\% \\
-Random Forest & 61.9\% & 56.4\% & 1.46 & 48.0\% \\
-Zero-shot Qwen 7B & 56.49\% & 39.9\% & 0.70 & 100\% \\
-LSTM & 51.51\% & 46.7\% & 1.49 & 38.7\% \\
-Baseline heur\'istico & $\sim$50.73\% & --- & --- & --- \\
-\bottomrule
-\end{tabularx}
-{\scriptsize Acc.=Exactitud direccional, WR=Win Rate, PF=Profit Factor, DD=Max Drawdown (todas bajo simulaci\'on ATR).\\
-\textbf{Base}: dataset filtrado, s\'imbolo real (56k muestras). \textbf{Anonimizado}: dataset filtrado, s\'imbolo gen\'erico (56k). \textbf{Final}: todas las muestras sin el filtro de \textit{drawdown} (75k), el modelo de producci\'on.\\
-$\dagger$El modelo base us\'o etiquetas \textit{hindsight}; su \textit{profit factor} es circular y no comparable, por lo que se omite (s\'olo se reporta su exactitud).}
-\end{table}
-
-\begin{figure*}[t]
-\centering
-\includegraphics[width=0.92\textwidth]{figures/fig4_accuracy_all_models.png}
-\caption{Exactitud direccional por modelo sobre el mismo \textit{split} temporal estricto. Las tres variantes QLoRA ---base y anonimizado (dataset filtrado), y el modelo final (todas las muestras, sin circularidad)--- superan al mejor modelo de ML cl\'asico por m\'as de 20 puntos porcentuales. Todos los modelos cl\'asicos ---\'arboles y LSTM--- quedan por debajo del 64\,\%, cerca o sobre la l\'inea base de clase mayoritaria (50.7\,\%).}
-\label{fig:accuracy}
-\end{figure*}
-
-\subsection{Validaci\'on estad\'istica}
-
-Para determinar si la diferencia de exactitud entre el modelo ajustado y el \textit{zero-shot} es estad\'isticamente significativa ---y no producto del azar muestral--- se emple\'o la prueba de McNemar~\cite{mcnemar1947}. Esta prueba es adecuada porque: (1)~ambos modelos se eval\'uan sobre \textbf{exactamente las mismas muestras} (datos pareados), (2)~la variable de respuesta es binaria (acierto/fallo por muestra), y (3)~no requiere supuesto de normalidad, a diferencia de la prueba~$t$, lo que la hace robusta para clasificadores~\cite{pardo2008}.
-
-La prueba se formula sobre los pares discordantes ---muestras donde un modelo acierta y el otro falla--- mediante el estad\'istico $\chi^2 = (b - c)^2 / (b + c)$, donde $b$ es el n\'umero de muestras que el modelo ajustado clasifica correctamente y el \textit{zero-shot} no, y $c$ el caso inverso. La prueba se realiza sobre el modelo final frente al \textit{zero-shot} evaluado sobre el mismo dataset, comparando las 11,294 muestras de prueba pareadas. Se observ\'o $b=4{,}060$ y $c=938$ (raz\'on 4.3:1 a favor del modelo ajustado), produciendo $\chi^2 = 1{,}948.9$ ($p\approx0$). La hip\'otesis nula ---que ambos modelos tienen la misma tasa de error--- se rechaza rotundamente.
-
-\begin{figure*}[t]
-\centering
-\includegraphics[width=0.85\textwidth]{figures/fig5_mcnemar.png}
-\caption{Prueba de McNemar (modelo final vs.\ \textit{zero-shot}, 11,294 muestras pareadas). Izquierda: de los pares discordantes, 4,060 corresponden a aciertos exclusivos del modelo ajustado frente a solo 938 del \textit{zero-shot} (raz\'on 4.3:1), sustentando $\chi^2=1{,}949$, $p\approx0$. Derecha: exactitud sobre el conjunto pareado (84.13\,\% vs.\ 56.49\,\%). La asimetr\'ia descarta que la diferencia sea producto del azar muestral.}
-\label{fig:mcnemar}
-\end{figure*}
-
-Para visualizar el origen de esa discordancia, la Figura~\ref{fig:confusion-comparison} contrasta las matrices de confusi\'on de ambos modelos sobre el \textbf{mismo} conjunto de prueba. El modelo ajustado concentra el 84.1\,\% de las predicciones en la diagonal (aciertos LONG/SHORT), mientras que el \textit{zero-shot} dispersa sus predicciones fuera de la diagonal: cada clase real se reparte casi por igual entre LONG y SHORT predichos, el patr\'on caracter\'istico de un modelo que apenas discrimina la direcci\'on (56.5\,\%, cercano al \textit{baseline} mayoritario). El contraste hace visible \textit{por qu\'e} el \textit{fine-tuning} domina la prueba estad\'istica.
-
-\begin{figure*}[t]
-\centering
-\includegraphics[width=0.85\textwidth]{figures/fig6_confusion_comparison.png}
-\caption{Matrices de confusi\'on del modelo final (izquierda) y del \textit{zero-shot} (derecha) sobre las mismas 11,294 muestras de prueba. El modelo ajustado concentra la masa en la diagonal; el \textit{zero-shot} la dispersa, repartiendo cada clase real casi 50/50 entre las dos predicciones. Esta dispersi\'on es exactamente la discordancia que cuantifica la prueba de McNemar (Figura~\ref{fig:mcnemar}).}
-\label{fig:confusion-comparison}
-\end{figure*}
-
-\subsection{Modelos de \textit{fine-tuning} evaluados}
-
-Se reportan tres variantes del modelo ajustado que conforman una progresi\'on metodol\'ogica, todas entrenadas en la misma infraestructura cloud (A100 80\,GB). El \textbf{modelo base} se entrena sobre el dataset filtrado de alta calidad con mayor capacidad (rank=32). El \textbf{modelo anonimizado} es id\'entico pero reemplaza el nombre del activo por un identificador gen\'erico, para descartar la memorizaci\'on de s\'imbolos. El \textbf{modelo final} ---el de producci\'on--- se entrena sobre todas las muestras disponibles (sin el filtro de \textit{drawdown}) con etiquetas de salida basadas en ATR que eliminan la circularidad metodol\'ogica. La Tabla~\ref{tab:qlora_configs} compara sus par\'ametros y resultados.
-
-\begin{table}[H]
-\centering
-\caption{Variantes del modelo QLoRA: par\'ametros y resultados}
-\label{tab:qlora_configs}
-\footnotesize
-\begin{tabularx}{\columnwidth}{lXXX}
-\toprule
- & \textbf{Base} & \textbf{Anonim.} & \textbf{Final} \\
-\midrule
-Learning rate & 1e-5 & 2e-5 & 2e-5 \\
-LoRA rank / alpha & 32 / 64 & 16 / 32 & 16 / 32 \\
-\'Epocas (ES) & 2 & 2 & 2 \\
-Etiquetas TP/SL & \textit{hindsight} & ATR & ATR \\
-Dataset & filtrado & filtrado & todas (75k) \\
-\midrule
-\textbf{Exactitud} & \textbf{87.87\%} & \textbf{88.66\%} & \textbf{84.13\%} \\
-Profit factor (ATR) & ---$\dagger$ & 4.63 & 2.09 \\
-Gap (train$-$test) & $-$17.4pp & $-$1.7pp & $+$4.4pp \\
-\bottomrule
-\end{tabularx}
-{\scriptsize ES = \textit{Early Stopping} (paciencia=3). $\dagger$El modelo base us\'o la simulaci\'on circular de \textit{hindsight}; su \textit{profit factor} no es comparable y se omite. Los modelos anonimizado y final usan simulaci\'on ATR.}
-\end{table}
-
-El \textbf{modelo final} constituye el resultado de producci\'on m\'as conservador y defendible (84.13\,\% sin sesgo de supervivencia, \textit{profit factor} 2.09), porque se entrena sobre todas las muestras y con simulaci\'on sin circularidad. El \textbf{modelo anonimizado} alcanza la mayor exactitud (88.66\,\%) y el mayor \textit{profit factor} (4.63), pero conviene interpretarlo con cautela: opera sobre el dataset \textbf{filtrado} de 56,161 muestras, que retiene \'unicamente las velas que superan los cinco filtros de calidad ---las configuraciones de mercado m\'as limpias y predecibles---, de modo que su \textit{profit factor} m\'as alto refleja en buena medida la mayor facilidad de ese subconjunto. El \textbf{modelo base}, con el doble de capacidad (rank=32), no mejora a las otras variantes, lo que confirma que el resultado es robusto a la elecci\'on de hiperpar\'ametros.
+Esta secci\'on describe c\'omo se ajust\'o el modelo de lenguaje: la elecci\'on de tama\~no, la infraestructura empleada y la configuraci\'on del \textit{fine-tuning} QLoRA. Los resultados de la comparaci\'on entre modelos se presentan en la secci\'on siguiente.
 
 \subsection{Selecci\'on de modelo}
 
@@ -403,12 +320,107 @@ Conviene precisar d\'onde se inyectan estos adaptadores dentro de la red \textit
 \label{fig:qlora-mech}
 \end{figure*}
 
-\textbf{Formato de entrenamiento.} Cada ejemplo se estructura como una conversaci\'on en formato \textit{chat} (sistema/usuario/asistente) con los mismos prompts utilizados por el agente de operaci\'on. El entrenamiento emplea p\'erdida de secuencia completa sin enmascaramiento de la porci\'on de entrada (ver justificaci\'on en \S\ref{sec:loss-masking}).
+\textbf{Formato de entrenamiento.} Cada ejemplo se estructura como una conversaci\'on en formato \textit{chat} (sistema/usuario/asistente) con los mismos prompts utilizados por el agente de operaci\'on (Figura~\ref{fig:sample}). El mensaje de \textit{system} fija el rol y el formato de salida; el de \textit{usuario} contiene el s\'imbolo y los indicadores multi-\textit{timeframe} como texto sem\'antico; y el del \textit{asistente} es la etiqueta objetivo producida por el etiquetador (direcci\'on y niveles). El entrenamiento emplea p\'erdida de secuencia completa sin enmascaramiento de la porci\'on de entrada (ver justificaci\'on en \S\ref{sec:loss-masking}).
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\columnwidth]{figures/fig_training_sample.png}
+\caption{Estructura de una muestra de entrenamiento en formato \textit{chat} con datos reales. El modelo aprende a generar la respuesta del \textit{asistente} (direcci\'on \texttt{bias} y niveles) a partir del \textit{prompt}. Los niveles TP/SL de la etiqueta provienen del \textit{hindsight}; en la evaluaci\'on financiera se recalculan con ATR \textit{forward-looking} para evitar la circularidad (\S\ref{sec:metrics}).}
+\label{fig:sample}
+\end{figure}
 
 \textbf{Convergencia.} Se configuraron 3 \'epocas con \textit{early stopping} (paciencia de 3 evaluaciones sin mejora). El entrenamiento se detuvo en la \'epoca 2 (paso 3,000 de 3,750) al estabilizarse la p\'erdida de validaci\'on. Este r\'egimen es consistente con la pr\'actica est\'andar: Dettmers et al.~\cite{dettmers2023} reportan convergencia t\'ipica en 1--3 \'epocas para QLoRA sobre datasets de instrucci\'on, y Hu et al.~\cite{hu2021} observan que LoRA alcanza el rendimiento del \textit{fine-tuning} completo en 2--5 \'epocas.
 
 \textbf{Evaluaci\'on completa.} Los modelos se eval\'uan sobre el conjunto de prueba completo (11,294 muestras para el modelo final, 8,425 para base y anonimizado), sin sub-muestreo. El intervalo de confianza al 95\,\% (m\'etodo de Wilson) resultante es de aproximadamente $\pm$0.7\,pp.
 
+% ── 4. Resultados ─────────────────────────────────────────────────────────────
+\section{Resultados experimentales}
+
+Todos los modelos se evaluaron sobre el mismo \textit{split} temporal (\'ultimos 15\,\%). Las m\'etricas financieras (WR, PF, DD) se calculan mediante la simulaci\'on ATR \textit{forward-looking} (\S\ref{sec:metrics}), sin circularidad. La comparaci\'on incluye las tres variantes del modelo ajustado descritas en \S\ref{sec:variantes} ---base, anonimizado y final---, frente a los modelos de ML cl\'asico y al \textit{zero-shot}.
+
+\begin{table}[H]
+\centering
+\caption{Comparativa de modelos (split temporal estricto, simulaci\'on ATR)}
+\label{tab:results}
+\footnotesize
+\begin{tabularx}{\columnwidth}{Xcccc}
+\toprule
+\textbf{Modelo} & \textbf{Acc.} & \textbf{WR} & \textbf{PF} & \textbf{DD} \\
+\midrule
+QLoRA base (filtrado) & 87.87\% & ---$\dagger$ & ---$\dagger$ & ---$\dagger$ \\
+QLoRA anonimizado (filtrado) & \textbf{88.66\%} & 81.7\% & 4.63 & 27.0\% \\
+\textbf{QLoRA final (todas las muestras)} & \textbf{84.13\%} & 66.3\% & 2.09 & 49.6\% \\
+\midrule
+XGBoost & 62.7\% & 57.5\% & 1.53 & 46.6\% \\
+Random Forest & 61.9\% & 56.4\% & 1.46 & 48.0\% \\
+Zero-shot Qwen 7B & 56.49\% & 39.9\% & 0.70 & 100\% \\
+LSTM & 51.51\% & 46.7\% & 1.49 & 38.7\% \\
+Baseline heur\'istico & $\sim$50.73\% & --- & --- & --- \\
+\bottomrule
+\end{tabularx}
+{\scriptsize Acc.=Exactitud direccional, WR=Win Rate, PF=Profit Factor, DD=Max Drawdown (todas bajo simulaci\'on ATR).\\
+\textbf{Base}: dataset filtrado, s\'imbolo real (56k muestras). \textbf{Anonimizado}: dataset filtrado, s\'imbolo gen\'erico (56k). \textbf{Final}: todas las muestras sin el filtro de \textit{drawdown} (75k), el modelo de producci\'on.\\
+$\dagger$El modelo base us\'o etiquetas \textit{hindsight}; su \textit{profit factor} es circular y no comparable, por lo que se omite (s\'olo se reporta su exactitud).}
+\end{table}
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.92\textwidth]{figures/fig4_accuracy_all_models.png}
+\caption{Exactitud direccional por modelo sobre el mismo \textit{split} temporal estricto. Las tres variantes QLoRA ---base y anonimizado (dataset filtrado), y el modelo final (todas las muestras, sin circularidad)--- superan al mejor modelo de ML cl\'asico por m\'as de 20 puntos porcentuales. Todos los modelos cl\'asicos ---\'arboles y LSTM--- quedan por debajo del 64\,\%, cerca o sobre la l\'inea base de clase mayoritaria (50.7\,\%).}
+\label{fig:accuracy}
+\end{figure*}
+
+\subsection{Validaci\'on estad\'istica}
+
+Para determinar si la diferencia de exactitud entre el modelo ajustado y el \textit{zero-shot} es estad\'isticamente significativa ---y no producto del azar muestral--- se emple\'o la prueba de McNemar~\cite{mcnemar1947}. Esta prueba es adecuada porque: (1)~ambos modelos se eval\'uan sobre \textbf{exactamente las mismas muestras} (datos pareados), (2)~la variable de respuesta es binaria (acierto/fallo por muestra), y (3)~no requiere supuesto de normalidad, a diferencia de la prueba~$t$, lo que la hace robusta para clasificadores~\cite{pardo2008}.
+
+La prueba se formula sobre los pares discordantes ---muestras donde un modelo acierta y el otro falla--- mediante el estad\'istico $\chi^2 = (b - c)^2 / (b + c)$, donde $b$ es el n\'umero de muestras que el modelo ajustado clasifica correctamente y el \textit{zero-shot} no, y $c$ el caso inverso. La prueba se realiza sobre el modelo final frente al \textit{zero-shot} evaluado sobre el mismo dataset, comparando las 11,294 muestras de prueba pareadas. Se observ\'o $b=4{,}060$ y $c=938$ (raz\'on 4.3:1 a favor del modelo ajustado), produciendo $\chi^2 = 1{,}948.9$ ($p\approx0$). La hip\'otesis nula ---que ambos modelos tienen la misma tasa de error--- se rechaza rotundamente.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.85\textwidth]{figures/fig5_mcnemar.png}
+\caption{Prueba de McNemar (modelo final vs.\ \textit{zero-shot}, 11,294 muestras pareadas). Izquierda: de los pares discordantes, 4,060 corresponden a aciertos exclusivos del modelo ajustado frente a solo 938 del \textit{zero-shot} (raz\'on 4.3:1), sustentando $\chi^2=1{,}949$, $p\approx0$. Derecha: exactitud sobre el conjunto pareado (84.13\,\% vs.\ 56.49\,\%). La asimetr\'ia descarta que la diferencia sea producto del azar muestral.}
+\label{fig:mcnemar}
+\end{figure*}
+
+Para visualizar el origen de esa discordancia, la Figura~\ref{fig:confusion-comparison} contrasta las matrices de confusi\'on de ambos modelos sobre el \textbf{mismo} conjunto de prueba. El modelo ajustado concentra el 84.1\,\% de las predicciones en la diagonal (aciertos LONG/SHORT), mientras que el \textit{zero-shot} dispersa sus predicciones fuera de la diagonal: cada clase real se reparte casi por igual entre LONG y SHORT predichos, el patr\'on caracter\'istico de un modelo que apenas discrimina la direcci\'on (56.5\,\%, cercano al \textit{baseline} mayoritario). El contraste hace visible \textit{por qu\'e} el \textit{fine-tuning} domina la prueba estad\'istica.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.85\textwidth]{figures/fig6_confusion_comparison.png}
+\caption{Matrices de confusi\'on del modelo final (izquierda) y del \textit{zero-shot} (derecha) sobre las mismas 11,294 muestras de prueba. El modelo ajustado concentra la masa en la diagonal; el \textit{zero-shot} la dispersa, repartiendo cada clase real casi 50/50 entre las dos predicciones. Esta dispersi\'on es exactamente la discordancia que cuantifica la prueba de McNemar (Figura~\ref{fig:mcnemar}).}
+\label{fig:confusion-comparison}
+\end{figure*}
+
+\subsection{Modelos de \textit{fine-tuning} evaluados}
+\label{sec:variantes}
+
+Se reportan tres variantes del modelo ajustado que conforman una progresi\'on metodol\'ogica, todas entrenadas en la misma infraestructura cloud (A100 80\,GB). El \textbf{modelo base} se entrena sobre el dataset filtrado de alta calidad con mayor capacidad (rank=32). El \textbf{modelo anonimizado} es id\'entico pero reemplaza el nombre del activo por un identificador gen\'erico, para descartar la memorizaci\'on de s\'imbolos. El \textbf{modelo final} ---el de producci\'on--- se entrena sobre todas las muestras disponibles (sin el filtro de \textit{drawdown}) con etiquetas de salida basadas en ATR que eliminan la circularidad metodol\'ogica. La Tabla~\ref{tab:qlora_configs} compara sus par\'ametros y resultados.
+
+\begin{table}[H]
+\centering
+\caption{Variantes del modelo QLoRA: par\'ametros y resultados}
+\label{tab:qlora_configs}
+\footnotesize
+\begin{tabularx}{\columnwidth}{lXXX}
+\toprule
+ & \textbf{Base} & \textbf{Anonim.} & \textbf{Final} \\
+\midrule
+Learning rate & 1e-5 & 2e-5 & 2e-5 \\
+LoRA rank / alpha & 32 / 64 & 16 / 32 & 16 / 32 \\
+\'Epocas (ES) & 2 & 2 & 2 \\
+Etiquetas TP/SL & \textit{hindsight} & ATR & ATR \\
+Dataset & filtrado & filtrado & todas (75k) \\
+\midrule
+\textbf{Exactitud} & \textbf{87.87\%} & \textbf{88.66\%} & \textbf{84.13\%} \\
+Profit factor (ATR) & ---$\dagger$ & 4.63 & 2.09 \\
+Gap (train$-$test) & $-$17.4pp & $-$1.7pp & $+$4.4pp \\
+\bottomrule
+\end{tabularx}
+{\scriptsize ES = \textit{Early Stopping} (paciencia=3). $\dagger$El modelo base us\'o la simulaci\'on circular de \textit{hindsight}; su \textit{profit factor} no es comparable y se omite. Los modelos anonimizado y final usan simulaci\'on ATR.}
+\end{table}
+
+El \textbf{modelo final} constituye el resultado de producci\'on m\'as conservador y defendible (84.13\,\% sin sesgo de supervivencia, \textit{profit factor} 2.09), porque se entrena sobre todas las muestras y con simulaci\'on sin circularidad. El \textbf{modelo anonimizado} alcanza la mayor exactitud (88.66\,\%) y el mayor \textit{profit factor} (4.63), pero conviene interpretarlo con cautela: opera sobre el dataset \textbf{filtrado} de 56,161 muestras, que retiene \'unicamente las velas que superan los cinco filtros de calidad ---las configuraciones de mercado m\'as limpias y predecibles---, de modo que su \textit{profit factor} m\'as alto refleja en buena medida la mayor facilidad de ese subconjunto. El \textbf{modelo base}, con el doble de capacidad (rank=32), no mejora a las otras variantes, lo que confirma que el resultado es robusto a la elecci\'on de hiperpar\'ametros.
 
 % ── 6. Discusi\'on ────────────────────────────────────────────────────────────
 \section{Discusi\'on de resultados}

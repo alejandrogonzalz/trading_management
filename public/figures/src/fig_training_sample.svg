@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="680" height="760" viewBox="0 0 680 760" font-family="Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="a" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L6,3 L0,6 Z" fill="#8a8a8a"/>
+    </marker>
+  </defs>
+  <rect width="680" height="760" fill="#ffffff"/>
+
+  <text x="340" y="32" text-anchor="middle" font-size="21" font-weight="bold" fill="#2c3e50">Muestra de entrenamiento en formato chat</text>
+
+  <!-- ENTRADA bracket label -->
+  <text x="26" y="300" font-size="18" font-weight="bold" fill="#5b6b7a" transform="rotate(-90 26 300)">ENTRADA (prompt)</text>
+  <line x1="40" y1="58" x2="40" y2="540" stroke="#b9c4cf" stroke-width="2.5"/>
+
+  <!-- SYSTEM -->
+  <rect x="58" y="58" width="600" height="150" rx="10" fill="#eef0f4" stroke="#aab2bd" stroke-width="1.6"/>
+  <rect x="58" y="58" width="600" height="30" rx="10" fill="#d8dde6"/>
+  <rect x="58" y="74" width="600" height="14" fill="#d8dde6"/>
+  <text x="74" y="79" font-size="15" font-weight="bold" fill="#566573">system</text>
+  <text x="74" y="112" font-size="15" font-family="monospace" fill="#34495e">You are a Senior Technical Analyst</text>
+  <text x="74" y="132" font-size="15" font-family="monospace" fill="#34495e">for a FUTURES trading system.</text>
+  <text x="74" y="156" font-size="15" font-family="monospace" fill="#7f8c8d">RULES:</text>
+  <text x="74" y="176" font-size="15" font-family="monospace" fill="#34495e">- MODE: FUTURES; bias LONG/SHORT</text>
+  <text x="74" y="196" font-size="15" font-family="monospace" fill="#34495e">- Output MUST be valid JSON</text>
+
+  <line x1="358" y1="208" x2="358" y2="228" stroke="#8a8a8a" stroke-width="2" marker-end="url(#a)"/>
+
+  <!-- USER -->
+  <rect x="58" y="230" width="600" height="310" rx="10" fill="#eef6fb" stroke="#9cc6e0" stroke-width="1.6"/>
+  <rect x="58" y="230" width="600" height="30" rx="10" fill="#d6e8f5"/>
+  <rect x="58" y="246" width="600" height="14" fill="#d6e8f5"/>
+  <text x="74" y="251" font-size="15" font-weight="bold" fill="#21618c">user</text>
+  <text x="74" y="284" font-size="15" font-family="monospace" fill="#21618c">Symbol: BTCUSDT</text>
+  <text x="74" y="304" font-size="15" font-family="monospace" fill="#21618c">Indicators: {</text>
+  <text x="94" y="324" font-size="15" font-family="monospace" fill="#21618c">"1h": { "heatmap":"BULLISH",</text>
+  <text x="142" y="343" font-size="15" font-family="monospace" fill="#21618c">"rsi":50.6, "adx":19.5, ... },</text>
+  <text x="94" y="362" font-size="15" font-family="monospace" fill="#21618c">"4h": {...}, "1d": {...} }</text>
+  <text x="74" y="388" font-size="15" font-family="monospace" fill="#7f8c8d">Return valid JSON with fields:</text>
+  <text x="74" y="408" font-size="15" font-family="monospace" fill="#34495e">{ "bias": "LONG"|"SHORT",</text>
+  <text x="94" y="427" font-size="15" font-family="monospace" fill="#34495e">"entry","tp","sl": float,</text>
+  <text x="94" y="446" font-size="15" font-family="monospace" fill="#34495e">"leverage": int|null,</text>
+  <text x="94" y="465" font-size="15" font-family="monospace" fill="#34495e">"reasoning": "2 sentences",</text>
+  <text x="94" y="484" font-size="15" font-family="monospace" fill="#34495e">"quality": "HIGH"|"MED"|"LOW",</text>
+  <text x="94" y="503" font-size="15" font-family="monospace" fill="#34495e">"confidence": 1-10 }</text>
+
+  <line x1="358" y1="540" x2="358" y2="562" stroke="#8a8a8a" stroke-width="2" marker-end="url(#a)"/>
+
+  <!-- SALIDA label -->
+  <text x="26" y="640" font-size="18" font-weight="bold" fill="#147a5e" transform="rotate(-90 26 640)">SALIDA</text>
+  <line x1="40" y1="564" x2="40" y2="700" stroke="#9fd9c2" stroke-width="2.5"/>
+
+  <!-- ASSISTANT -->
+  <rect x="58" y="564" width="600" height="136" rx="10" fill="#eafaf1" stroke="#82d8b4" stroke-width="1.6"/>
+  <rect x="58" y="564" width="600" height="30" rx="10" fill="#c8eed9"/>
+  <rect x="58" y="580" width="600" height="14" fill="#c8eed9"/>
+  <text x="74" y="585" font-size="15" font-weight="bold" fill="#138d75">assistant  ·  etiqueta del labeler</text>
+  <text x="74" y="618" font-size="15" font-family="monospace" fill="#0e6655">{ "bias":"SHORT", "entry":98182.4,</text>
+  <text x="94" y="638" font-size="15" font-family="monospace" fill="#0e6655">"tp":96469.06, "sl":98646.13,</text>
+  <text x="94" y="658" font-size="15" font-family="monospace" fill="#0e6655">"confidence":10, "quality":"HIGH" }</text>
+  <text x="74" y="686" font-size="13" font-family="monospace" fill="#7f8c8d"># 6 de los 8 campos (sin leverage/reasoning)</text>
+
+  <!-- note -->
+  <text x="340" y="730" text-anchor="middle" font-size="14" fill="#7d6608">El modelo aprende a generar la SALIDA a partir de la ENTRADA.</text>
+  <text x="340" y="750" text-anchor="middle" font-size="14" fill="#7d6608">En evaluación, TP/SL se recalculan con ATR (sin circularidad).</text>
+</svg>
