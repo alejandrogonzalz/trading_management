@@ -28,6 +28,9 @@
 \titleformat{\subsection}{\normalfont\bfseries}{\thesubsection}{0.5em}{}
 \titlespacing*{\section}{0pt}{1.2ex plus 0.3ex}{0.6ex plus 0.1ex}
 \titlespacing*{\subsection}{0pt}{0.8ex plus 0.2ex}{0.4ex plus 0.1ex}
+\raggedbottom % no estirar el espacio entre p\'arrafos para rellenar columnas;
+              % el sobrante va al final de la columna, no entre p\'arrafos
+\captionsetup{font=footnotesize, labelfont=bf} % pies de figura/tabla m\'as peque\~nos
 \pagestyle{fancy}
 \fancyhf{}
 \fancyfoot[C]{\thepage}
@@ -66,7 +69,7 @@ La predicci\'on de direcci\'on de precio en criptomonedas es un problema de alta
 
 \begin{center}
 \includegraphics[width=0.92\textwidth]{figures/fig_pipeline_etl.png}
-\captionof{figure}{Pipeline ETL: extracci\'on de velas OHLCV (Binance API), c\'alculo de indicadores t\'ecnicos (TA-Lib), etiquetado por hindsight con filtros de calidad y partici\'on temporal 70/15/15 con embargo.}
+\captionof{figure}{Pipeline ETL del dataset de producci\'on (sin filtro de \textit{drawdown}, 75,289 muestras): extracci\'on de velas OHLCV (Binance API), c\'alculo de indicadores t\'ecnicos (TA-Lib), etiquetado por \textit{hindsight} con filtros de calidad y partici\'on temporal 70/15/15 con embargo.}
 \label{fig:pipeline}
 \end{center}
 \vspace{0.8em}
@@ -79,7 +82,7 @@ Los mercados de criptomonedas presentan una relaci\'on se\~nal-ruido extremadame
 
 Recientemente, los Modelos de Lenguaje de Gran Escala (\textit{Large Language Models}, LLM) se han aplicado al dominio financiero; sin embargo, la mayor\'ia se dise\~nan para tareas de asesor\'ia o an\'alisis de sentimiento, no para ejecuci\'on aut\'onoma de predicci\'on direccional~\cite{nguyen2026}. En modo \textit{zero-shot}, estos modelos fallan dr\'asticamente en la predicci\'on de trayectorias de precio~\cite{liu2026}, alcanzando $\sim$58\,\% de exactitud con m\'etricas financieras deficientes.
 
-El \textit{fine-tuning} mediante adaptadores de bajo rango (QLoRA)~\cite{dettmers2023} permite especializar un LLM pre-entrenado actualizando \'unicamente $\sim$0.5\,\% de sus par\'ametros, mientras el modelo base congelado act\'ua como regularizador impl\'icito~\cite{hu2021}. Se ha demostrado que este esquema preserva la comprensi\'on ling\"u\'istica del modelo fundacional al tiempo que lo adapta a tareas de dominio espec\'ifico~\cite{nimmaturi2025}. Adicionalmente, reestructurar la predicci\'on de precios en escenarios de mercado en lenguaje natural ---como el formato textual de indicadores empleado en este trabajo--- mejora la exactitud en m\'as de 11 puntos porcentuales respecto al \textit{fine-tuning} est\'andar sobre datos crudos~\cite{pan2026}.
+El \textit{fine-tuning} mediante adaptadores de bajo rango (QLoRA)~\cite{dettmers2023} permite especializar un LLM pre-entrenado actualizando \'unicamente $\sim$0.5\,\% de sus par\'ametros, mientras el modelo base congelado act\'ua como regularizador impl\'icito~\cite{hu2021}. Se ha demostrado que este esquema preserva la comprensi\'on ling\"u\'istica del modelo fundacional al tiempo que lo adapta a tareas de dominio espec\'ifico~\cite{nimmaturi2025}; en el dominio financiero en particular, estudios comparativos reportan mejoras promedio del orden del 36\,\% con m\'etodos LoRA sobre los modelos base sin ajustar~\cite{wang2025finlora}. Adicionalmente, reestructurar la predicci\'on de precios en escenarios de mercado en lenguaje natural ---como el formato textual de indicadores empleado en este trabajo--- mejora la exactitud en m\'as de 11 puntos porcentuales respecto al \textit{fine-tuning} est\'andar sobre datos crudos~\cite{pan2026}.
 
 Ante este panorama, el presente trabajo se propone evaluar experimentalmente si el \textit{fine-tuning} de un modelo de lenguaje mediante QLoRA ---concretamente Qwen~2.5~7B~\cite{qwen2024}--- produce una mejora estad\'isticamente significativa en la exactitud de predicci\'on direccional, comparado tanto con el mismo modelo en modo \textit{zero-shot} como con los modelos de ML cl\'asico habituales en la literatura. Para que la comparaci\'on sea justa y libre de fugas de informaci\'on, todos los modelos se eval\'uan sobre una partici\'on temporal estricta con embargo, y los modelos cl\'asicos se optimizan mediante b\'usqueda de hiperpar\'ametros sobre ese mismo \textit{split}.
 
@@ -91,7 +94,7 @@ Una \textbf{vela} (\textit{candlestick}) es la representaci\'on de la actividad 
 
 Los \textbf{indicadores t\'ecnicos} son transformaciones matem\'aticas de los datos OHLCV que producen se\~nales cuantificables sobre la condici\'on del mercado ---tendencia, volatilidad, momentum--- a partir exclusivamente de datos pasados. La Tabla~\ref{tab:indicators} describe los indicadores utilizados.
 
-Dos t\'erminos describen c\'omo se emplea el modelo de lenguaje. En el modo \textit{\textbf{zero-shot}}, el modelo base pre-entrenado recibe \'unicamente el \textit{prompt} con las instrucciones de la tarea y debe responder sin haber visto ning\'un ejemplo etiquetado de predicci\'on de \textit{trading}; eval\'ua el conocimiento gen\'erico que el modelo ya posee. El \textit{\textbf{fine-tuning}} (ajuste fino), en cambio, es el proceso de especializar ese modelo base entren\'andolo sobre ejemplos espec\'ificos del dominio, de modo que ajuste sus par\'ametros a la tarea. El contraste entre ambos ---mismo modelo base, con y sin ajuste--- es el eje de la hip\'otesis de este trabajo, pues a\'isla el efecto de la especializaci\'on de dominio.
+Dos t\'erminos describen c\'omo se emplea el modelo de lenguaje. En el modo \textit{\textbf{zero-shot}}, el modelo base pre-entrenado recibe \'unicamente el \textit{prompt} con las instrucciones de la tarea y debe responder sin haber visto ning\'un ejemplo etiquetado de predicci\'on de \textit{trading}; eval\'ua el conocimiento gen\'erico que el modelo ya posee. El \textit{\textbf{fine-tuning}} (ajuste fino), en cambio, es el proceso de especializar ese modelo base entren\'andolo sobre ejemplos espec\'ificos del dominio, de modo que ajuste sus par\'ametros a la tarea. El contraste entre ambos ---mismo modelo base, con y sin ajuste--- es el eje de la hip\'otesis de este trabajo, pues a\'isla el efecto de la especializaci\'on de dominio. Dado que el ajuste fino completo de un LLM es costoso, en este trabajo se emplea \textbf{QLoRA} (\textit{Quantized Low-Rank Adaptation})~\cite{dettmers2023}: una t\'ecnica de ajuste fino eficiente que congela el modelo base ---comprimido a 4 bits para reducir el consumo de memoria (la ``Q'' de cuantizaci\'on)--- y entrena \'unicamente un peque\~no conjunto de matrices de bajo rango a\~nadidas, en lugar de modificar los miles de millones de par\'ametros originales (el mecanismo se detalla en la \S\ref{sec:f:config} y la Figura~\ref{fig:qlora-mech}).
 
 Es fundamental distinguir dos m\'etricas de clasificaci\'on que se emplean a lo largo de este documento: la \textbf{exactitud} (\textit{accuracy}) se refiere a la proporci\'on de predicciones correctas sobre el total de muestras evaluadas, mientras que la \textbf{precisi\'on} (\textit{precision}) denota la fracci\'on de predicciones positivas que son verdaderamente positivas (verdaderos positivos sobre la suma de verdaderos y falsos positivos). No son sin\'onimos: la exactitud mide el acierto global y la precisi\'on la confiabilidad de una clase espec\'ifica.
 
@@ -112,14 +115,14 @@ El conjunto de datos se construy\'o mediante el proceso ilustrado en la Figura~\
 
 \subsection{Partici\'on temporal estricta}
 
-El conjunto de datos se dividi\'o cronol\'ogicamente en tres subconjuntos en proporci\'on 70/15/15: entrenamiento, validaci\'on y prueba, donde el subconjunto de prueba corresponde a los \'ultimos 81 d\'ias del per\'iodo observado (febrero--mayo~2025). Sobre el dataset filtrado (56,161 muestras) esto produce 39,312 / 8,424 / 8,425 muestras respectivamente; sobre el dataset completo sin filtro de \textit{drawdown} (75,289 muestras), que emplea el modelo final, la misma proporci\'on produce particiones mayores y un conjunto de prueba de 11,294 muestras. Se aplic\'o un \textbf{embargo de 24 horas} en cada frontera para purgar toda muestra cuyo horizonte de etiquetado (24 velas futuras) cruza hacia la partici\'on siguiente, eliminando cualquier contaminaci\'on temporal entre conjuntos~\cite{nguyen2026,pindza2026}. Esta metodolog\'ia de partici\'on cronol\'ogica es esencial para asegurar que el modelo no dependa de patrones memorizados que no generalicen a condiciones futuras del mercado (Figura~\ref{fig:split}).
+El conjunto de datos se dividi\'o cronol\'ogicamente en tres subconjuntos en proporci\'on 70/15/15: entrenamiento, validaci\'on y prueba, donde el subconjunto de prueba corresponde a los \'ultimos 81 d\'ias del per\'iodo observado (febrero--mayo~2025). Sobre el dataset filtrado (56,161 muestras) esto produce 39,312 / 8,424 / 8,425 muestras respectivamente; sobre el dataset completo sin filtro de \textit{drawdown} (75,289 muestras), que emplea el modelo final, la misma proporci\'on produce particiones mayores y un conjunto de prueba de 11,294 muestras. Se aplic\'o un \textbf{embargo de 24 horas} en cada frontera para purgar toda muestra cuyo horizonte de etiquetado (24 velas futuras) cruza hacia la partici\'on siguiente, eliminando cualquier contaminaci\'on temporal entre conjuntos~\cite{nguyen2026,pindza2026}. Esta metodolog\'ia de partici\'on cronol\'ogica estricta para prevenir el \textit{look-ahead bias} es pr\'actica establecida en la validaci\'on de sistemas de \textit{trading} basados en LLM~\cite{cheng2026}, y es esencial para asegurar que el modelo no dependa de patrones memorizados que no generalicen a condiciones futuras del mercado (Figura~\ref{fig:split}).
 
 Cada muestra del conjunto de prueba corresponde a un punto de decisi\'on \'unico ---un instante con sus indicadores y su etiqueta--- y, en consecuencia, a una operaci\'on simulada en el \textit{backtest}. Por ello, ``8,425 muestras de prueba'' y ``8,425 operaciones'' (o 11,294 en el caso del modelo final) son la misma cantidad expresada desde la \'optica de clasificaci\'on o de simulaci\'on de \textit{trading}, respectivamente.
 
 \begin{figure*}[t]
 \centering
 \includegraphics[width=0.85\textwidth]{figures/fig_temporal_split.png}
-\caption{Partici\'on temporal estricta con embargo de 24h en cada frontera. Train = per\'iodo m\'as antiguo; Test = m\'as reciente.}
+\caption{Partici\'on temporal estricta del dataset de producci\'on (75,289 muestras sin filtro de \textit{drawdown}): train 52,604 / val 11,187 / test 11,294, con embargo de 24h en cada frontera. Train = per\'iodo m\'as antiguo; Test = m\'as reciente.}
 \label{fig:split}
 \end{figure*}
 
@@ -166,11 +169,21 @@ El \textit{backtest} financiero se computa \'unicamente sobre el conjunto de pru
 
 \textbf{El problema de la circularidad.} Una m\'etrica financiera es \textit{circular} cuando los niveles de salida (TP y SL) empleados para simular la operaci\'on se derivan de informaci\'on futura. En el etiquetado retrospectivo, el TP se fija sabiendo hasta d\'onde lleg\'o efectivamente el precio en las velas siguientes; el modelo, entrenado sobre esas etiquetas, aprende a reproducir dichos niveles; y el simulador finalmente ``confirma'' que la operaci\'on funciona ---porque el nivel fue dise\~nado, en retrospectiva, para ser alcanzado. El razonamiento se muerde la cola: el resultado est\'a garantizado por construcci\'on, no por capacidad predictiva. Esto infla artificialmente el \textit{profit factor} y el \textit{win rate}, sin que reflejen rentabilidad alcanzable en operaci\'on real.
 
-Para evitar esta circularidad, las m\'etricas financieras se calculan mediante una simulaci\'on \textit{forward-looking} que \textbf{ignora} los niveles de salida predichos por el modelo y utiliza exclusivamente el indicador de volatilidad ATR (disponible al momento de la decisi\'on, calculado con datos pasados):
-$$\text{LONG:}\quad \text{TP} = \text{entrada} + 1.5 \times \text{ATR}, \quad \text{SL} = \text{entrada} - 1.0 \times \text{ATR}$$
-$$\text{SHORT:}\quad \text{TP} = \text{entrada} - 1.5 \times \text{ATR}, \quad \text{SL} = \text{entrada} + 1.0 \times \text{ATR}$$
+Para evitar esta circularidad, las m\'etricas financieras se calculan mediante una simulaci\'on \textit{forward-looking} que \textbf{ignora} los niveles de salida predichos por el modelo y utiliza exclusivamente el indicador de volatilidad ATR. El ATR (\textit{Average True Range}) es el promedio del rango verdadero de las \'ultimas \textbf{14 velas} del \textit{timeframe} base de 1h (m\'etodo de Wilder~\cite{wilder1978}, Tabla~\ref{tab:indicators}), donde el rango verdadero de cada vela es el mayor de: su amplitud m\'aximo--m\'inimo, o la distancia de su m\'aximo/m\'inimo al cierre anterior (Figura~\ref{fig:atr}). Es, por tanto, una medida de volatilidad reciente disponible \'integramente al momento de la decisi\'on, sin informaci\'on futura. Los niveles de salida se fijan as\'i:
+{\footnotesize
+\begin{align*}
+\text{LONG:}  &\quad \text{TP} = \text{entrada} + 1.5\,\text{ATR}, \;\; \text{SL} = \text{entrada} - 1.0\,\text{ATR} \\
+\text{SHORT:} &\quad \text{TP} = \text{entrada} - 1.5\,\text{ATR}, \;\; \text{SL} = \text{entrada} + 1.0\,\text{ATR}
+\end{align*}}
 
-Los multiplicadores 1.5 y 1.0 establecen una relaci\'on riesgo-recompensa de 1.5:1, est\'andar en \textit{trading} sistem\'atico~\cite{pardo2008}. Expresar los niveles en m\'ultiplos de ATR ---y no en montos fijos--- hace que se adapten autom\'aticamente a la volatilidad de cada activo y momento: se ensanchan en mercados agitados y se estrechan en mercados tranquilos. El SL a 1 ATR sit\'ua la p\'erdida l\'imite justo fuera del rango de fluctuaci\'on normal de una vela, evitando cierres por ruido; el TP a 1.5 ATR fija un objetivo que, con esa relaci\'on riesgo-recompensa, requiere acertar solo el 40\,\% de las operaciones para no perder capital ---margen amplio frente a la exactitud direccional observada. Adem\'as, este mismo m\'ultiplo de ATR es el que emplea el etiquetador para definir la direcci\'on (\S2), lo que mantiene la coherencia entre las etiquetas y la simulaci\'on.
+\begin{figure}[H]
+\centering
+\includegraphics[width=\columnwidth]{figures/fig_atr.png}
+\caption{C\'alculo del ATR: el rango verdadero (TR) de cada vela es el mayor de tres distancias (amplitud m\'aximo--m\'inimo o las distancias al cierre anterior), y el ATR es el promedio de los TR de las \'ultimas 14 velas. Act\'ua como term\'ometro de volatilidad: bajo en mercados tranquilos, alto en mercados agitados.}
+\label{fig:atr}
+\end{figure}
+
+Los multiplicadores 1.5 y 1.0 establecen una relaci\'on riesgo-recompensa de 1.5:1, est\'andar en \textit{trading} sistem\'atico~\cite{pardo2008}. Expresar los niveles en m\'ultiplos de ATR ---y no en montos fijos--- hace que se adapten autom\'aticamente a la volatilidad de cada activo y momento: se ensanchan en mercados agitados y se estrechan en mercados tranquilos. Este uso del ATR-14 como referencia de riesgo ajustada a la volatilidad coincide con el de sistemas recientes de \textit{trading} cuantitativo basados en LLM~\cite{cheng2026}. El SL a 1 ATR sit\'ua la p\'erdida l\'imite justo fuera del rango de fluctuaci\'on normal de una vela, evitando cierres por ruido; el TP a 1.5 ATR fija un objetivo que, con esa relaci\'on riesgo-recompensa, requiere acertar solo el 40\,\% de las operaciones para no perder capital ($0.40 \times 1.5 - 0.60 \times 1.0 = 0$) ---margen amplio frente a la exactitud direccional observada. Cabe se\~nalar que Wilder y otros autores suelen sugerir m\'ultiplos mayores (2--3 ATR) para evitar salidas prematuras en activos muy vol\'atiles~\cite{wilder1978}; aqu\'i se opta deliberadamente por 1 ATR porque el horizonte de exposici\'on es corto (24 velas, $\S$\ref{sec:metrics}) y el objetivo es una simulaci\'on coherente con el etiquetador ---este mismo m\'ultiplo de ATR es el que emplea el etiquetador para definir la direcci\'on (\S2)--- y no una estrategia de gesti\'on de posici\'on a largo plazo.
 
 Para cada predicci\'on, el simulador recorre las 24 velas posteriores (m\'aximo 24 horas de exposici\'on) y determina si el precio toca primero el TP (WIN), el SL (LOSS), o ninguno (TIMEOUT, cerrado al precio de la \'ultima vela). Se aplica una comisi\'on de 0.1\,\% por lado (0.2\,\% \textit{round-trip}), consistente con la tarifa taker de Binance. No se simula \textit{slippage} ni impacto de mercado. Cada operaci\'on se trata como una apuesta unitaria en porcentaje --- sin monto fijo en d\'olares, sin posici\'on variable y sin \textit{compounding}.
 
@@ -276,6 +289,15 @@ La prueba se formula sobre los pares discordantes ---muestras donde un modelo ac
 \label{fig:mcnemar}
 \end{figure*}
 
+Para visualizar el origen de esa discordancia, la Figura~\ref{fig:confusion-comparison} contrasta las matrices de confusi\'on de ambos modelos sobre el \textbf{mismo} conjunto de prueba. El modelo ajustado concentra el 84.1\,\% de las predicciones en la diagonal (aciertos LONG/SHORT), mientras que el \textit{zero-shot} dispersa sus predicciones fuera de la diagonal: cada clase real se reparte casi por igual entre LONG y SHORT predichos, el patr\'on caracter\'istico de un modelo que apenas discrimina la direcci\'on (56.5\,\%, cercano al \textit{baseline} mayoritario). El contraste hace visible \textit{por qu\'e} el \textit{fine-tuning} domina la prueba estad\'istica.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.85\textwidth]{figures/fig6_confusion_comparison.png}
+\caption{Matrices de confusi\'on del modelo final (izquierda) y del \textit{zero-shot} (derecha) sobre las mismas 11,294 muestras de prueba. El modelo ajustado concentra la masa en la diagonal; el \textit{zero-shot} la dispersa, repartiendo cada clase real casi 50/50 entre las dos predicciones. Esta dispersi\'on es exactamente la discordancia que cuantifica la prueba de McNemar (Figura~\ref{fig:mcnemar}).}
+\label{fig:confusion-comparison}
+\end{figure*}
+
 \subsection{Modelos de \textit{fine-tuning} evaluados}
 
 Se reportan tres variantes del modelo ajustado que conforman una progresi\'on metodol\'ogica, todas entrenadas en la misma infraestructura cloud (A100 80\,GB). El \textbf{modelo base} se entrena sobre el dataset filtrado de alta calidad con mayor capacidad (rank=32). El \textbf{modelo anonimizado} es id\'entico pero reemplaza el nombre del activo por un identificador gen\'erico, para descartar la memorizaci\'on de s\'imbolos. El \textbf{modelo final} ---el de producci\'on--- se entrena sobre todas las muestras disponibles (sin el filtro de \textit{drawdown}) con etiquetas de salida basadas en ATR que eliminan la circularidad metodol\'ogica. La Tabla~\ref{tab:qlora_configs} compara sus par\'ametros y resultados.
@@ -334,6 +356,7 @@ Costo por hora & 1.42~USD (GPU + disco) \\
 Cada modelo se entren\'o con \textit{early stopping}, deteni\'endose al estabilizarse la p\'erdida de validaci\'on. El modelo final tom\'o 3.6 horas ($\approx$5.10~USD), el anonimizado 4.0 horas ($\approx$5.71~USD) y el modelo base ---con el doble de capacidad--- 5.0 horas ($\approx$7.04~USD). El costo de c\'omputo por modelo es modesto (inferior a 8~USD), lo que hace viable la exploraci\'on de m\'ultiples configuraciones sin una inversi\'on significativa de infraestructura.
 
 \subsection{Configuraci\'on del fine-tuning}
+\label{sec:f:config}
 
 \begin{table}[H]
 \centering
@@ -350,13 +373,35 @@ Tasa de aprendizaje & $2\times10^{-5}$, decaimiento coseno \\
 \'Epocas & 3 (\textit{early stopping}, paciencia=3) \\
 Batch efectivo & $2 \times 8$ (acumulaci\'on de gradientes) = 16 \\
 Longitud m\'axima & 1,024 tokens \\
-M\'odulos LoRA & 7 m\'odulos $\times$ 28 capas = 196 pares de adaptadores \\
+M\'odulos LoRA & 7 proyecciones (atenci\'on + FFN) $\times$ 28 capas = 196 pares \\
 Par\'ametros entrenables & 40,370,176 (0.53\,\% de 7.6B) \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-\textbf{Composici\'on del modelo.} El modelo base contiene $7.6 \times 10^9$ par\'ametros congelados en 4 bits ($\sim$3.5~GB VRAM). Los adaptadores LoRA a\~naden $40.4 \times 10^6$ par\'ametros en bf16, formalizados como 196 pares de matrices $(A \in \mathbb{R}^{d_{\text{in}} \times 16},\; B \in \mathbb{R}^{16 \times d_{\text{out}}})$. La segunda configuraci\'on evaluada (rank=32) duplica la capacidad a $80.7 \times 10^6$ par\'ametros entrenables (1.06\,\%).
+\textbf{Composici\'on del modelo.} El modelo base contiene $7.6 \times 10^9$ par\'ametros congelados en 4 bits ($\sim$3.5~GB VRAM). Los adaptadores LoRA a\~naden $40.4 \times 10^6$ par\'ametros en bf16, formalizados como 196 pares de matrices $(A \in \mathbb{R}^{d_{\text{in}} \times 16},\; B \in \mathbb{R}^{16 \times d_{\text{out}}})$. Los 196 pares resultan de inyectar adaptadores en las 7 proyecciones lineales de cada una de las 28 capas \textit{transformer}: las cuatro de atenci\'on ($q$, $k$, $v$ y la de salida $o$) y las tres de la red \textit{feed-forward} (\textit{gate}, \textit{up} y \textit{down}). La segunda configuraci\'on evaluada (rank=32) duplica la capacidad a $80.7 \times 10^6$ par\'ametros entrenables (1.06\,\%).
+
+\textbf{Mecanismo de adaptaci\'on.} A diferencia del entrenamiento de una red neuronal desde cero ---donde todos los pesos se inicializan aleatoriamente y se actualizan sobre datos masivos---, el \textit{fine-tuning} mediante QLoRA no reconstruye el modelo: hereda intacta la infraestructura sem\'antica del modelo base pre-entrenado y solo introduce un peque\~no conjunto de par\'ametros nuevos (Figura~\ref{fig:qlora-mech}). En particular, no se inicializa un espacio de \textit{embeddings} ---la matriz que asocia cada token a un vector denso--- sino que se reutiliza la del modelo base, congelada; y tampoco se redefinen las funciones de activaci\'on (SiLU en Qwen), que son operaciones fijas sin par\'ametros entrenables y, por tanto, no se ajustan. Lo \'unico que se entrena son los adaptadores de bajo rango: cada proyecci\'on lineal $W$ del modelo permanece congelada (en 4 bits) y su salida se corrige sumando el producto $B \cdot A$, de modo que el peso efectivo es
+\begin{equation*}
+W_{\text{eff}} = W + \frac{\alpha}{r}\, B A,
+\end{equation*}
+donde $r=16$ es el rango y $\alpha=32$ el factor de escala (\S$\times$2). El gradiente fluye \'unicamente por $A$ y $B$; los $7.6 \times 10^9$ par\'ametros base nunca cambian. Esta reutilizaci\'on del conocimiento pre-entrenado es precisamente lo que permite especializar el modelo con un 0.53\,\% de par\'ametros entrenables y un costo de c\'omputo modesto, en lugar de los recursos que exigir\'ia entrenar una red equivalente desde cero.
+
+Conviene precisar d\'onde se inyectan estos adaptadores dentro de la red \textit{feed-forward} (FFN), pues Qwen~2.5 emplea la variante \textit{SwiGLU} y no un perceptr\'on cl\'asico de dos capas. En SwiGLU la entrada se bifurca en dos proyecciones paralelas: una de compuerta (\code{gate\_proj}), a la que se aplica la activaci\'on no lineal SiLU, y una de valor (\code{up\_proj}); ambas se combinan mediante un producto elemento a elemento y el resultado pasa por una tercera proyecci\'on de reducci\'on (\code{down\_proj}). Por ello el adaptador LoRA se acopla a \textbf{tres} proyecciones de la FFN ---y no a dos como en un MLP est\'andar--- adem\'as de las cuatro de atenci\'on, sumando las siete por capa ya descritas. La Figura~\ref{fig:swiglu} ilustra este bloque y la ubicaci\'on de cada adaptador.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\columnwidth]{figures/fig_swiglu_lora.png}
+\caption{Bloque \textit{feed-forward} SwiGLU de Qwen~2.5 con inyecci\'on de adaptadores LoRA. La entrada se bifurca en \code{gate\_proj} (con activaci\'on SiLU) y \code{up\_proj}; su producto elemento a elemento pasa por \code{down\_proj}. Cada una de las tres proyecciones ---congeladas en 4 bits--- lleva acoplado un adaptador de bajo rango entrenable.}
+\label{fig:swiglu}
+\end{figure}
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.92\textwidth]{figures/fig_qlora_mechanism.png}
+\caption{Contraste entre el entrenamiento cl\'asico de una red neuronal (izquierda, todos los pesos entrenables desde una inicializaci\'on aleatoria) y el \textit{fine-tuning} QLoRA (derecha, base congelada en 4 bits m\'as adaptadores de bajo rango $B\cdot A$ como \'unico componente entrenable). Abajo, el ciclo de entrenamiento (\textit{forward} $\rightarrow$ entrop\'ia cruzada $\rightarrow$ \textit{backward} solo por $A,B$ $\rightarrow$ actualizaci\'on) y la configuraci\'on empleada. Los \textit{embeddings} y las funciones de activaci\'on se heredan del modelo base sin modificarse.}
+\label{fig:qlora-mech}
+\end{figure*}
 
 \textbf{Formato de entrenamiento.} Cada ejemplo se estructura como una conversaci\'on en formato \textit{chat} (sistema/usuario/asistente) con los mismos prompts utilizados por el agente de operaci\'on. El entrenamiento emplea p\'erdida de secuencia completa sin enmascaramiento de la porci\'on de entrada (ver justificaci\'on en \S\ref{sec:loss-masking}).
 
@@ -371,13 +416,37 @@ Par\'ametros entrenables & 40,370,176 (0.53\,\% de 7.6B) \\
 
 \subsection{Justificaci\'on del filtrado}
 
-El dataset descarta el 78\,\% de las velas crudas mediante cinco filtros de calidad cuantitativos. Este dise\~no responde a dos motivaciones: primero, la alineaci\'on con el caso de uso operativo, donde el sistema de producci\'on aplica un nodo evaluador que rechaza \textit{setups} antes de ejecutar \'ordenes; segundo, la imposibilidad de etiquetar muestras ambiguas sin introducir ruido en el dataset. En consecuencia, la exactitud sobre el dataset filtrado aplica al subconjunto de \textit{setups} pre-seleccionados, no a condiciones arbitrarias de mercado. El efecto cuantitativo de este sesgo de selecci\'on se mide expl\'icitamente en la ablaci\'on del filtro de \textit{drawdown} (\S\ref{sec:ablation-drawdown}).
+El dataset descarta el 78\,\% de las velas crudas mediante cinco filtros de calidad cuantitativos. No todos son equivalentes en cuanto a la informaci\'on que emplean, y conviene distinguirlos con precisi\'on. Dos de ellos ---volumen relativo m\'inimo y fuerza de tendencia (ADX)--- se calculan con informaci\'on disponible \textit{en el momento de la decisi\'on}, sin mirar el futuro. Los tres restantes ---claridad direccional, relaci\'on riesgo-recompensa y \textit{anti-whipsaw}--- derivan de la ventana de 24 velas posteriores, pero lo hacen para \textbf{construir la etiqueta} (definir cu\'al es la direcci\'on correcta y sus niveles de TP/SL). Este uso del futuro es inherente a todo etiquetado supervisado por \textit{hindsight}: la variable objetivo $y$ no existe sin observar el resultado, y el modelo nunca recibe esos valores como entrada, solo aprende a predecir la etiqueta resultante.
+
+El filtro de \textit{drawdown} es cualitativamente distinto de los otros cuatro. No interviene en la construcci\'on de la etiqueta, sino que \textbf{condiciona qu\'e muestras sobreviven al conjunto} seg\'un qu\'e tan limpia fue una trayectoria que ya conocemos en retrospectiva: descarta toda operaci\'on cuyo nivel de p\'erdida se habr\'ia activado antes que el de ganancia. Esto introduce \textbf{sesgo de supervivencia}, porque el conjunto de evaluaci\'on queda compuesto \'unicamente por trayectorias cuyo desenlace favorable ya se conoce. Es, por tanto, la \'unica decisi\'on de dise\~no del etiquetador que no corresponde a una pr\'actica est\'andar documentada ---a diferencia de la partici\'on temporal, el embargo o el etiquetado por \textit{hindsight}~\cite{pardo2008,nguyen2026}--- y por ello es la que se somete a un experimento de ablaci\'on dedicado (\S\ref{sec:ablation-drawdown}) y se declara expl\'icitamente como limitaci\'on metodol\'ogica (\S\ref{sec:limitations}). En consecuencia, la exactitud sobre el dataset filtrado aplica al subconjunto de \textit{setups} cuya trayectoria result\'o limpia, no a condiciones arbitrarias de mercado; el modelo final mitiga esta limitaci\'on al evaluarse sobre el dataset sin dicho filtro.
 
 \subsection{Independencia entre exactitud y m\'etricas financieras}
 
 La exactitud direccional y las m\'etricas de operaci\'on (win rate, profit factor) responden a preguntas distintas y son independientes entre s\'i. La exactitud mide ``?`acert\'e la direcci\'on?''; el win rate mide ``?`el precio alcanz\'o mi nivel de ganancia antes que mi nivel de p\'erdida?''. Un modelo puede acertar la direcci\'on (el precio sube) pero perder la operaci\'on si no sube \textit{lo suficiente} para tocar el TP antes de que una fluctuaci\'on temporal active el SL. Por esta raz\'on, el modelo con 84.13\,\% de exactitud tiene un win rate de 66.3\,\%: de las operaciones donde acert\'o la direcci\'on, no todas alcanzan el TP dentro de las 24 horas de exposici\'on.
 
 El profit factor se define como la suma de todas las ganancias porcentuales dividida entre la suma de todas las p\'erdidas porcentuales. Un PF de 2.09 indica que, en la simulaci\'on sobre 11,294 operaciones durante 81 d\'ias, por cada 1\,\% perdido se ganaron 2.09\,\%. Este valor cae dentro del rango profesional de sistemas de \textit{trading} sistem\'atico (1.5--2.5 seg\'un Pardo, 2008~\cite{pardo2008}).
+
+Para situar esta cifra conviene contrastarla con la literatura, distinguiendo el enfoque de cada trabajo (Tabla~\ref{tab:pf_literatura}). Una estrategia basada en modelos cl\'asicos de \textit{machine learning} sobre criptomonedas alcanza un profit factor de 1.60 fuera de muestra~\cite{asgari2021}, y los sistemas que fusionan \textit{embeddings} de \textit{encoders} ling\"u\'isticos con indicadores num\'ericos reportan profit factors de 1.5--2.0 sobre acciones~\cite{khanna2025stonk}. Es especialmente revelador que en ese mismo estudio el modelo Qwen~2.5~7B \textbf{sin ajustar} (\textit{zero-/one-shot}) obtiene un profit factor de apenas 1.16: dado que es el mismo modelo base de este trabajo, el contraste con el 2.09 del modelo final ---enfoque distinto, pues aqu\'i se ajusta un LLM generativo mediante QLoRA en lugar de fusionar \textit{embeddings} de \textit{encoders} congelados--- es evidencia independiente de que el ajuste fino de dominio a\~nade valor sustancial sobre el modelo gen\'erico.
+
+\begin{table}[H]
+\centering
+\caption{Profit factor reportado en la literatura (distintos enfoques y activos)}
+\label{tab:pf_literatura}
+\footnotesize
+\begin{tabularx}{\columnwidth}{Xlc}
+\toprule
+\textbf{Sistema / enfoque} & \textbf{Activo} & \textbf{PF} \\
+\midrule
+\textbf{Este trabajo} (QLoRA, LLM generativo) & Cripto & \textbf{2.09} \\
+STONK: MiniLM + fusi\'on de \textit{embeddings}~\cite{khanna2025stonk} & Acciones & 2.03 \\
+STONK: DeBERTa atenci\'on cruzada~\cite{khanna2025stonk} & Acciones & 1.75 \\
+ML cl\'asico (kNN/XGB/RF)~\cite{asgari2021} & Cripto & 1.60 \\
+History Rhymes: \textit{retrieval} macro~\cite{khanna2025history} & Acciones & 1.18 \\
+Qwen~2.5~7B \textbf{sin ajustar} (\textit{zero-shot})~\cite{khanna2025stonk} & Acciones & 1.16 \\
+\bottomrule
+\end{tabularx}
+{\scriptsize Comparaci\'on de contexto: los enfoques difieren (ajuste de LLM generativo, fusi\'on de \textit{embeddings}, \textit{retrieval}, ML cl\'asico) y solo dos trabajos operan sobre criptomonedas. El contraste m\'as directo es Qwen~2.5~7B sin ajustar (1.16) frente al mismo modelo tras el \textit{fine-tuning} de este trabajo (2.09). Rango profesional de referencia: 1.5--2.5~\cite{pardo2008}.}
+\end{table}
 
 Es importante notar que las m\'etricas financieras dependen enteramente de d\'onde se colocan los niveles de salida, no solo de la exactitud del modelo. Todos los valores reportados en este documento usan la simulaci\'on ATR \textit{forward-looking} (\S\ref{sec:metrics}), no la simulaci\'on circular del etiquetado retrospectivo.
 
@@ -389,6 +458,8 @@ Los modelos de \'arbol (XGBoost, Random Forest) reciben un vector plano de 30 ca
 La brecha de m\'as de 20 puntos porcentuales entre el LLM ajustado y el mejor modelo ML ($\sim$64\,\%) refleja parcialmente esta asimetr\'ia de representaci\'on. No es evidencia de un error metodol\'ogico ni de un trato injusto a los modelos cl\'asicos ---la b\'usqueda de hiperpar\'ametros fue exhaustiva (\S3.5)--- sino una consecuencia estructural del formato de entrada: los \'arboles de decisi\'on codifican categor\'ias como enteros ordinales con p\'erdida de informaci\'on sem\'antica, mientras que el LLM procesa esas mismas categor\'ias en su forma textual original. La secci\'on~\ref{sec:ablation-occlusion} presenta un experimento que intenta cuantificar esta contribuci\'on.
 
 El comportamiento dispar de los modelos cl\'asicos refuerza esta lectura. La red LSTM aprende combinaciones ponderadas de valores num\'ericos calibradas al r\'egimen estad\'istico del per\'iodo de entrenamiento; ante un cambio de r\'egimen, esas correlaciones dejan de ser predictivas y su exactitud cae a $\sim$51\,\% (esencialmente aleatorio). Los modelos de \'arbol, en cambio, codifican umbrales discretos (por ejemplo, ``RSI~$>$~65 $\rightarrow$ SHORT'') que sobreviven mejor a los desplazamientos de distribuci\'on, manteni\'endose en 62--64\,\%. Que umbrales simples generalicen mejor que secuencias aprendidas sugiere que un modelo capaz de razonar sem\'anticamente sobre los indicadores deber\'ia generalizar a\'un mejor ---y es precisamente lo observado.
+
+El poder discriminativo de los modelos de \'arbol se examina con mayor detalle mediante an\'alisis basados en probabilidad (Figura~\ref{fig:roc}), aplicables solo a Random Forest y XGBoost: el LLM ajustado emite una confianza casi constante, por lo que su diagn\'ostico equivalente es la matriz de confusi\'on (Figura~\ref{fig:confusion-comparison}). La curva ROC arroja un AUC de $\sim$0.68 para ambos ---superan al azar pero con margen moderado, consistente con su 62--64\,\% de exactitud. La curva \textit{Precision-Recall} es m\'as reveladora: desciende de forma casi lineal hacia la l\'inea base de clase ($\sim$0.5) a medida que aumenta el \textit{recall}, la firma de un clasificador \textbf{modesto} cuyas distribuciones de puntaje por clase se solapan ---el \textbf{techo estructural} de la representaci\'on num\'erica plana, visible ahora en el espacio de probabilidad. Conviene no sobreinterpretar la rectitud: al emitir solo cinco niveles de confianza, la curva se traza con pocos umbrales unidos por segmentos rectos, de modo que la linealidad exacta es en parte un artefacto de granularidad, aunque la conclusi\'on cualitativa se mantiene. El diagrama de confiabilidad, en contraste, muestra una confianza bien calibrada: los puntos siguen la diagonal y una confianza de 8 corresponde a $\sim$93\,\% de exactitud real. En conjunto, estas curvas confirman en el espacio de probabilidad el mismo techo de $\sim$64\,\% que el \textit{fine-tuning} sem\'antico s\'i logra superar.
 
 \subsection{Generalizaci\'on a trav\'es del universo de activos}
 
@@ -444,10 +515,10 @@ La Tabla~\ref{tab:literature} sit\'ua el resultado en el contexto de trabajos pu
 \toprule
 \textbf{Fuente} & \textbf{M\'etodo} & \textbf{Acc.} \\
 \midrule
-Lopez-Lira 2023 & GPT zero-shot, noticias & $\sim$60\% \\
-Bysik 2026 & XGBoost/LSTM walk-forward & $\sim$65\% \\
+Lopez-Lira 2023~\cite{lopez2023} & GPT zero-shot, noticias & $\sim$60\% \\
+Bysik 2026~\cite{bysik2026} & XGBoost/LSTM walk-forward & $\sim$65\% \\
 AlBahri 2025 & XGBoost rolling BTC & 91.0\% \\
-Pindza 2026 & Gradient-boosted, purged WF & Falla \\
+Pindza 2026~\cite{pindza2026} & Gradient-boosted, purged WF & Falla \\
 \textbf{Este trabajo} & \textbf{QLoRA, modelo final} & \textbf{84.13\%} \\
 \bottomrule
 \end{tabularx}
@@ -462,7 +533,7 @@ Para interrogar la solidez del resultado principal se ejecutaron dos experimento
 \subsubsection{Ablaci\'on del filtro de \textit{drawdown}}
 \label{sec:ablation-drawdown}
 
-El filtro de \textit{drawdown-before-profit} del etiquetador descarta toda muestra cuyo nivel de p\'erdida se hubiera activado antes que el nivel de ganancia dentro de la ventana de observaci\'on. Esto introduce un sesgo de supervivencia: solo se retienen trayectorias que efectivamente ``funcionaron'' en retrospectiva. Una auditor\'ia adversarial previa predijo que, sin este filtro, la exactitud caer\'ia al rango 60--70\,\%.
+El filtro de \textit{drawdown-before-profit} del etiquetador descarta toda muestra cuyo nivel de p\'erdida se hubiera activado antes que el nivel de ganancia dentro de la ventana de observaci\'on. A diferencia de los otros cuatro filtros ---que usan informaci\'on del presente (volumen, tendencia) o del futuro \'unicamente para \textbf{construir la etiqueta} (claridad direccional, riesgo-recompensa, \textit{anti-whipsaw})---, este es el \'unico que emplea informaci\'on del futuro para \textbf{decidir qu\'e muestras componen el conjunto}: solo se retienen trayectorias que efectivamente ``funcionaron'' en retrospectiva. Esto introduce un sesgo de supervivencia y es la raz\'on por la que se somete a esta ablaci\'on dedicada. Una auditor\'ia adversarial previa predijo que, sin este filtro, la exactitud caer\'ia al rango 60--70\,\%.
 
 Para cuantificar este efecto se reentren\'o el modelo con hiperpar\'ametros id\'enticos (lr=$2\times10^{-5}$, rank=16, alpha=32, 2 \'epocas) sobre un dataset reconstruido sin el filtro de \textit{drawdown} (75,289 muestras, un 34.1\,\% m\'as grande que las 56,161 originales). Los cuatro filtros restantes (fuerza de tendencia, volumen, relaci\'on riesgo-recompensa y \textit{anti-whipsaw}) permanecieron sin cambios. El entrenamiento utiliz\'o etiquetas de TP/SL basadas en ATR (\textit{forward-looking}, sin circularidad) y la evaluaci\'on se realiz\'o sobre el conjunto de prueba completo (11,294 muestras).
 
@@ -494,7 +565,7 @@ Muestras evaluadas & 8,425 & 11,294 \\
 \label{fig:ablation-drawdown}
 \end{figure*}
 
-El hallazgo principal es que remover el filtro \emph{reduce} la exactitud (de 88.66\,\% sobre el dataset filtrado a 84.13\,\% sin filtro, $-$4.5\,pp), no la mejora, a pesar de entrenar sobre un dataset 34\,\% m\'as grande. Esto contradice la predicci\'on de que el filtro estar\'ia inflando artificialmente el resultado: la evidencia emp\'irica apunta a que el filtro de \textit{drawdown} es una se\~nal de calidad leg\'itima que eleva la cota alcanzable, pero no fabrica el resultado. El \textit{profit factor} bajo simulaci\'on ATR tambi\'en cae (de 4.63 a 2.09), consistente con que el dataset sin filtro contiene operaciones m\'as ruidosas y dif\'iciles; aun as\'i, 2.09 se mantiene dentro del rango profesionalmente viable.
+El hallazgo principal es que remover el filtro \emph{reduce} la exactitud (de 88.66\,\% sobre el dataset filtrado a 84.13\,\% sin filtro, $-$4.5\,pp), no la mejora, a pesar de entrenar sobre un dataset 34\,\% m\'as grande. Esto contradice la predicci\'on de que el filtro estar\'ia inflando artificialmente el resultado: la evidencia emp\'irica apunta a que el filtro de \textit{drawdown} es una se\~nal de calidad leg\'itima que eleva la cota alcanzable, pero no fabrica el resultado. El \textit{profit factor} bajo simulaci\'on ATR tambi\'en cae (de 4.63 a 2.09), consistente con que el dataset sin filtro contiene operaciones m\'as ruidosas; la interpretaci\'on de cu\'al de las dos cifras es la relevante se aborda en la conclusi\'on.
 
 \begin{figure*}[ht]
 \centering
@@ -506,7 +577,7 @@ El hallazgo principal es que remover el filtro \emph{reduce} la exactitud (de 88
 \subsubsection{Ablaci\'on de s\'imbolo anonimizado}
 \label{sec:ablation-symbol}
 
-Una segunda hip\'otesis alternativa es que el modelo memorizara asociaciones espec\'ificas del activo aprendidas durante el pre-entrenamiento --- por ejemplo, ``BTC es un activo de gran capitalizaci\'on con menor volatilidad relativa'' --- y que esta informaci\'on \textit{a priori} contribuyera de forma significativa a la exactitud. Para descartar esta hip\'otesis se reentren\'o el modelo con id\'enticos hiperpar\'ametros pero reemplazando el nombre del s\'imbolo por un identificador gen\'erico (``ASSET'') tanto en los datos de entrenamiento como en la evaluaci\'on.
+Una segunda hip\'otesis alternativa es que el modelo memorizara asociaciones espec\'ificas del activo aprendidas durante el pre-entrenamiento --- por ejemplo, ``BTC es un activo de gran capitalizaci\'on con menor volatilidad relativa'' --- y que esta informaci\'on \textit{a priori} contribuyera de forma significativa a la exactitud. Para descartar esta hip\'otesis se reentren\'o el modelo con id\'enticos hiperpar\'ametros pero reemplazando el nombre del s\'imbolo por un identificador gen\'erico (``ASSET'') tanto en los datos de entrenamiento como en la evaluaci\'on. Esta t\'ecnica de anonimizaci\'on de entidades para neutralizar la memoria pre-entrenada del modelo y prevenir fugas tambi\'en se ha empleado en sistemas recientes de \textit{trading} guiado por LLM~\cite{darmanin2025}.
 
 \begin{table}[H]
 \centering
@@ -577,13 +648,7 @@ La ca\'ida de $-$0.43\,pp es inferior al intervalo de confianza de la estimaci\'
 \subsection{Estrategia de enmascaramiento de p\'erdida en el \textit{fine-tuning}}
 \label{sec:loss-masking}
 
-Un detalle metodol\'ogico relevante para interpretar las curvas de p\'erdida (Figura~\ref{fig:ablation-loss}) es la estrategia de \textit{loss masking} --- es decir, qu\'e tokens de cada secuencia de entrenamiento contribuyen al c\'alculo del gradiente. En este trabajo se emple\'o \textbf{p\'erdida de secuencia completa}: la entrop\'ia cruzada se calcula sobre \emph{todos} los tokens de la secuencia (prompt del sistema, prompt del usuario y respuesta del asistente), sin enmascarar la porci\'on de entrada.
-
-La alternativa est\'andar es el \textit{enmascaramiento por completaci\'on} (\textit{completion-only masking}), donde la p\'erdida se computa exclusivamente sobre los tokens de la respuesta del modelo --- en nuestro caso, los $\sim$100 tokens del JSON de salida. Dado que cada ejemplo tiene $\sim$900 tokens totales y $\sim$800 corresponden al prompt (89\,\% de la secuencia), la preocupaci\'on natural es si el modelo ``desperdicia'' capacidad aprendiendo a reproducir el prompt est\'atico en lugar de aprender el mapeo indicadores$\rightarrow$se\~nal.
-
-El an\'alisis cuantitativo muestra que esta preocupaci\'on no se materializa en nuestra configuraci\'on. El prompt del sistema es id\'entico en las 39,312 muestras de entrenamiento; despu\'es de $\sim$50 pasos de optimizaci\'on, la entrop\'ia cruzada sobre estos tokens converge a un valor pr\'oximo a cero y su contribuci\'on al gradiente se extingue. Los $\sim$120 tokens de valores num\'ericos de indicadores (que var\'ian por muestra) nunca alcanzan p\'erdida cero y proveen una se\~nal auxiliar que refuerza la representaci\'on interna del modelo sobre la estructura de los datos de entrada. La se\~nal total relevante para la tarea es abundante: $39{,}312 \times 3 \times 100 \approx 11.8$ millones de observaciones de tokens de respuesta distribuidas en $\sim$7{,}371 pasos de optimizaci\'on --- muy por encima de los 500--1,000 pasos t\'ipicamente necesarios para la convergencia de una salida JSON estructurada con 6 campos.
-
-Este an\'alisis conecta con la interpretaci\'on de la brecha entre p\'erdida de entrenamiento y validaci\'on (Figura~\ref{fig:ablation-loss}). Dado que la p\'erdida incluye los tokens de prompt predecibles (loss$\approx$0), \textit{ambas} curvas (train y eval) est\'an dominadas por esos mismos tokens, lo que explica tanto su similitud como su convergencia a valores relativamente altos ($\sim$0.79): este valor refleja la entrop\'ia residual de los tokens de respuesta (que s\'i var\'ian entre muestras), no una dificultad inusual de la tarea. La ganancia estimada de adoptar enmascaramiento por completaci\'on para nuestra configuraci\'on espec\'ifica (muchas muestras, salida corta y estructurada, prompt repetitivo) es inferior a 1 punto porcentual de exactitud.
+Se emple\'o \textbf{p\'erdida de secuencia completa}: la entrop\'ia cruzada se calcula sobre todos los tokens (prompt del sistema, prompt del usuario y respuesta), no solo sobre la respuesta como en el \textit{enmascaramiento por completaci\'on} est\'andar. Dado que el prompt ocupa $\sim$89\,\% de cada secuencia, cabr\'ia temer que el modelo ``desperdicie'' capacidad reproduci\'endolo; el an\'alisis muestra que no: el prompt del sistema es id\'entico en las 39,312 muestras, por lo que tras $\sim$50 pasos su p\'erdida converge a cero y su gradiente se extingue. Esto explica adem\'as por qu\'e ambas curvas de p\'erdida (Figura~\ref{fig:ablation-loss}) son similares y convergen a un valor relativamente alto ($\sim$0.79): est\'an dominadas por esos tokens predecibles, de modo que el plateau refleja la entrop\'ia residual de la respuesta y no una dificultad inusual de la tarea. La ganancia estimada de adoptar enmascaramiento por completaci\'on en esta configuraci\'on (muchas muestras, salida corta y estructurada, prompt repetitivo) es inferior a 1 punto porcentual de exactitud.
 
 \subsection{Lectura de las curvas de p\'erdida y la brecha inversa}
 \label{sec:gap-interpretation}
@@ -594,7 +659,7 @@ La brecha entre la exactitud de entrenamiento y la de prueba es peque\~na en amb
 
 La primera es la hip\'otesis de un conjunto de datos insuficiente para una validaci\'on robusta: con relativamente pocos errores, peque\~nas fluctuaciones muestrales podr\'ian inflar la exactitud. La evidencia contradice esta lectura: el conjunto de prueba se eval\'ua completo (11,294 muestras para el modelo sin filtro), el balance de clases es pr\'acticamente 50/50 (LONG vs.\ SHORT), y las m\'etricas por clase son sim\'etricas (precisi\'on y \textit{recall} en torno a 0.84 para ambas direcciones). El modelo no obtiene su exactitud prediciendo la clase mayoritaria.
 
-La segunda es la hip\'otesis de sobre-capacidad: un modelo de 7 mil millones de par\'ametros aplicado a una clasificaci\'on binaria podr\'ia ser ``demasiado potente'' para la tarea. La evidencia tambi\'en la matiza: solo el 0.53\,\% de los par\'ametros se actualiza (40.4M adaptadores), el modelo base congelado act\'ua como regularizador impl\'icito~\cite{hu2021} limitando la capacidad efectiva, y la p\'erdida de validaci\'on no diverge ---evidencia directa de que el modelo no memoriza. La postura razonada es que el desempe\~no refleja una se\~nal genuina sobre \textit{setups} de calidad, acotada por las limitaciones de cobertura de r\'egimen ya discutidas, no un artefacto de tama\~no muestral ni de sobreajuste.
+La segunda es la hip\'otesis de sobre-capacidad: un modelo de 7 mil millones de par\'ametros aplicado a una clasificaci\'on binaria podr\'ia ser ``demasiado potente'' para la tarea. La evidencia tambi\'en la matiza: solo el 0.53\,\% de los par\'ametros se actualiza (40.4M adaptadores), el modelo base congelado act\'ua como regularizador impl\'icito~\cite{hu2021} limitando la capacidad efectiva, y la p\'erdida de validaci\'on no diverge ---evidencia directa de que el modelo no memoriza, en contraste con los patrones de sobre-memorizaci\'on documentados al ajustar LLMs para tareas de razonamiento~\cite{ruan2025}. La postura razonada es que el desempe\~no refleja una se\~nal genuina sobre \textit{setups} de calidad, acotada por las limitaciones de cobertura de r\'egimen ya discutidas, no un artefacto de tama\~no muestral ni de sobreajuste.
 
 % ── 7. S\'intesis ─────────────────────────────────────────────────────────────
 \section{S\'intesis de hallazgos}
@@ -629,22 +694,16 @@ La progresi\'on de hallazgos sigue una l\'ogica acumulativa. Primero, los modelo
 \label{fig:gap}
 \end{figure*}
 
-\begin{figure}[H]
-\centering
-\includegraphics[width=0.85\columnwidth]{figures/fig3_confusion_matrix.png}
-\caption{Matriz de confusi\'on del modelo QLoRA sobre $n=3{,}000$ muestras de prueba. El balance entre errores de tipo LONG$\rightarrow$SHORT (168) y SHORT$\rightarrow$LONG (191) confirma que el modelo no presenta sesgo hacia una clase. Precisi\'on LONG = 0.910, precisi\'on SHORT = 0.855; \textit{recall} LONG = 0.845, \textit{recall} SHORT = 0.916.}
-\label{fig:confusion}
-\end{figure}
-
 \begin{figure*}[ht]
 \centering
 \includegraphics[width=0.88\textwidth]{figures/fig8_roc_pr_reliability.png}
-\caption{Curva ROC (AUC$\approx$0.67), Precision-Recall y diagrama de confiabilidad para los modelos ML. La calibraci\'on muestra que una confianza de 8 corresponde a $\sim$93\,\% de exactitud real. El modelo QLoRA no produce probabilidades variadas (confianza fija en la salida JSON), por lo que estas curvas aplican exclusivamente a Random Forest y XGBoost.}
+\caption{Curva ROC (AUC$=$0.675 RF, 0.692 XGB), Precision-Recall (AP$=$0.646 RF, 0.670 XGB) y diagrama de confiabilidad para los modelos ML. La pendiente casi lineal de la curva PR refleja un poder discriminativo modesto (acentuada por los cinco niveles de confianza discretos); la calibraci\'on, en cambio, es buena: una confianza de 8 corresponde a $\sim$93\,\% de exactitud real. El modelo QLoRA no produce probabilidades variadas (confianza fija en la salida JSON), por lo que estas curvas aplican exclusivamente a Random Forest y XGBoost.}
 \label{fig:roc}
 \end{figure*}
 
 % ── 8. Limitaciones ──────────────────────────────────────────────────────────
 \section{Limitaciones metodol\'ogicas}
+\label{sec:limitations}
 
 Se identifican cinco limitaciones principales, ordenadas por severidad descendente:
 
@@ -671,7 +730,7 @@ Conviene precisar cu\'al de las dos cifras de \textit{profit factor} es la relev
 
 El resultado tiene un alcance acotado: la exactitud de 84--88\,\% aplica a \textit{setups} que superan filtros de calidad cuantitativos, y el \textit{profit factor} de 2.09 del modelo final, aunque prometedor, no constituye evidencia de viabilidad operativa por s\'i solo, pues la simulaci\'on a\'un no incluye \textit{slippage}, impacto de mercado ni restricciones de capital concurrente. La contribuci\'on de este trabajo es demostrar que el \textit{fine-tuning} de dominio espec\'ifico transforma un modelo de lenguaje gen\'erico en un clasificador direccional competitivo, con m\'etricas financieras en rango realista cuando se eval\'uan sin circularidad metodol\'ogica.
 
-Finalmente, conviene recordar que el \textit{fine-tuning} no persigue \'unicamente maximizar una m\'etrica de clasificaci\'on aislada: el prop\'osito \'ultimo es integrar el modelo ajustado como n\'ucleo de razonamiento de un \textbf{agente ReAct} orquestado con LangGraph dentro de una aplicaci\'on de \textit{trading} en producci\'on. En ese contexto, el modelo no solo emite una direcci\'on, sino que alimenta un flujo de decisi\'on donde un agente razona sobre los indicadores, propone una operaci\'on estructurada (entrada, TP y SL) y la somete a validaciones de riesgo antes de ejecutarla. Por ello, la salida en formato estructurado (JSON) y la coherencia del razonamiento ---no solo la exactitud direccional--- son propiedades dise\~nadas deliberadamente: habilitan que el modelo opere como una herramienta aut\'onoma y auditable, y no como un simple clasificador binario.
+Finalmente, conviene recordar que el \textit{fine-tuning} no persigue \'unicamente maximizar una m\'etrica de clasificaci\'on aislada: el prop\'osito \'ultimo es integrar el modelo ajustado como n\'ucleo de razonamiento de un \textbf{agente ReAct} orquestado con LangGraph dentro de una aplicaci\'on de \textit{trading} en producci\'on. En ese contexto, el modelo no solo emite una direcci\'on, sino que alimenta un flujo de decisi\'on donde un agente razona sobre los indicadores, propone una operaci\'on estructurada (entrada, TP y SL) y la somete a validaciones de riesgo antes de ejecutarla. Por ello, la salida en formato estructurado (JSON) y la coherencia del razonamiento ---no solo la exactitud direccional--- son propiedades dise\~nadas deliberadamente: habilitan que el modelo opere como una herramienta aut\'onoma y auditable, y no como un simple clasificador binario. Esta orientaci\'on hacia agentes LLM con salida estructurada y trazabilidad de la decisi\'on es coherente con sistemas recientes de \textit{trading} cuantitativo multi-agente, donde la explicabilidad es adem\'as un requisito regulatorio~\cite{cheng2026}.
 
 % ── 10. Trabajo futuro ───────────────────────────────────────────────────────
 \section{Trabajo futuro}
@@ -682,7 +741,7 @@ Dos l\'ineas de investigaci\'on de media prioridad consolidar\'ian la generaliza
 
 A largo plazo, dos l\'ineas destacan por su valor cient\'ifico. La primera es la \textbf{calibraci\'on de incertidumbre}: el modelo actual emite una confianza casi constante, lo que impide construir curvas de calibraci\'on o dimensionar posiciones seg\'un el riesgo. Entrenar el modelo para que emita una probabilidad bien calibrada ---por ejemplo, mediante un objetivo que premie la calibraci\'on o un ajuste posterior de temperatura--- habilitar\'ia un \textit{position sizing} proporcional a la confianza (criterio de Kelly) y un umbral expl\'icito de ``no operar'' ante se\~nales d\'ebiles. La segunda es la \textbf{fidelidad del razonamiento}: dado que el modelo se concibe como agente ReAct, conviene evaluar si su justificaci\'on textual es coherente con la decisi\'on que emite ---detectando alucinaciones y midiendo la consistencia entre el razonamiento y la operaci\'on propuesta--- pues en producci\'on la explicabilidad es tan importante como la exactitud.
 
-Otras direcciones complementarias incluyen: la \textbf{incorporaci\'on de an\'alisis de sentimiento} ---res\'umenes de noticias, Twitter/X o Reddit a\~nadidos al \textit{prompt}--- aprovechando que el modelo procesa texto de forma nativa, para capturar el componente narrativo que los indicadores t\'ecnicos no reflejan; el \textbf{\textit{fine-tuning} del modelo de 14B} para una comparaci\'on de escala controlada frente al de 7B (la versi\'on de 14B es la que opera en producci\'on); una \textbf{prueba de estr\'es} sobre mercados bajistas y eventos extremos (colapso de LUNA, contagio de FTX en 2022), ausentes del per\'iodo de prueba predominantemente alcista; un \textit{ensemble} h\'ibrido que combine la direcci\'on del LLM con salidas basadas en reglas de los modelos ML; la aplicaci\'on de DPO (\textit{Direct Preference Optimization}) usando se\~nales de rendimiento como \textit{reward}; y el re-entrenamiento con los campos categ\'oricos removidos para cerrar la cuesti\'on de la asimetr\'ia de informaci\'on (\S\ref{sec:ablation-occlusion}).
+Otras direcciones complementarias incluyen: la \textbf{incorporaci\'on de an\'alisis de sentimiento} ---res\'umenes de noticias, Twitter/X o Reddit a\~nadidos al \textit{prompt}--- aprovechando que el modelo procesa texto de forma nativa, para capturar el componente narrativo que los indicadores t\'ecnicos no reflejan; trabajos recientes muestran que en criptomonedas el razonamiento subjetivo basado en sentimiento es m\'as \'util en mercados alcistas, mientras que el an\'alisis factual lo es en mercados bajistas~\cite{wang2024factsubj}; el \textbf{\textit{fine-tuning} del modelo de 14B} para una comparaci\'on de escala controlada frente al de 7B (la versi\'on de 14B es la que opera en producci\'on); una \textbf{prueba de estr\'es} sobre mercados bajistas y eventos extremos (colapso de LUNA, contagio de FTX en 2022), ausentes del per\'iodo de prueba predominantemente alcista; un \textit{ensemble} h\'ibrido que combine la direcci\'on del LLM con salidas basadas en reglas de los modelos ML; la aplicaci\'on de DPO (\textit{Direct Preference Optimization}) usando se\~nales de rendimiento como \textit{reward}, en la l\'inea de trabajos que emplean el propio LLM como red de pol\'iticas optimizada por gradiente con recompensas de \textit{trading}~\cite{xiong2025flagtrader}; y el re-entrenamiento con los campos categ\'oricos removidos para cerrar la cuesti\'on de la asimetr\'ia de informaci\'on (\S\ref{sec:ablation-occlusion}).
 
 % ── Despliegue propuesto ──────────────────────────────────────────────────────
 \begin{figure*}[ht]
@@ -714,7 +773,7 @@ Local & RTX 5070 Ti / 16\,GB & $\sim$23\,h por modelo \\
 \end{tabularx}
 \end{table}
 
-Las lecciones principales fueron tres. Primero, la disponibilidad de una imagen de contenedor lista para entrenar es determinante: inicialmente se intent\'o usar AWS SageMaker (instancia \textit{ml.g6.xlarge}), pero no se encontr\'o una imagen de Unsloth de acceso directo en ese entorno ---probablemente existe, pero no con la facilidad con que se obtiene en la nube GPU elegida, donde la imagen trae \textit{FlashAttention-2} pre-compilada. Construir esa dependencia desde fuente es fr\'agil por incompatibilidades de ABI con la versi\'on de PyTorch, y sin ella el m\'odulo de atenci\'on opera en un modo varias veces m\'as lento; partir de una imagen lista evita ese costo por completo. Segundo, conviene una GPU de al menos 48\,GB de VRAM para ajustar un modelo de 7B con secuencias de 1{,}024 tokens; con 24\,GB el tama\~no de lote queda tan limitado que se pierde la ventaja de la GPU de nube. Tercero, conviene verificar cada instancia con un \textit{smoke test} de pocos pasos antes de lanzar el entrenamiento completo, lo que detecta errores de memoria o configuraci\'on en menos de $\sim$10 minutos. En conjunto, el entrenamiento de cada variante cost\'o menos de 8~USD de c\'omputo (\S\ref{sec:infra}), lo que hace viable explorar m\'ultiples configuraciones sin una inversi\'on significativa.
+Las lecciones principales fueron tres. Primero, la disponibilidad de una imagen de contenedor lista para entrenar es determinante: inicialmente se intent\'o usar AWS SageMaker (instancia \textit{ml.g6.xlarge}), pero no se encontr\'o una imagen de Unsloth~\cite{unsloth2026} de acceso directo en ese entorno ---probablemente existe, pero no con la facilidad con que se obtiene en la nube GPU elegida, donde la imagen trae \textit{FlashAttention-2} pre-compilada. Construir esa dependencia desde fuente es fr\'agil por incompatibilidades de ABI con la versi\'on de PyTorch, y sin ella el m\'odulo de atenci\'on opera en un modo varias veces m\'as lento; partir de una imagen lista evita ese costo por completo. Segundo, conviene una GPU de al menos 48\,GB de VRAM para ajustar un modelo de 7B con secuencias de 1{,}024 tokens; con 24\,GB el tama\~no de lote queda tan limitado que se pierde la ventaja de la GPU de nube. Tercero, conviene verificar cada instancia con un \textit{smoke test} de pocos pasos antes de lanzar el entrenamiento completo, lo que detecta errores de memoria o configuraci\'on en menos de $\sim$10 minutos. En conjunto, el entrenamiento de cada variante cost\'o menos de 8~USD de c\'omputo (\S\ref{sec:infra}), consistente con los \'ordenes de magnitud reportados para el ajuste de modelos de este tama\~no~\cite{mitrasish2026}, lo que hace viable explorar m\'ultiples configuraciones sin una inversi\'on significativa.
 
 Esta infraestructura corresponde \'unicamente al entrenamiento. La arquitectura propuesta para el despliegue en producci\'on ---donde el modelo ya ajustado se sirve para inferencia--- se ilustra en la Figura~\ref{fig:lightsail}: un servidor de aplicaci\'on sin GPU que delega la inferencia a una API de modelo externa, separando el c\'omputo general del de inferencia para escalar cada componente de forma independiente.
 
@@ -781,6 +840,33 @@ Qwen Team, ``Qwen2.5 Technical Report,'' Alibaba Cloud, 2024. [Online]. Availabl
 
 \bibitem{bouri2017}
 E.~Bouri, P.~Molnar, G.~Azzi, D.~Roubaud, and L.~I.~Hagfors, ``On the hedge and safe haven properties of Bitcoin: Is it really more than a diversifier?'' \textit{Finance Research Letters}, vol.~20, pp.~192--198, 2017.
+
+\bibitem{wilder1978}
+J.~W.~Wilder, Jr., \textit{New Concepts in Technical Trading Systems}. Greensboro, NC: Trend Research, 1978.
+
+\bibitem{cheng2026}
+E.~Y.-C.~Cheng, C.-J.~Tseng, and H.-T.~Chu, ``Adaptive LLM-based multi-agent systems to enhance quantitative trading performance,'' \textit{PeerJ Computer Science}, vol.~12, e3630, 2026, doi:~10.7717/peerj-cs.3630.
+
+\bibitem{wang2025finlora}
+D.~Wang, J.~Patel, D.~Zha, S.~Y.~Yang, and X.-Y.~Liu, ``FinLoRA: Benchmarking LoRA Methods for Fine-Tuning LLMs on Financial Datasets,'' \textit{arXiv preprint arXiv:2505.19819}, 2025.
+
+\bibitem{xiong2025flagtrader}
+G.~Xiong \textit{et al.}, ``FLAG-Trader: Fusion LLM-Agent with Gradient-based Reinforcement Learning for Financial Trading,'' \textit{arXiv preprint arXiv:2502.11433}, 2025.
+
+\bibitem{wang2024factsubj}
+Q.~Wang, Y.~Gao, Z.~Tang, B.~Luo, N.~Chen, and B.~He, ``Exploring LLM Cryptocurrency Trading Through Fact-Subjectivity Aware Reasoning,'' in \textit{Proc. ICLR Financial AI Workshop}, 2025. arXiv:2410.12464.
+
+\bibitem{darmanin2025}
+A.~Darmanin and V.~Vella, ``Language Model Guided Reinforcement Learning in Quantitative Trading,'' \textit{arXiv preprint arXiv:2508.02366}, 2025.
+
+\bibitem{khanna2025stonk}
+S.~Khanna, A.~Berger, D.~Berghaus, T.~Deusser, L.~Sparrenberg, and R.~Sifa, ``Towards Unified Multimodal Financial Forecasting: Integrating Sentiment Embeddings and Market Indicators via Cross-Modal Attention (STONK),'' \textit{arXiv preprint arXiv:2508.13327}, 2025.
+
+\bibitem{asgari2021}
+M.~Asgari and H.~Khasteh, ``Profitable Strategy Design for Trades on Cryptocurrency Markets with Machine Learning Techniques,'' \textit{arXiv preprint arXiv:2105.06827}, 2021.
+
+\bibitem{khanna2025history}
+S.~Khanna, A.~Berger, M.~Chopra, D.~Berghaus, and R.~Sifa, ``History Rhymes: Macro-Contextual Retrieval for Robust Financial Forecasting,'' in \textit{Proc. IEEE Int. Conf. Big Data (BigData)}, 2025. arXiv:2511.09754.
 
 \bibitem{repo}
 A.~Gonz\'alez~Almaz\'an, ``Trading Management --- Repositorio del proyecto,'' 2026. [Online]. Available: \url{https://github.com/alejandrogonzalz/trading_management}

@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="520" viewBox="0 0 1000 520" font-family="Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arr" markerWidth="10" markerHeight="10" refX="6" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L6,3 L0,6 Z" fill="#5b4bbf"/>
+    </marker>
+  </defs>
+  <rect width="1000" height="520" fill="#ffffff"/>
+
+  <!-- TR formula -->
+  <text x="40" y="44" font-size="22" fill="#34495e">True Range (TR) de una vela = el mayor de estos tres valores:</text>
+  <rect x="40" y="62" width="920" height="120" rx="14" fill="#eef0fb" stroke="#b9c0ec" stroke-width="1.5"/>
+  <text x="80" y="104" font-size="21" fill="#3a3a5a">TR = max( máximo − mínimo,</text>
+  <text x="200" y="136" font-size="21" fill="#3a3a5a">|máximo − cierre anterior|,</text>
+  <text x="200" y="166" font-size="21" fill="#3a3a5a">|mínimo − cierre anterior| )</text>
+
+  <!-- subtitle -->
+  <text x="180" y="232" font-size="20" fill="#34495e">Velas pasadas → cada una aporta su TR → se promedian (14 velas típico)</text>
+
+  <!-- candles -->
+  <g stroke="#7a7a7a" stroke-width="2">
+    <line x1="110" y1="292" x2="110" y2="372"/><rect x="96" y="312" width="28" height="44" fill="#b3b3b3"/>
+    <line x1="220" y1="276" x2="220" y2="372"/><rect x="206" y="296" width="28" height="56" fill="#b3b3b3"/>
+    <line x1="330" y1="318" x2="330" y2="386"/><rect x="316" y="334" width="28" height="34" fill="#b3b3b3"/>
+    <line x1="500" y1="262" x2="500" y2="372"/><rect x="486" y="282" width="28" height="64" fill="#b3b3b3"/>
+  </g>
+  <text x="420" y="346" font-size="22" fill="#7a7a7a">…</text>
+
+  <!-- axis line -->
+  <line x1="60" y1="398" x2="780" y2="398" stroke="#d8d8d8" stroke-width="1.5"/>
+
+  <!-- candle labels -->
+  <g font-size="15" fill="#7f8c8d" text-anchor="middle">
+    <text x="110" y="424">vela 1</text><text x="110" y="446">TR₁</text>
+    <text x="220" y="424">vela 2</text><text x="220" y="446">TR₂</text>
+    <text x="330" y="424">vela 3</text><text x="330" y="446">TR₃</text>
+    <text x="500" y="424">vela 14</text><text x="500" y="446">TR₁₄</text>
+  </g>
+
+  <!-- promedio arrow -->
+  <text x="640" y="322" font-size="17" fill="#5b4bbf" text-anchor="middle">promedio</text>
+  <line x1="585" y1="338" x2="710" y2="338" stroke="#5b4bbf" stroke-width="2.5" marker-end="url(#arr)"/>
+
+  <!-- ATR box -->
+  <rect x="725" y="300" width="235" height="78" rx="14" fill="#eef0fb" stroke="#5b4bbf" stroke-width="1.8"/>
+  <text x="842" y="335" font-size="22" font-weight="bold" fill="#3a3a5a" text-anchor="middle">ATR</text>
+  <text x="842" y="362" font-size="16" fill="#3a3a5a" text-anchor="middle">= promedio(TR₁…TR₁₄)</text>
+
+  <!-- bottom note -->
+  <text x="500" y="492" font-size="19" fill="#34495e" text-anchor="middle">Termómetro de volatilidad: mercado tranquilo → ATR bajo · mercado violento → ATR alto</text>
+</svg>
