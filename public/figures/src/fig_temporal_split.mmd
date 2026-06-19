@@ -1,0 +1,20 @@
+%%{init: {'theme':'neutral', 'gantt': {'barHeight': 34, 'fontSize': 13, 'sectionFontSize': 14, 'leftPadding': 110}}}%%
+gantt
+    title Partición temporal del dataset (56,161 muestras)
+    dateFormat YYYY-MM-DD
+    axisFormat %b %Y
+
+    section Train (70%)
+    39,312 muestras                :done, train, 2023-12-01, 2025-01-01
+
+    section Embargo
+    24h                            :crit, emb1, 2025-01-01, 2d
+
+    section Validación (15%)
+    8,424 muestras                 :active, val, 2025-01-03, 2025-04-01
+
+    section Embargo
+    24h                            :crit, emb2, 2025-04-01, 2d
+
+    section Test (15%)
+    8,425 muestras                 :active, test, 2025-04-03, 2025-05-07
