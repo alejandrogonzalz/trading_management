@@ -180,6 +180,8 @@ LSTM & 51.51\,\% & 46.7\,\% & 1.49 \\
 {\scriptsize El \textit{profit factor} de 1.5--2.5 corresponde al rango de sistemas de \textit{trading} profesionalmente viables (Pardo, 2008); por debajo de 1.0 el sistema destruye capital. La Figura~\ref{fig:exec-beforeafter} contrasta visualmente el antes/despu\'es del ajuste.}
 \end{table}
 
+\noindent\textit{?`C\'omo se compara 2.09 con la competencia?} Un sistema de ML cl\'asico publicado sobre criptomonedas reporta \textit{profit factor} 1.60 fuera de muestra; el mismo Qwen~2.5~7B \textbf{sin ajustar}, medido en otro estudio independiente sobre acciones, reporta apenas 1.16. El 2.09 de este trabajo no solo cae en el rango profesional de Pardo (1.5--2.5): supera a ambas referencias externas, lo que corrobora que la mejora no es un artefacto exclusivo de esta metodolog\'ia de evaluaci\'on.
+
 \begin{figure}[H]
 \centering
 \includegraphics[width=\linewidth]{figures/executive_summary/fig_before_after.png}
@@ -198,9 +200,16 @@ Tres conclusiones explican por qu\'e el modelo ajustado es la recomendaci\'on, y
 
 \begin{enumerate}
 \item \textbf{No es un techo de esfuerzo, es un techo de representaci\'on.} Los modelos de \'arbol se optimizaron exhaustivamente (150 combinaciones de hiperpar\'ametros para XGBoost, 80 para Random Forest) y aun as\'i no superan $\sim$64\,\%. El l\'imite no es cu\'anto buscamos, sino que estos modelos solo ven n\'umeros sueltos, mientras que el LLM lee los mismos indicadores en el formato textual que un analista usar\'ia.
-\item \textbf{El conocimiento gen\'erico no basta; la especializaci\'on de dominio s\'i.} El mismo modelo base, sin ajuste, "sabe" parcialmente (56.5\,\%) pero no sabe operar: pierde dinero. El \textit{fine-tuning} es la diferencia entre un modelo inviable y uno rentable --- y esa diferencia es estad\'isticamente inequ\'ivoca (prueba de McNemar, $\chi^2=1{,}949$, $p\approx0$, sobre 11{,}294 decisiones pareadas).
+\item \textbf{El conocimiento gen\'erico no basta; la especializaci\'on de dominio s\'i.} El mismo modelo base, sin ajuste, "sabe" parcialmente (56.5\,\%) pero no sabe operar: pierde dinero. El \textit{fine-tuning} es la diferencia entre un modelo inviable y uno rentable --- y esa diferencia es estad\'isticamente inequ\'ivoca (prueba de McNemar, $\chi^2=1{,}949$, $p\approx0$, sobre 11{,}294 decisiones pareadas). La Figura~\ref{fig:exec-confusion} hace visible esta brecha: el modelo ajustado concentra sus predicciones en la diagonal correcta, mientras que el \textit{zero-shot} las reparte casi 50/50 entre LONG y SHORT para cada clase real --- el patr\'on de un modelo que apenas discrimina direcci\'on.
 \item \textbf{Elegimos el resultado conservador, no el m\'as alto.} Existe una variante del modelo que alcanza 88.66\,\% de exactitud (\textit{profit factor} 4.63), pero se entrena y eval\'ua sobre el subconjunto de \textit{setups} ya filtrados como "limpios": su cifra es optimista y su \textit{profit factor} ---por encima de 4--- entra en el territorio que la propia literatura considera sospechoso de sobreajuste. El \textbf{modelo final recomendado} (84.13\,\%, \textit{profit factor} 2.09) se entrena sobre \emph{todas} las muestras disponibles, sin ese filtro, y es por tanto el n\'umero m\'as defendible frente a condiciones de mercado reales. Adem\'as, generaliza de forma pareja: entre los 11 activos evaluados individualmente la exactitud var\'ia apenas 4.6 puntos porcentuales (81.8\,\%--86.4\,\%) --- no depende de "acertarle" a una sola criptomoneda.
 \end{enumerate}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.85\linewidth]{figures/conclusion/fig6_confusion_comparison.png}
+\caption{Matrices de confusi\'on del modelo ajustado (izquierda) y del \textit{zero-shot} (derecha) sobre las mismas 11{,}294 muestras de prueba. El modelo ajustado concentra la masa en la diagonal; el \textit{zero-shot} la dispersa casi por igual entre las dos predicciones para cada clase real.}
+\label{fig:exec-confusion}
+\end{figure}
 
 Por transparencia metodol\'ogica conviene precisar una decisi\'on de dise\~no: el sistema en producci\'on usa Qwen~2.5 \textbf{14B}, pero el \textit{fine-tuning} se hizo sobre la versi\'on \textbf{7B} del mismo modelo, y el \textit{zero-shot} se midi\'o tambi\'en sobre 7B. Esto es deliberado: comparar 7B-ajustado contra 7B-sin-ajustar a\'isla el efecto de la \textit{especializaci\'on} del efecto del \textit{tama\~no}, de modo que la ventaja observada se atribuya inequ\'ivocamente al ajuste de dominio y no a un modelo m\'as grande.
 
@@ -227,7 +236,7 @@ El Avance 6 tradujo estos resultados en una hoja de ruta de tres fases, ya secue
 
 \begin{description}
 \item[Fase 1 --- Activaci\'on (sin bloqueadores t\'ecnicos).] El modelo ajustado ya existe como artefacto entrenado. El paso restante es t\'ecnico y r\'apido: servirlo v\'ia Together AI (API gestionada) u Ollama en un servidor propio, y conectarlo como n\'ucleo de razonamiento del agente LangGraph que ya opera en producci\'on con el modelo gen\'erico. No requiere nueva infraestructura de entrenamiento.
-\item[Fase 2 --- Validaci\'on en vivo sin riesgo (4 semanas).] Antes de comprometer capital real, el propio equipo defini\'o como condici\'on obligatoria un periodo de \textit{paper trading} (operaci\'on simulada sobre datos de mercado en vivo) con monitoreo continuo de exactitud. Esto cierra la brecha entre "funciona en backtest hist\'orico" y "funciona en condiciones actuales de mercado".
+\item[Fase 2 --- Validaci\'on en vivo sin riesgo (4 semanas).] Antes de comprometer capital real, el propio equipo defini\'o como condici\'on obligatoria un periodo de \textit{paper trading} (operaci\'on simulada sobre datos de mercado en vivo) con monitoreo continuo de exactitud. Esto cierra la brecha entre "funciona en backtest hist\'orico" y "funciona en condiciones actuales de mercado". \textbf{Responsable}: Alejandro Gonz\'alez Almaz\'an (autor del proyecto), bajo supervisi\'on de la Dra.\ Alicia Fernanda Galindo Manrique. \textbf{Inicio}: inmediatamente despu\'es de activar la Fase~1, sin esperar a la defensa. \textbf{Criterio de avance a Fase 3 con capital real}: \textit{win rate} y \textit{profit factor} sostenidos dentro del rango profesional ya validado en \textit{backtest} (PF $\geq$ 1.5, Pardo 2008) durante las 4 semanas completas; si no se cumple, el sistema permanece en \textit{paper trading} y se reentrena antes de reintentar el \textit{gate}.
 \item[Fase 3 --- Maduraci\'on (no bloqueante para activar la Fase 1).] L\'ineas de mejora continua: calibrar la confianza del modelo para dimensionar posiciones proporcionalmente al riesgo, validar con m\'ultiples ventanas de tiempo (\textit{walk-forward}), reentrenar peri\'odicamente ante el desgaste del modelo (\textit{drift}) ---la mitigaci\'on directa del riesgo de cambio de r\'egimen de \S6--- y poner a prueba el sistema en un mercado bajista, dado que el periodo evaluado fue predominantemente alcista.
 \end{description}
 
@@ -336,8 +345,8 @@ Almacenamiento de modelos y datos (S3/DVC) & $\sim$20--25GB de artefactos a tari
 \item \textbf{+27.6 puntos porcentuales} de exactitud direccional frente al mismo modelo sin especializar (84.1\,\% vs.\ 56.5\,\%), con significancia estad\'istica inequ\'ivoca ($\chi^2=1{,}949$, $p\approx0$).
 \item \textbf{De p\'erdida sostenida a rango profesional}: el \textit{profit factor} pasa de 0.70 (el sistema sin ajustar pierde capital) a 2.09 (dentro del rango 1.5--2.5 que la literatura de trading sistem\'atico considera profesionalmente viable). \'Este es el hallazgo de mayor peso de negocio: el \textit{fine-tuning} no mejora marginalmente al modelo, \textbf{cambia su viabilidad operativa}.
 \item \textbf{$+$21 puntos porcentuales} frente al mejor modelo de Machine Learning cl\'asico sobre el mismo conjunto de prueba, ya optimizado exhaustivamente (84.1\,\% vs.\ 62.7\,\% de XGBoost) --- la ventaja no es un artefacto de falta de esfuerzo en la comparaci\'on.
-\item \textbf{Inferencia de bajo costo y baja latencia}: servido localmente con Ollama, el modelo cuesta $\sim$\$0.02 por cada 1{,}000 predicciones (4x por debajo del baseline \textit{zero-shot} de 70B, $\sim$\$0.08) y responde en $\sim$300\,ms por decisi\'on; como alternativa sin operar GPU propia, Together AI lo sirve de forma gestionada a una fracci\'on del costo de un modelo de 70B. El margen operativo mejora a medida que crece el volumen de decisiones.
-\item \textbf{Retorno simulado positivo y consistente}: bajo la simulaci\'on hist\'orica m\'as conservadora (sin filtro de calidad), el modelo final promedia $+$0.42\,\% de retorno por operaci\'on sobre 11{,}294 operaciones en 81 d\'ias (acumulado bruto $+$4{,}768\,\%, sin reinversi\'on). Se reporta como \textbf{evidencia direccional, no como proyecci\'on de rentabilidad}: la simulaci\'on a\'un no modela \textit{slippage}, impacto de mercado ni l\'imites de capital concurrente (ver \S6).
+\item \textbf{Inferencia de bajo costo y baja latencia}: servido localmente con Ollama, el modelo cuesta $\sim$\$0.02 por cada 1{,}000 predicciones y responde en $\sim$300\,ms por decisi\'on --- una fracci\'on del costo de servir por API un modelo de la clase 70B ($\sim$\$0.08/1k); como alternativa sin operar GPU propia, Together AI lo sirve de forma gestionada a esa misma fracci\'on del costo. Conviene precisar que esta comparaci\'on de 70B es \'unicamente una referencia de costo de mercado: el \textit{baseline zero-shot} medido en este trabajo es el mismo modelo de 7B (\S3), no uno de 70B. El margen operativo mejora a medida que crece el volumen de decisiones.
+\item \textbf{Retorno simulado positivo y consistente}: bajo la simulaci\'on hist\'orica m\'as conservadora (sin filtro de calidad), el modelo final promedia $+$0.42\,\% de retorno por operaci\'on sobre 11{,}294 operaciones en 81 d\'ias (acumulado bruto $+$4{,}768\,\%, sin reinversi\'on). Se reporta como \textbf{evidencia direccional, no como proyecci\'on de rentabilidad}: cada operaci\'on se trata como una apuesta unitaria sin \textit{compounding} ni l\'imite de capital concurrente, sin \textit{slippage} ni impacto de mercado, y el periodo de 81 d\'ias evaluado fue predominantemente alcista (\S\ref{sec:riesgos}) --- el acumulado bruto reportado no es alcanzable tal cual en operaci\'on real; debe leerse como un \textbf{ranking comparativo entre modelos} bajo id\'entica metodolog\'ia, no como un retorno proyectado.
 \end{itemize}
 
 \subsection{Beneficios intangibles}
@@ -366,6 +375,7 @@ Los riesgos identificados se agrupan en cuatro categor\'ias. Varios de ellos ya 
 \item \textbf{Ventana de prueba \'unica} de 81 d\'ias, predominantemente alcista --- sin evidencia a\'un de comportamiento en mercado bajista o eventos extremos.
 \item \textbf{Universo acotado} a 12 activos de capitalizaci\'on media/alta; sin cobertura de micro-caps ni mercados nuevos.
 \item La ventaja del LLM frente a los modelos cl\'asicos podr\'ia explicarse parcialmente por acceso a m\'as informaci\'on por muestra; la prueba realizada para descartarlo fue solo de evaluaci\'on, no concluyente.
+\item \textbf{Memorizaci\'on por pre-entrenamiento}: descartada --- el per\'iodo de prueba (febrero--mayo 2026) es posterior al corte de conocimiento de Qwen~2.5 (septiembre 2024); el modelo no pudo haber memorizado la acci\'on de precio evaluada. \textit{Verificado.}
 \end{itemize}
 \end{riskpanel}
 \end{minipage}\hfill
@@ -389,6 +399,7 @@ Los riesgos identificados se agrupan en cuatro categor\'ias. Varios de ellos ya 
 \item \textbf{Confianza del modelo casi constante}: bloquea el dimensionamiento de posiciones proporcional al riesgo hasta calibrarla.
 \item \textbf{Fidelidad del razonamiento sin auditar}: no se ha verificado que la justificaci\'on textual del agente sea siempre consistente con la decisi\'on que emite.
 \item \textbf{Validaci\'on sobre un \'unico \textit{split} temporal}: falta repetir la prueba sobre varias ventanas de tiempo (\textit{walk-forward}) para confirmar estabilidad.
+\item \textbf{?`Sobreajuste o conjunto de prueba insuficiente?} Descartado --- el conjunto de prueba se eval\'ua completo (11{,}294 muestras, sin submuestreo) y la p\'erdida de validaci\'on no diverge durante el entrenamiento. \textit{Verificado.}
 \end{itemize}
 \end{riskpanel}
 \end{minipage}\hfill
@@ -409,7 +420,7 @@ Los riesgos identificados se agrupan en cuatro categor\'ias. Varios de ellos ya 
 % ── 7. Cierre ──────────────────────────────────────────────────────────────────
 \section{Cierre: qu\'e se pide y qu\'e sigue}
 
-La hip\'otesis que articul\'o el proyecto ---que un modelo de lenguaje especializado de dominio superar\'ia al gen\'erico y a los modelos cl\'asicos--- \textbf{qued\'o confirmada}. La evidencia de los Avances 0--6 respalda una conclusi\'on acotada pero firme: \textbf{especializar mediante \textit{fine-tuning} de dominio transforma un asesor que pierde capital en uno que opera en rango profesional} (84.13\,\% de exactitud, \textit{profit factor} 2.09, $\chi^2=1{,}949$, $p\approx0$), a un costo de exploraci\'on pr\'acticamente nulo (\$17.85 en c\'omputo) y con riesgos identificados, categorizados y --- en los casos m\'as cr\'iticos --- ya puestos a prueba emp\'iricamente. Lo que falta no es m\'as evidencia de \textit{backtest}, sino la validaci\'on en condiciones de mercado en vivo.
+La hip\'otesis que articul\'o el proyecto ---que un modelo de lenguaje especializado de dominio superar\'ia al gen\'erico y a los modelos cl\'asicos--- \textbf{qued\'o confirmada}. La evidencia de los Avances 0--6 respalda una conclusi\'on acotada pero firme: \textbf{especializar mediante \textit{fine-tuning} de dominio transforma un asesor que pierde capital en uno que opera en rango profesional} (84.13\,\% de exactitud, \textit{profit factor} 2.09, $\chi^2=1{,}949$, $p\approx0$), a un costo de exploraci\'on pr\'acticamente nulo (\$17.85 en \textit{fine-tuning}; $\sim$\$19--20 en c\'omputo total del proyecto, Tabla~\ref{tab:costos-fase}) y con riesgos identificados, categorizados y --- en los casos m\'as cr\'iticos --- ya puestos a prueba emp\'iricamente. Lo que falta no es m\'as evidencia de \textit{backtest}, sino la validaci\'on en condiciones de mercado en vivo.
 
 \begin{calloutbox}{Decisi\'on solicitada}{brandteal}
 \begin{enumerate}
