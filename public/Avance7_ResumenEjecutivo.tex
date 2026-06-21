@@ -99,15 +99,15 @@
 
 \vspace{0.6em}
 \begin{calloutbox}{S\'intesis ejecutiva}{brandteal}
-El presente proyecto especializ\'o, mediante \textit{fine-tuning} (QLoRA), un modelo de lenguaje de 7\,mil millones de par\'ametros perteneciente a la misma familia (Qwen~2.5) que opera actualmente en el sistema. Con una inversi\'on de c\'omputo inferior a \$20 USD, el modelo pas\'o de un desempe\~no que destruye capital en simulaci\'on (\textit{profit factor} de 0.70) a uno situado en el rango profesional de los sistemas de \textit{trading} (\textit{profit factor} de 2.09 y 84.13\,\% de exactitud direccional). La hip\'otesis central del proyecto ---que la especializaci\'on de dominio supera al modelo gen\'erico--- se confirma con una mejora estad\'isticamente significativa ($\chi^2=1{,}949$, $p\approx0$), tanto respecto de la versi\'on sin ajustar como de cualquier modelo cl\'asico de \textit{Machine Learning} evaluado.
+El presente proyecto especializ\'o, mediante \textit{fine-tuning} (QLoRA), un modelo de lenguaje de 7\,mil millones de par\'ametros perteneciente a la misma familia (Qwen~2.5) que opera actualmente en el sistema. El modelo final se entren\'o en una sola corrida de 3.6\,h ($\sim$\$5 USD de GPU en la nube), y todo el ciclo de investigaci\'on ---incluidas las corridas de ablaci\'on y robustez--- se mantuvo por debajo de \$20 USD. Con esa inversi\'on de c\'omputo, el modelo pas\'o de un desempe\~no que destruye capital en simulaci\'on (\textit{profit factor} de 0.70) a uno situado en el rango profesional de los sistemas de \textit{trading} (\textit{profit factor} de 2.09 y 84.13\,\% de exactitud direccional). La hip\'otesis central del proyecto ---que la especializaci\'on de dominio supera al modelo gen\'erico--- se confirma con una mejora estad\'isticamente significativa ($\chi^2=1{,}949$, $p\approx0$), tanto respecto de la versi\'on sin ajustar como de cualquier modelo cl\'asico de \textit{Machine Learning} evaluado.
 \end{calloutbox}
 
 \vspace{0.8em}
 \noindent
 \kpicard{84.13\,\%}{Exactitud direccional}{Modelo final, sin sesgo de supervivencia (validaci\'on McNemar, $p\approx0$)}{brandteal}\hfill
 \kpicard{PF 2.09}{Factor de ganancia}{Simulaci\'on sin circularidad (ATR) --- rango profesional (Pardo, 2008)}{brandblue}\hfill
-\kpicard{\$17.85}{Costo total de I+D}{3 corridas completas de fine-tuning de un modelo de 7B par\'ametros}{brandamber}\hfill
-\kpicard{\$0.02 / 1k}{Costo por predicci\'on}{Ollama local, 4x bajo el baseline 70B (o Together AI, zero-ops)}{brandpurple}
+\kpicard{$\sim$\$5}{Costo del modelo final}{1 corrida QLoRA, 3.6\,h en A100 80GB (\$1.42/h); todo el I+D $<$\$20}{brandamber}\hfill
+\kpicard{\$0.02 / 1k}{Costo por predicci\'on}{Ollama local; o Together AI gestionado, sin operar GPU propia}{brandpurple}
 
 \vspace{1em}
 \noindent\textbf{Qu\'e se le pide al lector de este documento:} aprobar un periodo de 4 semanas de \textit{paper trading} (sin capital real) y un presupuesto operativo estimado de \$15--25 USD/mes, como condici\'on previa --- ya identificada por el propio equipo --- antes de considerar capital real (ver \S7).
@@ -128,11 +128,11 @@ La Figura~\ref{fig:exec-pipeline} ilustra c\'omo opera hoy el sistema en producc
 \begin{figure}[H]
 \centering
 \includegraphics[width=\linewidth]{figures/executive_summary/fig_production_pipeline.png}
-\caption{Arquitectura de producci\'on actual. El \textit{scanner} cuantitativo alimenta de indicadores t\'ecnicos al LLM, que opera en modo \textit{zero-shot} dentro del agente LangGraph (paradigma ReAct, ver discusi\'on siguiente) antes de ejecutar la orden en Binance. El nodo flageado es el que este trabajo sustituye mediante \textit{fine-tuning}.}
+\caption{Arquitectura de producci\'on actual. El \textit{scanner} cuantitativo alimenta de indicadores t\'ecnicos al LLM, que opera en modo \textit{zero-shot} dentro del agente LangGraph ---un grafo de estados de tres nodos: generaci\'on (LLM) $\rightarrow$ validaci\'on cuantitativa determinista $\rightarrow$ optimizaci\'on condicional (LLM)--- antes de ejecutar la orden en Binance. El nodo flageado (el LLM \textit{zero-shot}) es el que este trabajo sustituye mediante \textit{fine-tuning}. El sistema en producci\'on usa la variante 14B; la l\'inea base \textit{zero-shot} y el modelo ajustado se midieron sobre la variante 7B del mismo modelo, para que la comparaci\'on aisle el efecto de la especializaci\'on y no el del tama\~no (\S3).}
 \label{fig:exec-pipeline}
 \end{figure}
 
-Que ese nodo est\'e envuelto en un agente de tipo \textbf{ReAct} (\textit{Reasoning and Acting}) no es incidental. Este paradigma, introducido por Yao et al.\ (2023), integra el razonamiento expl\'icito paso a paso con la ejecuci\'on de acciones sobre herramientas externas mediante un bucle iterativo de Pensamiento $\rightarrow$ Acci\'on $\rightarrow$ Observaci\'on: el modelo verbaliza su deducci\'on antes de consultar una API o ejecutar una orden, y ajusta su estrategia seg\'un la observaci\'on resultante. Este anclaje en datos en tiempo real mitiga las alucinaciones y habilita decisiones secuenciales y adaptativas en entornos vol\'atiles como los mercados financieros ---exactamente la funci\'on que cumplen los nodos \textit{evaluator} y \textit{optimizer} del agente LangGraph de la Figura~\ref{fig:exec-pipeline}. La literatura reciente respalda emp\'iricamente este dise\~no: en el \textit{benchmark} \textit{Agent Market Arena}, un agente ReAct sobre GPT-4.1 alcanz\'o un \textit{Sharpe ratio} de 6.47 en TSLA, y los autores concluyen que la arquitectura del agente pesa m\'as que la capacidad del modelo subyacente (Qian et al., 2026); en \textit{Auto Trader X}, un \textit{framework} agéntico con RAG alcanz\'o 68.4\,\% de exactitud direccional ---frente a 52.3\,\% de ARIMA y 57.1\,\% de LSTM--- con un \textit{Sharpe ratio} de 2.10, un \textit{drawdown} m\'aximo de $-$11.2\,\% y una latencia de 780\,ms, viable para \textit{trading} institucional (Swayam et al., 2026). Estos resultados refuerzan que la elecci\'on de arquitectura (LangGraph, ya en desarrollo) es acertada; lo que este proyecto aporta es especializar el componente de razonamiento que opera dentro de ella.
+Que ese nodo est\'e envuelto en un grafo de estados ---y no invocado de forma aislada--- no es incidental. El agente, implementado sobre LangGraph, es un grafo dirigido de tres nodos con una arista condicional: \textit{generator} (el LLM propone un \textit{setup}), \textit{evaluator} (validaci\'on cuantitativa \textbf{determinista}, sin LLM: verifica coherencia de entrada/TP/SL, RSI, ATR, riesgo de liquidaci\'on y confluencia multi-\textit{timeframe}) y, solo si el evaluador detecta problemas, \textit{optimizer} (el LLM refina la propuesta). El LLM, por tanto, se invoca \'unicamente dentro de los nodos \textit{generator} y \textit{optimizer}; \textbf{es exactamente ese componente de razonamiento el que este proyecto sustituye mediante \textit{fine-tuning}}, mientras que el nodo \textit{evaluator} es l\'ogica determinista que no se ve afectada por el ajuste. Este dise\~no ---razonar, validar con reglas duras y solo entonces refinar--- toma inspiraci\'on del paradigma \textbf{ReAct} (\textit{Reasoning and Acting}; Yao et al., 2023), que entrelaza razonamiento y acci\'on en un bucle Pensamiento $\rightarrow$ Acci\'on $\rightarrow$ Observaci\'on; la evoluci\'on natural del agente hacia un bucle ReAct completo, con uso aut\'onomo de herramientas, es trabajo futuro (\S6). La literatura reciente respalda la apuesta por invertir en la arquitectura del agente: en el \textit{benchmark} \textit{Agent Market Arena}, un agente ReAct sobre GPT-4.1 alcanz\'o un \textit{Sharpe ratio} de 6.47 en TSLA, y los autores concluyen que la arquitectura del agente pesa m\'as que la capacidad del modelo subyacente (Qian et al., 2026); en \textit{Auto Trader X}, un \textit{framework} ag\'entico con RAG alcanz\'o 68.4\,\% de exactitud direccional ---frente a 52.3\,\% de ARIMA y 57.1\,\% de LSTM--- con un \textit{Sharpe ratio} de 2.10, un \textit{drawdown} m\'aximo de $-$11.2\,\% y una latencia de 780\,ms, viable para \textit{trading} institucional (Swayam et al., 2026). Lo que este proyecto aporta es especializar el componente de razonamiento que opera dentro de esa arquitectura.
 
 Este documento resume la evidencia de los Avances 0--6 y la organiza en torno a tres preguntas que cualquier tomador de decisiones se plantea ante una propuesta de IA: \textbf{?`funciona mejor que las alternativas?} (\S2--\S3), \textbf{?`cu\'anto cuesta construirlo y operarlo?} (\S5) y \textbf{?`qu\'e puede salir mal?} (\S6). Las secciones siguientes responden cada una en ese orden, cerrando con una recomendaci\'on accionable y acotada (\S7).
 
@@ -269,7 +269,8 @@ La Tabla~\ref{tab:costos-fase} desglosa todo el costo de c\'omputo del proyecto 
 Entendimiento del negocio y de los datos & Definici\'on del problema; API hist\'orica de Binance (p\'ublica, sin costo) & \$0 \\
 Preparaci\'on de datos & C\'alculo de indicadores y etiquetado sobre estaci\'on de c\'omputo ya disponible (CPU) & \$0$^*$ \\
 Modelado --- ML cl\'asico & B\'usqueda de hiperpar\'ametros (XGBoost, Random Forest, LSTM) en la misma estaci\'on & \$0$^*$ \\
-Modelado --- LLM (QLoRA) & 3 corridas de \textit{fine-tuning} sobre GPU en la nube (A100 80GB, \$1.42/h): 3.6h + 4.0h + 5.0h & \textbf{\$17.85} \\
+Modelado --- LLM (QLoRA), modelo final & 1 corrida de \textit{fine-tuning} sobre GPU en la nube (A100 80GB, \$1.42/h): 3.6\,h & \textbf{\$5.10} \\
+Modelado --- LLM (QLoRA), ablaciones y robustez & Corridas adicionales (configuraci\'on alterna, anonimizaci\'on de s\'imbolo, oclusi\'on de campos): $\sim$9\,h en total & $\sim$\$12.75 \\
 Evaluaci\'on & \textit{Backtest} hist\'orico (local) + l\'inea base \textit{zero-shot} v\'ia API externa ($\sim$8{,}400 inferencias) & $\sim$\$1--2 \\
 Despliegue & Arquitectura propuesta, a\'un no contratada (Figura~\ref{fig:exec-lightsail}) & \$0 \\
 \midrule
@@ -285,26 +286,26 @@ El mensaje central para el lector de negocio: \textbf{todo el ciclo de investiga
 \subsection{?`Nube o equipo local? Por qu\'e se entren\'o en RunPod y no en la PC del equipo}
 \label{sec:cloud-vs-local}
 
-El equipo cuenta con una estaci\'on local con GPU (RTX 5070~Ti, 16\,GB VRAM) capaz de ejecutar el mismo entrenamiento sin pagar renta de GPU en la nube. La Tabla~\ref{tab:cloud-vs-local} compara ambas rutas para las mismas 3 corridas de \textit{fine-tuning}, bajo supuestos expl\'icitos de consumo el\'ectrico.
+El equipo cuenta con una estaci\'on local con GPU (RTX 5070~Ti, 16\,GB VRAM) capaz de ejecutar el mismo entrenamiento sin pagar renta de GPU en la nube. La Tabla~\ref{tab:cloud-vs-local} compara ambas rutas para la corrida del \textbf{modelo final} (3.6\,h en la nube), bajo supuestos expl\'icitos de consumo el\'ectrico.
 
 \begin{table}[H]
 \centering
-\caption{Nube (RunPod) vs.\ equipo local (RTX 5070~Ti) para las 3 corridas de \textit{fine-tuning}}
+\caption{Nube (RunPod) vs.\ equipo local (RTX 5070~Ti) para la corrida del modelo final}
 \label{tab:cloud-vs-local}
 \small
 \begin{tabularx}{\linewidth}{Xccc}
 \toprule
-\textbf{Infraestructura} & \textbf{Costo} & \textbf{Tiempo total} & \textbf{Estaci\'on de trabajo} \\
+\textbf{Infraestructura} & \textbf{Costo} & \textbf{Tiempo} & \textbf{Estaci\'on de trabajo} \\
 \midrule
-RunPod A100 80GB (elegida) & \textbf{\$17.85} (renta de GPU) & 12.6\,h ($\sim$0.5 d\'ias) & Libre de inmediato \\
-PC local (RTX 5070~Ti, 16GB) & $\sim$\$4.84$^\dagger$ (solo electricidad) & $\sim$80.6\,h ($\sim$3.4 d\'ias corridos) & Bloqueada $\sim$3.4 d\'ias \\
+RunPod A100 80GB (elegida) & \textbf{\$5.10} (renta de GPU) & 3.6\,h & Libre de inmediato \\
+PC local (RTX 5070~Ti, 16GB) & $\sim$\$1.38$^\dagger$ (solo electricidad) & $\sim$23\,h ($\sim$1 d\'ia corrido) & Bloqueada $\sim$1 d\'ia \\
 \bottomrule
 \end{tabularx}
 \\[0.3em]
-{\scriptsize $^\dagger$Supuestos: consumo de 400\,W bajo carga sostenida de entrenamiento (300\,W GPU + 100\,W resto del equipo: CPU, RAM, ventiladores) y tarifa el\'ectrica dom\'estica de \$0.15 USD/kWh (ajustar seg\'un tarifa real). Tiempo local escalado desde el \'unico punto de referencia documentado para esta GPU ($\sim$23\,h por modelo en el Anexo de infraestructura de \texttt{Conclusions\_Avance6.tex}, equivalente a $\sim$6.4$\times$ m\'as lento que el A100 80GB), aplicado proporcionalmente a las 3 corridas (3.6h, 4.0h y 5.0h en la nube $\rightarrow$ $\sim$23.0h, 25.6h y 32.0h localmente). C\'alculo: $0.4\text{kW} \times 80.6\text{h} \times \$0.15\text{/kWh} \approx \$4.84$.}
+{\scriptsize $^\dagger$Supuestos: consumo de 400\,W bajo carga sostenida de entrenamiento (300\,W GPU + 100\,W resto del equipo: CPU, RAM, ventiladores) y tarifa el\'ectrica dom\'estica de \$0.15 USD/kWh (ajustar seg\'un tarifa real). Tiempo local escalado desde el \'unico punto de referencia documentado para esta GPU ($\sim$23\,h por modelo en el Anexo de infraestructura de \texttt{Conclusions\_Avance6.tex}, equivalente a $\sim$6.4$\times$ m\'as lento que el A100 80GB). C\'alculo: $0.4\text{kW} \times 23\text{h} \times \$0.15\text{/kWh} \approx \$1.38$.}
 \end{table}
 
-La lectura para negocio: entrenar localmente es $\sim$3.7$\times$ m\'as barato en t\'erminos de electricidad pura, pero $\sim$6.4$\times$ m\'as lento, y deja la \'unica estaci\'on de desarrollo del equipo inutilizable para otras tareas durante m\'as de 3 d\'ias corridos por cada ronda de experimentaci\'on. El sobrecosto de $\sim$\$13 USD de la nube --- una cifra trivial frente a cualquier presupuesto de negocio --- compra liberar esa estaci\'on en menos de medio d\'ia. Es la misma raz\'on, ya documentada por el equipo, por la que RunPod se eligi\'o como infraestructura principal de entrenamiento.
+La lectura para negocio: entrenar localmente es $\sim$3.7$\times$ m\'as barato en t\'erminos de electricidad pura, pero $\sim$6.4$\times$ m\'as lento, y deja la \'unica estaci\'on de desarrollo del equipo inutilizable para otras tareas durante $\sim$1 d\'ia corrido por cada corrida de entrenamiento (y varios d\'ias para la tanda completa de ablaciones). El sobrecosto de $\sim$\$3.70 USD de la nube por corrida --- una cifra trivial frente a cualquier presupuesto de negocio --- compra liberar esa estaci\'on en pocas horas. Es la misma raz\'on, ya documentada por el equipo, por la que RunPod se eligi\'o como infraestructura principal de entrenamiento.
 
 \subsection{Costos esperados de operaci\'on y mantenimiento}
 
@@ -334,7 +335,7 @@ Almacenamiento de modelos y datos (S3/DVC) & $\sim$20--25GB de artefactos a tari
 \begin{itemize}
 \item \textbf{+27.6 puntos porcentuales} de exactitud direccional frente al mismo modelo sin especializar (84.1\,\% vs.\ 56.5\,\%), con significancia estad\'istica inequ\'ivoca ($\chi^2=1{,}949$, $p\approx0$).
 \item \textbf{De p\'erdida sostenida a rango profesional}: el \textit{profit factor} pasa de 0.70 (el sistema sin ajustar pierde capital) a 2.09 (dentro del rango 1.5--2.5 que la literatura de trading sistem\'atico considera profesionalmente viable). \'Este es el hallazgo de mayor peso de negocio: el \textit{fine-tuning} no mejora marginalmente al modelo, \textbf{cambia su viabilidad operativa}.
-\item \textbf{+20 puntos porcentuales} frente al mejor modelo de Machine Learning cl\'asico, ya optimizado exhaustivamente (84.1\,\% vs.\ 64.2\,\%) --- la ventaja no es un artefacto de falta de esfuerzo en la comparaci\'on.
+\item \textbf{$+$21 puntos porcentuales} frente al mejor modelo de Machine Learning cl\'asico sobre el mismo conjunto de prueba, ya optimizado exhaustivamente (84.1\,\% vs.\ 62.7\,\% de XGBoost) --- la ventaja no es un artefacto de falta de esfuerzo en la comparaci\'on.
 \item \textbf{Inferencia de bajo costo y baja latencia}: servido localmente con Ollama, el modelo cuesta $\sim$\$0.02 por cada 1{,}000 predicciones (4x por debajo del baseline \textit{zero-shot} de 70B, $\sim$\$0.08) y responde en $\sim$300\,ms por decisi\'on; como alternativa sin operar GPU propia, Together AI lo sirve de forma gestionada a una fracci\'on del costo de un modelo de 70B. El margen operativo mejora a medida que crece el volumen de decisiones.
 \item \textbf{Retorno simulado positivo y consistente}: bajo la simulaci\'on hist\'orica m\'as conservadora (sin filtro de calidad), el modelo final promedia $+$0.42\,\% de retorno por operaci\'on sobre 11{,}294 operaciones en 81 d\'ias (acumulado bruto $+$4{,}768\,\%, sin reinversi\'on). Se reporta como \textbf{evidencia direccional, no como proyecci\'on de rentabilidad}: la simulaci\'on a\'un no modela \textit{slippage}, impacto de mercado ni l\'imites de capital concurrente (ver \S6).
 \end{itemize}
@@ -442,7 +443,7 @@ La hip\'otesis que articul\'o el proyecto ---que un modelo de lenguaje especiali
 \item L.~Qian et al.\ (2026). ``When Agents Trade: Live Multi-Market Trading Arena for LLM Agents.'' \textit{Proc.\ ACM Web Conf.\ (WWW)}. (\textit{Benchmark} Agent Market Arena: \textit{Sharpe ratio} 6.47 en TSLA con un agente ReAct sobre GPT-4.1; la arquitectura del agente pesa m\'as que el modelo subyacente.)
 \item Qwen Team (2024). ``Qwen2.5 Technical Report.'' Alibaba Cloud. (Modelo base.)
 \item Swayam et al.\ (2026). ``Auto Trader X: An Agentic AI and Retrieval-Augmented Generation Framework for Real-Time Explainable Financial Decision Support.'' \textit{Indian Journal of Computer Science and Technology}, vol.~5, n.\textsuperscript{o}~2, pp.~101--103. (68.4\,\% de exactitud direccional, \textit{Sharpe ratio} 2.10, \textit{drawdown} m\'aximo $-$11.2\,\%, latencia 780\,ms.)
-\item S.~Yao et al.\ (2023). ``ReAct: Synergizing Reasoning and Acting in Language Models.'' \textit{ICLR}, arXiv:2210.03629. (Paradigma Pensamiento $\rightarrow$ Acci\'on $\rightarrow$ Observaci\'on que sigue el agente LangGraph, Figura~\ref{fig:exec-pipeline}.)
+\item S.~Yao et al.\ (2023). ``ReAct: Synergizing Reasoning and Acting in Language Models.'' \textit{ICLR}, arXiv:2210.03629. (Paradigma Pensamiento $\rightarrow$ Acci\'on $\rightarrow$ Observaci\'on que inspira el dise\~no del agente LangGraph y orienta su evoluci\'on futura, \S1 y \S6.)
 \end{itemize}}
 
 \end{document}
