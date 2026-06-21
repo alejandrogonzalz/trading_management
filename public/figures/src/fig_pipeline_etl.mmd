@@ -1,0 +1,21 @@
+%%{init: {'theme':'neutral', 'flowchart': {'nodeSpacing': 22, 'rankSpacing': 40}, 'themeVariables': {'fontSize':'15px'}}}%%
+flowchart LR
+    A["<b>Extraccion</b><br/>velas OHLCV<br/>12 activos x 3 TF<br/>18 meses"]:::ext
+    B["<b>Transformacion</b><br/>indicadores tecnicos<br/>solo datos pasados<br/>+ alineacion multi-TF"]:::trf
+    D["<b>Etiquetado</b><br/>24 velas futuras<br/>LONG / SHORT"]:::lbl
+    E{"Filtros de calidad<br/>tendencia, volumen,<br/>R:R, anti-whipsaw<br/><i>sin drawdown</i>"}:::dec
+    G["Descartar<br/>muestra ambigua"]:::drop
+    H["<b>Particion temporal</b><br/>timestamp + embargo 24h<br/>70 / 15 / 15"]:::part
+    I["<b>Dataset final</b><br/>75,289 muestras<br/>52,604 / 11,187 / 11,294"]:::final
+
+    A --> B --> D --> E
+    E -->|"no supera"| G
+    E -->|"supera"| H --> I
+
+    classDef ext fill:#eef0f4,stroke:#c4c9d4,color:#34495e
+    classDef trf fill:#e8f0fe,stroke:#9db8e8,color:#2c3e50
+    classDef lbl fill:#fdf2e3,stroke:#e3c08a,color:#7d5a1e
+    classDef dec fill:#fef9e7,stroke:#e3c200,color:#9a7d0a
+    classDef drop fill:#fdeeee,stroke:#e6b0aa,color:#922b21
+    classDef part fill:#eef0f4,stroke:#c4c9d4,color:#34495e
+    classDef final fill:#d1f2eb,stroke:#16a085,color:#0e6655

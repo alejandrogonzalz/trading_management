@@ -1,0 +1,110 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="690" viewBox="0 0 1100 690" font-family="Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="6" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L6,3 L0,6 Z" fill="#8a8a8a"/>
+    </marker>
+    <marker id="arrg" markerWidth="10" markerHeight="10" refX="6" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L6,3 L0,6 Z" fill="#16a085"/>
+    </marker>
+  </defs>
+  <rect width="1100" height="690" fill="#ffffff"/>
+
+  <!-- ===================== PANEL TITLES ===================== -->
+  <text x="280" y="38" text-anchor="middle" font-size="21" font-weight="bold" fill="#2c3e50">Entrenamiento clásico (desde cero)</text>
+  <text x="810" y="38" text-anchor="middle" font-size="21" font-weight="bold" fill="#16a085">Fine-tuning QLoRA</text>
+
+  <!-- divider -->
+  <line x1="550" y1="60" x2="550" y2="430" stroke="#e0e0e0" stroke-width="2" stroke-dasharray="4,5"/>
+
+  <!-- ===================== PANEL A: classic ===================== -->
+  <rect x="120" y="70" width="320" height="48" rx="10" fill="#eef0f4" stroke="#c4c9d4" stroke-width="1.5"/>
+  <text x="280" y="92" text-anchor="middle" font-size="14" fill="#34495e">Inicialización aleatoria de TODOS los pesos</text>
+  <text x="280" y="110" text-anchor="middle" font-size="12.5" fill="#7f8c8d">no hay conocimiento previo</text>
+
+  <line x1="280" y1="118" x2="280" y2="150" stroke="#8a8a8a" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <rect x="120" y="152" width="320" height="270" rx="12" fill="#fdeeee" stroke="#e6b0aa" stroke-width="1.5"/>
+  <text x="280" y="176" text-anchor="middle" font-size="13.5" font-weight="bold" fill="#c0392b">Todas las capas entrenables</text>
+  <rect x="150" y="190" width="260" height="40" rx="8" fill="#f5b7b1" stroke="#cb4335" stroke-width="1.2"/>
+  <text x="280" y="215" text-anchor="middle" font-size="13" fill="#7b241c">Embeddings (se aprenden de cero)</text>
+  <rect x="150" y="238" width="260" height="40" rx="8" fill="#f5b7b1" stroke="#cb4335" stroke-width="1.2"/>
+  <text x="280" y="263" text-anchor="middle" font-size="13" fill="#7b241c">Atención + MLP (capa 1 … N)</text>
+  <rect x="150" y="286" width="260" height="40" rx="8" fill="#f5b7b1" stroke="#cb4335" stroke-width="1.2"/>
+  <text x="280" y="311" text-anchor="middle" font-size="13" fill="#7b241c">Cabezal de salida</text>
+  <text x="280" y="352" text-anchor="middle" font-size="12.5" fill="#922b21">el gradiente actualiza el 100 % de los pesos</text>
+  <text x="280" y="372" text-anchor="middle" font-size="12.5" fill="#922b21">millones–billones de parámetros</text>
+  <text x="280" y="392" text-anchor="middle" font-size="12.5" fill="#922b21">requiere datos masivos y mucho cómputo</text>
+  <text x="280" y="412" text-anchor="middle" font-size="12.5" fill="#922b21">activaciones definidas y entrenadas de cero</text>
+
+  <!-- ===================== PANEL B: QLoRA ===================== -->
+  <rect x="650" y="70" width="320" height="48" rx="10" fill="#eef0f4" stroke="#c4c9d4" stroke-width="1.5"/>
+  <text x="810" y="92" text-anchor="middle" font-size="14" fill="#34495e">Se hereda el LLM pre-entrenado</text>
+  <text x="810" y="110" text-anchor="middle" font-size="12.5" fill="#7f8c8d">infraestructura semántica intacta</text>
+
+  <line x1="810" y1="118" x2="810" y2="150" stroke="#8a8a8a" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <rect x="650" y="152" width="320" height="270" rx="12" fill="#eafaf1" stroke="#82d8b4" stroke-width="1.5"/>
+  <text x="810" y="176" text-anchor="middle" font-size="13.5" font-weight="bold" fill="#138d75">Base congelada + adaptadores</text>
+
+  <rect x="672" y="190" width="276" height="38" rx="8" fill="#e5e8ec" stroke="#aab2bd" stroke-width="1.2"/>
+  <text x="810" y="208" text-anchor="middle" font-size="12.5" fill="#566573">Embeddings congelados (NF4)</text>
+  <text x="810" y="223" text-anchor="middle" font-size="11" fill="#7f8c8d">token → vector denso, NO se re-entrena</text>
+
+  <rect x="672" y="234" width="276" height="96" rx="8" fill="#e5e8ec" stroke="#aab2bd" stroke-width="1.2"/>
+  <text x="810" y="251" text-anchor="middle" font-size="12.5" fill="#566573">Atención + MLP  ×28  (W, en 4 bits)</text>
+  <text x="810" y="266" text-anchor="middle" font-size="11" fill="#7f8c8d">activación SiLU heredada (función fija)</text>
+  <rect x="694" y="274" width="232" height="50" rx="8" fill="#d4efdf" stroke="#1e8449" stroke-width="1.6"/>
+  <text x="810" y="291" text-anchor="middle" font-size="12.5" font-weight="bold" fill="#0e6655">+ adaptador  B·A  (rank=16)</text>
+  <text x="810" y="306" text-anchor="middle" font-size="11" fill="#117a65">entrenable en BF16 · gradiente solo aquí</text>
+  <text x="810" y="319" text-anchor="middle" font-size="11" fill="#117a65">único componente que se actualiza</text>
+
+  <rect x="672" y="338" width="276" height="40" rx="8" fill="#ffffff" stroke="#16a085" stroke-width="1.4"/>
+  <text x="810" y="358" text-anchor="middle" font-size="14.5" fill="#0e6655" font-style="italic">W<tspan dy="4" font-size="10">eff</tspan><tspan dy="-4" font-size="14.5"> = W + (α / r)·B·A</tspan></text>
+  <text x="810" y="372" text-anchor="middle" font-size="10" fill="#7f8c8d">W_eff: peso efectivo que usa el modelo en inferencia</text>
+
+  <text x="810" y="394" text-anchor="middle" font-size="12.5" fill="#117a65">solo 0.53 % entrenable (40.4 M de 7.6 B)</text>
+  <text x="810" y="413" text-anchor="middle" font-size="12.5" fill="#117a65">α=32, r=16 → escala ×2 · sin activación nueva</text>
+
+  <!-- ===================== TRAINING CYCLE BAND ===================== -->
+  <line x1="60" y1="450" x2="1040" y2="450" stroke="#e0e0e0" stroke-width="1.5"/>
+  <text x="550" y="478" text-anchor="middle" font-size="17" font-weight="bold" fill="#0e6655">Ciclo de entrenamiento del adaptador (cada paso actualiza solo A, B)</text>
+
+  <!-- step 1 forward -->
+  <rect x="70" y="494" width="215" height="78" rx="10" fill="#eef6fb" stroke="#9cc6e0" stroke-width="1.4"/>
+  <text x="177" y="516" text-anchor="middle" font-size="13.5" font-weight="bold" fill="#21618c">1 · Forward</text>
+  <text x="177" y="536" text-anchor="middle" font-size="11.5" fill="#2874a6">el modelo predice la</text>
+  <text x="177" y="552" text-anchor="middle" font-size="11.5" fill="#2874a6">distribución del siguiente token</text>
+
+  <line x1="285" y1="533" x2="318" y2="533" stroke="#8a8a8a" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- step 2 loss -->
+  <rect x="320" y="494" width="215" height="78" rx="10" fill="#fef4ec" stroke="#e3b07a" stroke-width="1.4"/>
+  <text x="427" y="516" text-anchor="middle" font-size="13.5" font-weight="bold" fill="#a04000">2 · Pérdida</text>
+  <text x="427" y="535" text-anchor="middle" font-size="11.5" fill="#b9540a">entropía cruzada (token a token)</text>
+  <text x="427" y="556" text-anchor="middle" font-size="13" font-style="italic" fill="#7e3300">L = −Σ log p(token correcto)</text>
+
+  <line x1="535" y1="533" x2="568" y2="533" stroke="#8a8a8a" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- step 3 backward -->
+  <rect x="570" y="494" width="215" height="78" rx="10" fill="#f4ecf7" stroke="#bb8fce" stroke-width="1.4"/>
+  <text x="677" y="516" text-anchor="middle" font-size="13.5" font-weight="bold" fill="#6c3483">3 · Backward</text>
+  <text x="677" y="536" text-anchor="middle" font-size="11.5" fill="#7d3c98">∇L se propaga, pero</text>
+  <text x="677" y="552" text-anchor="middle" font-size="11.5" fill="#7d3c98">solo actualiza A y B (W fijo)</text>
+
+  <line x1="785" y1="533" x2="818" y2="533" stroke="#8a8a8a" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- step 4 update -->
+  <rect x="820" y="494" width="215" height="78" rx="10" fill="#eafaf1" stroke="#82d8b4" stroke-width="1.4"/>
+  <text x="927" y="516" text-anchor="middle" font-size="13.5" font-weight="bold" fill="#0e6655">4 · Update</text>
+  <text x="927" y="536" text-anchor="middle" font-size="11.5" fill="#117a65">A, B ← A, B − lr · ∇L</text>
+  <text x="927" y="552" text-anchor="middle" font-size="11.5" fill="#117a65">lr = 2×10⁻⁵, coseno</text>
+
+  <!-- loop arrow back -->
+  <path d="M 927 572 L 927 588 L 177 588 L 177 574" fill="none" stroke="#16a085" stroke-width="1.6" stroke-dasharray="5,4" marker-end="url(#arrg)"/>
+  <text x="552" y="603" text-anchor="middle" font-size="11.5" fill="#138d75">se repite ~1,800 pasos (3 épocas con early stopping)</text>
+
+  <!-- ===================== HYPERPARAMS BAND ===================== -->
+  <rect x="70" y="618" width="965" height="56" rx="10" fill="#f7f9fb" stroke="#c4c9d4" stroke-width="1.4"/>
+  <text x="552" y="639" text-anchor="middle" font-size="13" font-weight="bold" fill="#34495e">Configuración usada</text>
+  <text x="552" y="660" text-anchor="middle" font-size="12.5" fill="#566573">rank 16 · α 32 · lr 2×10⁻⁵ (coseno) · batch efectivo 16 (2×8) · máx. 1024 tokens · pérdida de secuencia completa · base en 4 bits (NF4)</text>
+</svg>
