@@ -68,7 +68,7 @@ La predicci\'on de direcci\'on de precio en criptomonedas es un problema de alta
 \vspace{0.8em}
 
 \begin{center}
-\includegraphics[width=0.92\textwidth]{figures/fig_pipeline_etl.png}
+\includegraphics[width=0.92\textwidth]{figures/conclusion/fig_pipeline_etl.png}
 \captionof{figure}{Pipeline ETL del dataset de producci\'on (sin filtro de \textit{drawdown}, 75,289 muestras): extracci\'on de velas OHLCV (Binance API), c\'alculo de indicadores t\'ecnicos (TA-Lib), etiquetado por \textit{hindsight} con filtros de calidad y partici\'on temporal 70/15/15 con embargo.}
 \label{fig:pipeline}
 \end{center}
@@ -121,7 +121,7 @@ Cada muestra del conjunto de prueba corresponde a un punto de decisi\'on \'unico
 
 \begin{figure*}[t]
 \centering
-\includegraphics[width=0.85\textwidth]{figures/fig_temporal_split.png}
+\includegraphics[width=0.85\textwidth]{figures/conclusion/fig_temporal_split.png}
 \caption{Partici\'on temporal estricta del dataset de producci\'on (75,289 muestras sin filtro de \textit{drawdown}): train 52,604 / val 11,187 / test 11,294, con embargo de 24h en cada frontera. Train = per\'iodo m\'as antiguo; Test = m\'as reciente.}
 \label{fig:split}
 \end{figure*}
@@ -178,7 +178,7 @@ Para evitar esta circularidad, las m\'etricas financieras se calculan mediante u
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=\columnwidth]{figures/fig_atr.png}
+\includegraphics[width=\columnwidth]{figures/conclusion/fig_atr.png}
 \caption{C\'alculo del ATR: el rango verdadero (TR) de cada vela es el mayor de tres distancias (amplitud m\'aximo--m\'inimo o las distancias al cierre anterior), y el ATR es el promedio de los TR de las \'ultimas 14 velas. Act\'ua como term\'ometro de volatilidad: bajo en mercados tranquilos, alto en mercados agitados.}
 \label{fig:atr}
 \end{figure}
@@ -308,14 +308,14 @@ Conviene precisar d\'onde se inyectan estos adaptadores dentro de la red \textit
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=\columnwidth]{figures/fig_swiglu_lora.png}
+\includegraphics[width=\columnwidth]{figures/conclusion/fig_swiglu_lora.png}
 \caption{Bloque \textit{feed-forward} SwiGLU de Qwen~2.5 con inyecci\'on de adaptadores LoRA. La entrada se bifurca en \code{gate\_proj} (con activaci\'on SiLU) y \code{up\_proj}; su producto elemento a elemento pasa por \code{down\_proj}. Cada una de las tres proyecciones ---congeladas en 4 bits--- lleva acoplado un adaptador de bajo rango entrenable.}
 \label{fig:swiglu}
 \end{figure}
 
 \begin{figure*}[t]
 \centering
-\includegraphics[width=0.92\textwidth]{figures/fig_qlora_mechanism.png}
+\includegraphics[width=0.92\textwidth]{figures/conclusion/fig_qlora_mechanism.png}
 \caption{Contraste entre el entrenamiento cl\'asico de una red neuronal (izquierda, todos los pesos entrenables desde una inicializaci\'on aleatoria) y el \textit{fine-tuning} QLoRA (derecha, base congelada en 4 bits m\'as adaptadores de bajo rango $B\cdot A$ como \'unico componente entrenable). Abajo, el ciclo de entrenamiento (\textit{forward} $\rightarrow$ entrop\'ia cruzada $\rightarrow$ \textit{backward} solo por $A,B$ $\rightarrow$ actualizaci\'on) y la configuraci\'on empleada. Los \textit{embeddings} y las funciones de activaci\'on se heredan del modelo base sin modificarse.}
 \label{fig:qlora-mech}
 \end{figure*}
@@ -324,7 +324,7 @@ Conviene precisar d\'onde se inyectan estos adaptadores dentro de la red \textit
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=\columnwidth]{figures/fig_training_sample.png}
+\includegraphics[width=\columnwidth]{figures/conclusion/fig_training_sample.png}
 \caption{Estructura de una muestra de entrenamiento en formato \textit{chat} con datos reales. El modelo aprende a generar la respuesta del \textit{asistente} (direcci\'on \texttt{bias} y niveles) a partir del \textit{prompt}. Los niveles TP/SL de la etiqueta provienen del \textit{hindsight}; en la evaluaci\'on financiera se recalculan con ATR \textit{forward-looking} para evitar la circularidad (\S\ref{sec:metrics}).}
 \label{fig:sample}
 \end{figure}
@@ -365,7 +365,7 @@ $\dagger$El modelo base us\'o etiquetas \textit{hindsight}; su \textit{profit fa
 
 \begin{figure*}[t]
 \centering
-\includegraphics[width=0.92\textwidth]{figures/fig4_accuracy_all_models.png}
+\includegraphics[width=0.92\textwidth]{figures/conclusion/fig4_accuracy_all_models.png}
 \caption{Exactitud direccional por modelo sobre el mismo \textit{split} temporal estricto. Las tres variantes QLoRA ---base y anonimizado (dataset filtrado), y el modelo final (todas las muestras, sin circularidad)--- superan al mejor modelo de ML cl\'asico por m\'as de 20 puntos porcentuales. Todos los modelos cl\'asicos ---\'arboles y LSTM--- quedan por debajo del 64\,\%, cerca o sobre la l\'inea base de clase mayoritaria (50.7\,\%).}
 \label{fig:accuracy}
 \end{figure*}
@@ -378,7 +378,7 @@ La prueba se formula sobre los pares discordantes ---muestras donde un modelo ac
 
 \begin{figure*}[t]
 \centering
-\includegraphics[width=0.85\textwidth]{figures/fig5_mcnemar.png}
+\includegraphics[width=0.85\textwidth]{figures/conclusion/fig5_mcnemar.png}
 \caption{Prueba de McNemar (modelo final vs.\ \textit{zero-shot}, 11,294 muestras pareadas). Izquierda: de los pares discordantes, 4,060 corresponden a aciertos exclusivos del modelo ajustado frente a solo 938 del \textit{zero-shot} (raz\'on 4.3:1), sustentando $\chi^2=1{,}949$, $p\approx0$. Derecha: exactitud sobre el conjunto pareado (84.13\,\% vs.\ 56.49\,\%). La asimetr\'ia descarta que la diferencia sea producto del azar muestral.}
 \label{fig:mcnemar}
 \end{figure*}
@@ -387,7 +387,7 @@ Para visualizar el origen de esa discordancia, la Figura~\ref{fig:confusion-comp
 
 \begin{figure*}[t]
 \centering
-\includegraphics[width=0.85\textwidth]{figures/fig6_confusion_comparison.png}
+\includegraphics[width=0.85\textwidth]{figures/conclusion/fig6_confusion_comparison.png}
 \caption{Matrices de confusi\'on del modelo final (izquierda) y del \textit{zero-shot} (derecha) sobre las mismas 11,294 muestras de prueba. El modelo ajustado concentra la masa en la diagonal; el \textit{zero-shot} la dispersa, repartiendo cada clase real casi 50/50 entre las dos predicciones. Esta dispersi\'on es exactamente la discordancia que cuantifica la prueba de McNemar (Figura~\ref{fig:mcnemar}).}
 \label{fig:confusion-comparison}
 \end{figure*}
@@ -572,7 +572,7 @@ Muestras evaluadas & 8,425 & 11,294 \\
 
 \begin{figure*}[ht]
 \centering
-\includegraphics[width=0.82\textwidth]{figures/fig9_drawdown_ablation.png}
+\includegraphics[width=0.82\textwidth]{figures/conclusion/fig9_drawdown_ablation.png}
 \caption{Ablaci\'on del filtro de \textit{drawdown}: exactitud y \textit{win rate} con y sin el filtro, mismos hiperpar\'ametros.}
 \label{fig:ablation-drawdown}
 \end{figure*}
@@ -581,7 +581,7 @@ El hallazgo principal es que remover el filtro \emph{reduce} la exactitud (de 88
 
 \begin{figure*}[ht]
 \centering
-\includegraphics[width=0.82\textwidth]{figures/fig10_loss_curves_ablation.png}
+\includegraphics[width=0.82\textwidth]{figures/conclusion/fig10_loss_curves_ablation.png}
 \caption{Curvas de p\'erdida del entrenamiento con y sin filtro de \textit{drawdown}. En ambos casos la p\'erdida de validaci\'on desciende mon\'otonamente hasta un plateau sin divergir de la de entrenamiento; el \textit{early stopping} detiene cada corrida al estabilizarse la se\~nal de validaci\'on, descartando sobreajuste severo.}
 \label{fig:ablation-loss}
 \end{figure*}
@@ -611,7 +611,7 @@ Brecha (train$-$test) & $-$17.5\,pp & $-$1.7\,pp \\
 
 \begin{figure*}[ht]
 \centering
-\includegraphics[width=0.82\textwidth]{figures/fig11_anon_symbol_ablation.png}
+\includegraphics[width=0.82\textwidth]{figures/conclusion/fig11_anon_symbol_ablation.png}
 \caption{Ablaci\'on de s\'imbolo anonimizado: la exactitud se mantiene (incluso aumenta ligeramente) sin acceso a la identidad del activo, descartando la memorizaci\'on de asociaciones espec\'ificas por s\'imbolo.}
 \label{fig:ablation-symbol}
 \end{figure*}
@@ -678,7 +678,7 @@ La segunda es la hip\'otesis de sobre-capacidad: un modelo de 7 mil millones de 
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.9\columnwidth]{figures/fig_synthesis.png}
+\includegraphics[width=0.9\columnwidth]{figures/conclusion/fig_synthesis.png}
 \caption{Progresi\'on l\'ogica de los hallazgos: los modelos de ML cl\'asico alcanzan un techo estructural, el \textit{zero-shot} posee conocimiento parcial no calibrado (pierde capital), y el \textit{fine-tuning} unifica direcci\'on y rentabilidad.}
 \label{fig:synthesis}
 \end{figure}
@@ -687,28 +687,28 @@ La progresi\'on de hallazgos sigue una l\'ogica acumulativa. Primero, los modelo
 
 \begin{figure*}[ht]
 \centering
-\includegraphics[width=0.75\textwidth]{figures/fig12_equity_atr.png}
+\includegraphics[width=0.75\textwidth]{figures/conclusion/fig12_equity_atr.png}
 \caption{Curvas de \textit{equity} simulada con salidas ATR (\textit{forward-looking}, sin circularidad). Cada punto representa el retorno porcentual acumulado (sin \textit{compounding}) sobre operaciones secuenciales. El modelo final (11,294 operaciones) acumula +4,768\,\% y el modelo anonimizado (8,425 operaciones) +6,682\,\% --- equivalentes a ganancias de 0.42\,\% y 0.79\,\% promedio por operaci\'on, respectivamente.}
 \label{fig:equity}
 \end{figure*}
 
 \begin{figure*}[ht]
 \centering
-\includegraphics[width=0.92\textwidth]{figures/fig13_trade_metrics_atr.png}
+\includegraphics[width=0.92\textwidth]{figures/conclusion/fig13_trade_metrics_atr.png}
 \caption{M\'etricas financieras bajo simulaci\'on ATR (sin circularidad). Win rate, profit factor y max drawdown para los dos modelos QLoRA principales comparados con XGBoost y Random Forest. Los valores del LLM ajustado (PF$=$2.09--4.63) caen en el rango profesional, sin la inflaci\'on artificial de la simulaci\'on con \textit{hindsight}.}
 \label{fig:trade}
 \end{figure*}
 
 \begin{figure*}[ht]
 \centering
-\includegraphics[width=0.82\textwidth]{figures/fig2_accuracy_gap.png}
+\includegraphics[width=0.82\textwidth]{figures/conclusion/fig2_accuracy_gap.png}
 \caption{Exactitud train/val/test de los dos modelos de producci\'on. Las brechas peque\~nas (+4.4\,pp sin filtro, $-$1.7\,pp anonimizado) descartan sobreajuste; ver \S\ref{sec:gap-interpretation}.}
 \label{fig:gap}
 \end{figure*}
 
 \begin{figure*}[ht]
 \centering
-\includegraphics[width=0.88\textwidth]{figures/fig8_roc_pr_reliability.png}
+\includegraphics[width=0.88\textwidth]{figures/conclusion/fig8_roc_pr_reliability.png}
 \caption{Curva ROC (AUC$=$0.675 RF, 0.692 XGB), Precision-Recall (AP$=$0.646 RF, 0.670 XGB) y diagrama de confiabilidad para los modelos ML. La pendiente casi lineal de la curva PR refleja un poder discriminativo modesto (acentuada por los cinco niveles de confianza discretos); la calibraci\'on, en cambio, es buena: una confianza de 8 corresponde a $\sim$93\,\% de exactitud real. El modelo QLoRA no produce probabilidades variadas (confianza fija en la salida JSON), por lo que estas curvas aplican exclusivamente a Random Forest y XGBoost.}
 \label{fig:roc}
 \end{figure*}
@@ -758,7 +758,7 @@ Otras direcciones complementarias incluyen: la \textbf{incorporaci\'on de an\'al
 % ── Despliegue propuesto ──────────────────────────────────────────────────────
 \begin{figure*}[ht]
 \centering
-\includegraphics[width=0.8\textwidth]{figures/fig_lightsail.png}
+\includegraphics[width=0.8\textwidth]{figures/conclusion/fig_lightsail.png}
 \caption{Arquitectura de despliegue propuesta: servidor de aplicaci\'on sin GPU que delega la inferencia a una API de LLM externa. La separaci\'on entre c\'omputo general e inferencia permite escalar cada componente de forma independiente.}
 \label{fig:lightsail}
 \end{figure*}

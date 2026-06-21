@@ -60,3 +60,5 @@ langgraph/backtest/data/candles/*.json
 .claude/settings.local.json
 .vscode
 .idea
+
+tmp
