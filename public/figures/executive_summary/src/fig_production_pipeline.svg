@@ -1,0 +1,118 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 560" font-family="Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="ppArrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#54616C"/>
+    </marker>
+    <marker id="ppArrowRed" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#9E2A2B"/>
+    </marker>
+    <filter id="ppShadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="2.5" stdDeviation="3.5" flood-color="#16191F" flood-opacity="0.18"/>
+    </filter>
+  </defs>
+
+  <rect x="0" y="0" width="1200" height="560" fill="#FFFFFF"/>
+
+  <text x="600" y="32" font-size="17" font-weight="bold" text-anchor="middle" fill="#16191F">C&#243;mo opera hoy el sistema en producci&#243;n</text>
+
+  <!-- chips above the rail -->
+  <g font-size="10.5" font-weight="bold" text-anchor="middle">
+    <rect x="146" y="56" width="168" height="24" rx="12" fill="#EDEFF1"/>
+    <text x="230" y="72" fill="#54616C">klines / indicadores 24h</text>
+    <rect x="500" y="56" width="200" height="24" rx="12" fill="#EDEFF1"/>
+    <text x="600" y="72" fill="#54616C">top candidatos + Quant Score</text>
+    <rect x="868" y="56" width="180" height="24" rx="12" fill="#EDEFF1"/>
+    <text x="958" y="72" fill="#54616C">setup propuesto (JSON)</text>
+  </g>
+
+  <!-- rail -->
+  <line x1="95" y1="95" x2="1040" y2="95" stroke="#C4CDD5" stroke-width="3"/>
+  <!-- drops into each box -->
+  <line x1="95" y1="95" x2="95" y2="108" stroke="#54616C" stroke-width="2.5" marker-end="url(#ppArrow)"/>
+  <line x1="365" y1="95" x2="365" y2="108" stroke="#54616C" stroke-width="2.5" marker-end="url(#ppArrow)"/>
+  <line x1="700" y1="95" x2="700" y2="108" stroke="#54616C" stroke-width="2.5" marker-end="url(#ppArrow)"/>
+  <line x1="1040" y1="95" x2="1040" y2="108" stroke="#54616C" stroke-width="2.5" marker-end="url(#ppArrow)"/>
+
+  <!-- ============ BINANCE (datos + ejecucion) ============ -->
+  <g>
+    <rect x="20" y="110" width="150" height="300" rx="12" fill="#FFFBEA" stroke="#B7790A" stroke-width="2.2" filter="url(#ppShadow)"/>
+    <rect x="86" y="127" width="18" height="18" fill="#F0B90B" transform="rotate(45 95 136)"/>
+    <rect x="86" y="100" width="12" height="12" fill="#F0B90B" transform="rotate(45 92 106)"/>
+    <rect x="86" y="154" width="12" height="12" fill="#F0B90B" transform="rotate(45 92 160)"/>
+    <rect x="63" y="130" width="12" height="12" fill="#F0B90B" transform="rotate(45 69 136)"/>
+    <rect x="109" y="130" width="12" height="12" fill="#F0B90B" transform="rotate(45 115 136)"/>
+    <text x="95" y="200" font-size="14" font-weight="bold" text-anchor="middle" fill="#16191F">Binance API</text>
+    <text x="95" y="218" font-size="11" text-anchor="middle" fill="#54616C">Datos de mercado</text>
+    <text x="95" y="234" font-size="11" text-anchor="middle" fill="#54616C">+ ejecuci&#243;n</text>
+    <line x1="36" y1="250" x2="154" y2="250" stroke="#F0DBA0" stroke-width="1.2"/>
+    <text x="36" y="272" font-size="10.5" fill="#16191F">&#8226; Klines OHLCV</text>
+    <text x="48" y="288" font-size="10.5" fill="#16191F">(p&#250;blica)</text>
+    <text x="36" y="310" font-size="10.5" fill="#16191F">&#8226; &#211;rdenes spot/</text>
+    <text x="48" y="326" font-size="10.5" fill="#16191F">futuros (OCO)</text>
+    <text x="36" y="348" font-size="10.5" fill="#16191F">&#8226; Comisi&#243;n 0.1%/lado</text>
+  </g>
+
+  <!-- ============ QUANT SCANNER ============ -->
+  <g>
+    <rect x="230" y="110" width="270" height="300" rx="12" fill="#E7EEF6" stroke="#1E4C7C" stroke-width="2.2" filter="url(#ppShadow)"/>
+    <text x="254" y="144" font-size="15" font-weight="bold" fill="#16191F">Quant Scanner</text>
+    <text x="254" y="164" font-size="11.5" fill="#54616C">Backend FastAPI &#183; puerto 8001</text>
+    <line x1="254" y1="182" x2="486" y2="182" stroke="#BBCBE0" stroke-width="1.2"/>
+    <text x="254" y="208" font-size="12" fill="#16191F">&#8226; 20+ pares &#215; 7 timeframes</text>
+    <text x="254" y="232" font-size="12" fill="#16191F">&#8226; Multithreaded (ThreadPoolExecutor)</text>
+    <text x="254" y="256" font-size="12" fill="#16191F">&#8226; Quant Score (0&#8211;10), 5 factores:</text>
+    <text x="270" y="278" font-size="11" fill="#54616C">Volumen 30% &#183; ATR 25%</text>
+    <text x="270" y="298" font-size="11" fill="#54616C">RSI 20% &#183; ADX 15% &#183; &#916;precio 10%</text>
+    <text x="254" y="324" font-size="12" fill="#16191F">&#8226; Filtra pares &gt; $1M vol. 24h</text>
+  </g>
+
+  <!-- ============ QWEN 14B ZERO-SHOT (flagged) ============ -->
+  <g>
+    <rect x="560" y="110" width="280" height="300" rx="12" fill="#FFF3F1" stroke="#9E2A2B" stroke-width="2.4" stroke-dasharray="9,5" filter="url(#ppShadow)"/>
+    <text x="584" y="144" font-size="14.5" font-weight="bold" fill="#16191F">Qwen 2.5 14B (zero-shot)</text>
+    <text x="584" y="164" font-size="11.5" fill="#54616C">V&#237;a Ollama (GPU, Docker)</text>
+    <line x1="584" y1="182" x2="816" y2="182" stroke="#F6CFC4" stroke-width="1.2"/>
+    <text x="584" y="208" font-size="12" fill="#16191F">&#8226; AI Ranking: identifica</text>
+    <text x="598" y="226" font-size="12" fill="#16191F">top 3 setups</text>
+    <text x="584" y="250" font-size="12" fill="#16191F">&#8226; An&#225;lisis profundo por activo</text>
+    <text x="584" y="280" font-size="12.5" font-weight="bold" fill="#9E2A2B">&#8226; Sin fine-tuning de dominio</text>
+    <text x="598" y="300" font-size="12.5" font-weight="bold" fill="#9E2A2B">&#8594; PF = 0.70 (pierde capital)</text>
+    <text x="584" y="328" font-size="10.5" font-style="italic" fill="#7A2020">Esto es lo que mejora este</text>
+    <text x="584" y="344" font-size="10.5" font-style="italic" fill="#7A2020">proyecto &#8212; ver Avance 7, &#167;3.</text>
+  </g>
+
+  <!-- ============ AGENTE LANGGRAPH (ReAct, 3 nodos) ============ -->
+  <g>
+    <rect x="900" y="110" width="280" height="300" rx="12" fill="#F5F1FC" stroke="#5D408C" stroke-width="2.2" filter="url(#ppShadow)"/>
+    <text x="924" y="144" font-size="15" font-weight="bold" fill="#16191F">Agente LangGraph (ReAct)</text>
+    <text x="924" y="164" font-size="11.5" fill="#54616C">3 nodos &#183; puerto 2024</text>
+    <line x1="924" y1="182" x2="1156" y2="182" stroke="#E0D6F2" stroke-width="1.2"/>
+
+    <!-- mini chips: generator -> evaluator -> optimizer -->
+    <rect x="915" y="196" width="78" height="46" rx="6" fill="#FFFFFF" stroke="#5D408C" stroke-width="1.3"/>
+    <text x="954" y="216" font-size="10" font-weight="bold" text-anchor="middle" fill="#5D408C">Generator</text>
+    <text x="954" y="230" font-size="8.5" font-style="italic" text-anchor="middle" fill="#54616C">(LLM)</text>
+    <line x1="993" y1="219" x2="1001" y2="219" stroke="#5D408C" stroke-width="1.6" marker-end="url(#ppArrow)"/>
+    <rect x="1001" y="196" width="78" height="46" rx="6" fill="#FFFFFF" stroke="#5D408C" stroke-width="1.3"/>
+    <text x="1040" y="216" font-size="10" font-weight="bold" text-anchor="middle" fill="#5D408C">Evaluator</text>
+    <text x="1040" y="230" font-size="8.5" font-style="italic" text-anchor="middle" fill="#54616C">(determinista)</text>
+    <line x1="1079" y1="219" x2="1087" y2="219" stroke="#5D408C" stroke-width="1.6" marker-end="url(#ppArrow)"/>
+    <rect x="1087" y="196" width="78" height="46" rx="6" fill="#FFFFFF" stroke="#5D408C" stroke-width="1.3"/>
+    <text x="1126" y="216" font-size="10" font-weight="bold" text-anchor="middle" fill="#5D408C">Optimizer</text>
+    <text x="1126" y="230" font-size="8.5" font-style="italic" text-anchor="middle" fill="#54616C">(LLM, cond.)</text>
+
+    <text x="924" y="272" font-size="12" fill="#16191F">&#8226; Salida: entrada + TP + SL</text>
+    <text x="924" y="296" font-size="12" fill="#16191F">&#8226; Raz&#243;n. estructurado (JSON)</text>
+    <text x="924" y="320" font-size="12" fill="#16191F">&#8226; Valida RSI / ATR / riesgo liq.</text>
+  </g>
+
+  <!-- ============ RETURN LOOP: ejecucion -> Binance ============ -->
+  <line x1="1040" y1="410" x2="1040" y2="452" stroke="#54616C" stroke-width="2.2"/>
+  <line x1="1040" y1="452" x2="95" y2="452" stroke="#54616C" stroke-width="2.2"/>
+  <line x1="95" y1="452" x2="95" y2="412" stroke="#54616C" stroke-width="2.2" marker-end="url(#ppArrow)"/>
+  <rect x="430" y="438" width="340" height="24" fill="#FFFFFF" opacity="0.92"/>
+  <text x="445" y="455" font-size="11.5" fill="#232F3E">Ejecuci&#243;n: &#243;rdenes spot/futuros (OCO, TP + SL)</text>
+
+  <text x="600" y="500" font-size="12" text-anchor="middle" fill="#7A2020" font-style="italic">El nodo flageado (Qwen 2.5 14B, zero-shot) es exactamente el componente que este proyecto sustituye</text>
+  <text x="600" y="518" font-size="12" text-anchor="middle" fill="#7A2020" font-style="italic">mediante fine-tuning (QLoRA) &#8212; ver &#167;3.</text>
+</svg>
